@@ -1,0 +1,16 @@
+{
+  "name": "zustrolabs-web",
+  "private": true,
+  "description": "Landing de Zustro Labs (zustrolabs.com). Sitio estático, sin build.",
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "test": "playwright test",
+    "test:links": "playwright test --grep @red",
+    "check": "playwright test --grep-invert @red"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.1",
+    "@playwright/test": "1.56.1"
+  }
+}

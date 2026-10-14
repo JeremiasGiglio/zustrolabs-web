@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="canonical" href="https://zustrolabs.com/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon-180.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://zustrolabs.com/">
+<meta property="og:title" content="Zustro Labs · IA que funciona porque está testeada">
+<meta property="og:description" content="Estudio de QA + IA de Jeremías Giglio. Rosario → Rijeka.">
+<meta property="og:image" content="https://zustrolabs.com/compartir-1200x630.png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:locale" content="es_AR">
+<meta name="twitter:card" content="summary_large_image">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Zustro Labs</title>
+<meta name="description" content="Zustro Labs, estudio de QA + IA de Jeremías Giglio. IA que funciona porque está testeada.">
+<meta name="theme-color" content="#C8102E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<style>
+/* Layout: una columna editorial de 1120px; el damero 5×5 del logo marca el ritmo (casillas de 8px, bloques de a 5). Banda oscura de tinta solo en el hero y en el origen. */
+:root{
+  --bg:#FFFFFF; --bg-2:#F3F4F6; --fg:#1B2230; --muted:#5A6270; --line:#E1E4EA;
+  --red:#C8102E; --red-ink:#C8102E; --on-red:#FFFFFF;
+  --band:#1B2230; --band-fg:#F3F4F6; --band-muted:#A9B0BC; --band-red:#E8344C; --band-line:#2C3547;
+  --logo-red:#C8102E; --logo-ink:#1B2230;
+  --ok:#1E7A4C;
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Source Sans 3","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --cell:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121822; --bg-2:#1B2230; --fg:#F3F4F6; --muted:#A9B0BC; --line:#2C3547;
+  --red:#E8344C; --red-ink:#FF6B7D; --on-red:#FFFFFF;
+  --band:#0D121B; --band-line:#263043;
+  --logo-red:#E8344C; --logo-ink:#F3F4F6; --ok:#4CC38A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121822; --bg-2:#1B2230; --fg:#F3F4F6; --muted:#A9B0BC; --line:#2C3547;
+  --red:#E8344C; --red-ink:#FF6B7D; --on-red:#FFFFFF;
+  --band:#0D121B; --band-line:#263043;
+  --logo-red:#E8344C; --logo-ink:#F3F4F6; --ok:#4CC38A; color-scheme:dark}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{background:var(--bg);color:var(--fg);font:400 1.0625rem/1.6 var(--f-body);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--red);outline-offset:3px;border-radius:2px}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.lr{fill:var(--logo-red)} .li{fill:var(--logo-ink)}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;line-height:1;letter-spacing:.005em;text-wrap:balance;margin:0}
+h2{font-size:clamp(2.4rem,5vw,3.6rem)}
+h3{font-size:1.75rem;font-weight:600}
+p{margin:0}
+.eyebrow{font:500 .8rem/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:var(--cell);height:var(--cell);background:var(--red);flex:none}
+.lede{font-size:1.2rem;color:var(--muted);max-width:60ch}
+section{padding-block:clamp(56px,9vw,104px)}
+section+section{border-top:1px solid var(--line)}
+.sec-head{display:grid;gap:14px;margin-bottom:40px;max-width:760px}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:12px}
+.top svg{height:30px;width:auto;display:block}
+.nav{display:flex;gap:22px;align-items:center;font-weight:600;font-size:.98rem}
+.nav a{text-decoration:none;color:var(--muted)} .nav a:hover{color:var(--fg)}
+.nav .langs{font:500 .8rem var(--f-mono);display:flex;gap:4px}
+.nav .langs a{padding:4px 7px;border:1px solid var(--line);border-radius:3px}
+@media (max-width:760px){.nav .hide-s{display:none}}
+
+/* botones */
+.btn{display:inline-flex;align-items:center;gap:10px;font:700 1.15rem/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase;padding:15px 22px;border-radius:4px;text-decoration:none;border:2px solid transparent;cursor:pointer}
+.btn-red{background:#C8102E;color:#FFFFFF}
+.btn-red:hover{filter:brightness(1.08)}
+.btn-ghost{border-color:currentColor;background:transparent;color:inherit}
+
+/* hero */
+.hero{background:var(--band);color:var(--band-fg);padding-block:clamp(48px,7vw,88px);border-top:0}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:clamp(28px,5vw,64px);align-items:center}
+.hero .eyebrow{color:var(--band-muted)} .hero .eyebrow::before{background:var(--band-red)}
+.hero h1{font-size:clamp(3rem,7.2vw,5.6rem);margin-top:18px}
+.hero h1 em{font-style:normal;color:var(--band-red)}
+.hero .sub{margin-top:22px;font-size:1.2rem;color:var(--band-muted);max-width:46ch}
+.hero .ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.video-frame{position:relative;border-radius:6px;overflow:hidden;background:#1B2230;box-shadow:0 0 0 1px var(--band-line),0 30px 60px -30px rgba(0,0,0,.7);aspect-ratio:16/9;max-width:100%}
+.video-frame video,.video-frame img{width:100%;height:100%;display:block;object-fit:cover}
+.video-cap{margin-top:10px;font:400 .78rem var(--f-mono);color:var(--band-muted)}
+@media (max-width:860px){.hero .wrap{grid-template-columns:minmax(0,1fr)}}
+
+/* runner strip */
+.runner{background:var(--bg-2);border-top:0;padding-block:28px}
+.runner ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 36px;font:400 .92rem/1.45 var(--f-mono)}
+.runner li{display:flex;gap:10px;min-width:0}
+.runner li::before{content:"✓";color:var(--ok);font-weight:500}
+.runner .sum{grid-column:1/-1;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px;margin-top:4px}
+.runner .sum::before{content:"";}
+.runner b{font-weight:500}
+@media (max-width:700px){.runner ul{grid-template-columns:minmax(0,1fr)}}
+
+/* qué hacemos */
+.do{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-top:2px solid var(--fg)}
+.do article{padding:22px 22px 6px 0;display:grid;gap:10px;align-content:start}
+.do article+article{padding-left:22px;border-left:1px solid var(--line)}
+.do h3{font-size:1.6rem}
+.do p{color:var(--muted);font-size:1rem}
+@media (max-width:900px){.do{grid-template-columns:repeat(2,minmax(0,1fr))}.do article:nth-child(3){padding-left:0;border-left:0}.do article{border-top:1px solid var(--line)}}
+@media (max-width:520px){.do{grid-template-columns:minmax(0,1fr)}.do article,.do article+article{padding-left:0;border-left:0}}
+
+/* casos */
+.case{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(28px,5vw,64px);align-items:start}
+.case+.case{margin-top:clamp(56px,8vw,96px);padding-top:clamp(40px,6vw,64px);border-top:1px solid var(--line)}
+.tag{display:inline-flex;align-items:center;gap:8px;font:500 .74rem/1 var(--f-mono);text-transform:uppercase;letter-spacing:.08em;padding:6px 9px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.tag.live{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.tag.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.tag.dev{color:var(--red-ink);border-color:color-mix(in srgb,var(--red) 45%,transparent)}
+.case-body{display:grid;gap:18px;min-width:0}
+.case-body h3{font-size:clamp(2.2rem,4vw,3rem);font-weight:700}
+.case-body .lede{font-size:1.1rem}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.stats div{background:var(--bg);padding:14px 14px 12px}
+.stats b{display:block;font:700 2.1rem/1 var(--f-display);font-variant-numeric:tabular-nums}
+.stats span{font-size:.86rem;color:var(--muted)}
+.checks{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:8px;font-size:1rem}
+.checks li::before{content:"✓";color:var(--ok);font:500 .95rem var(--f-mono);padding-top:2px}
+.links{display:flex;flex-wrap:wrap;gap:16px;font-weight:600}
+.links a{color:var(--red-ink);text-underline-offset:4px}
+.phones{display:flex;gap:14px;justify-content:center;align-items:flex-start}
+.phone{margin:0;flex:1 1 0;max-width:210px;min-width:0;border:6px solid var(--fg);border-radius:22px;overflow:hidden;background:#fff;aspect-ratio:390/650}
+.phone img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
+.phone:nth-child(2){margin-top:34px}
+.phone figcaption{display:none}
+.shots-cap{margin-top:12px;font:400 .78rem var(--f-mono);color:var(--muted);text-align:center}
+.media-pair{display:grid;gap:12px}
+.ad{border-radius:6px;overflow:hidden;border:1px solid var(--line);aspect-ratio:16/9;background:#F4ECE0}
+.ad video{width:100%;height:100%;display:block}
+.code{background:var(--band);color:var(--band-fg);border-radius:6px;padding:18px 20px;font:400 .84rem/1.6 var(--f-mono);overflow-x:auto;white-space:pre;margin:0}
+.code .c{color:var(--band-muted)} .code .k{color:#FF8B98} .code .s{color:#9FD8B5}
+.ci{display:grid;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;font:400 .86rem/1.5 var(--f-mono)}
+.ci div{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;border-top:1px solid var(--line);min-width:0}
+.ci div:first-child{border-top:0;background:var(--bg-2);color:var(--muted)}
+.ci .pass{color:var(--ok);white-space:nowrap}
+.ci span:first-child{min-width:0;flex:1}
+.duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:clamp(56px,8vw,96px);padding-top:clamp(40px,6vw,64px);border-top:1px solid var(--line)}
+.demo{border:1px solid var(--line);border-radius:6px;padding:24px;display:grid;gap:16px;align-content:start;min-width:0}
+.demo h3{font-size:2rem}
+.demo p{color:var(--muted)}
+.chat{display:grid;gap:8px;background:var(--bg-2);border-radius:6px;padding:14px;font-size:.95rem}
+.msg{max-width:85%;padding:9px 12px;border-radius:10px;line-height:1.4}
+.msg.in{background:var(--bg);border:1px solid var(--line);justify-self:start;border-bottom-left-radius:2px}
+.msg.out{background:var(--fg);color:var(--bg);justify-self:end;border-bottom-right-radius:2px}
+.msg.flag{border:1px dashed var(--red);background:transparent;justify-self:end;color:var(--fg)}
+.note{font:400 .75rem var(--f-mono);color:var(--muted)}
+.kpi{background:var(--bg-2);border-radius:6px;padding:14px;display:grid;gap:12px}
+.ask{font-size:.95rem;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.bars{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;height:120px}
+.bars div{background:color-mix(in srgb,var(--fg) 22%,transparent);border-radius:2px 2px 0 0;position:relative}
+.bars div.hi{background:var(--red)}
+.bars-x{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;font:400 .72rem var(--f-mono);color:var(--muted);text-align:center}
+.answer{font-size:.98rem}
+.answer b{font-family:var(--f-display);font-size:1.5rem;font-weight:700}
+@media (max-width:860px){.case,.duo{grid-template-columns:minmax(0,1fr)}.case .phones{order:-1}}
+
+/* cómo trabajamos */
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;counter-reset:s}
+.steps li{list-style:none;display:grid;gap:10px;align-content:start;counter-increment:s}
+.steps li::before{content:"0" counter(s);font:700 3rem/1 var(--f-display);color:var(--red-ink)}
+.steps h3{font-size:1.55rem}
+.steps p{color:var(--muted);font-size:1rem}
+.steps-wrap{display:grid;gap:40px}
+.steps ol{margin:0;padding:0}
+.howcode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.howcode figure{margin:0;display:grid;gap:8px;min-width:0}
+.howcode figcaption{font-size:.92rem;color:var(--muted)}
+@media (max-width:900px){.steps{grid-template-columns:repeat(2,minmax(0,1fr))}.howcode{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:520px){.steps{grid-template-columns:minmax(0,1fr)}}
+
+/* quién */
+.who{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:clamp(28px,5vw,64px);align-items:start}
+.portrait{position:relative;aspect-ratio:4/5;border-radius:4px;background:var(--bg-2);display:grid;place-items:center;overflow:hidden;max-width:100%}
+.portrait .ph{font:700 5rem/1 var(--f-display);color:var(--muted);opacity:.5}
+.portrait .ph-note{position:absolute;bottom:12px;left:12px;right:12px;font:400 .74rem var(--f-mono);color:var(--muted);text-align:center}
+.portrait::before{content:"";position:absolute;top:0;left:0;width:calc(var(--cell)*5);height:calc(var(--cell)*5);
+  background:conic-gradient(from -90deg,var(--red) 25%,transparent 0 50%,var(--red) 0 75%,transparent 0) 0 0/calc(var(--cell)*2) calc(var(--cell)*2)}
+.who-body{display:grid;gap:22px;min-width:0}
+.who-body h2{font-size:clamp(2.6rem,5vw,3.8rem)}
+.cv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 32px}
+.cv h4{margin:0 0 6px;font:500 .78rem/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.cv p,.cv li{font-size:1rem}
+.cv ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.timeline li{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px}
+.timeline .y{font:400 .84rem/1.6 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips span{font:400 .8rem var(--f-mono);border:1px solid var(--line);padding:4px 8px;border-radius:3px}
+@media (max-width:860px){.who{grid-template-columns:minmax(0,1fr)}.portrait{max-width:320px}}
+@media (max-width:520px){.cv{grid-template-columns:minmax(0,1fr)}}
+
+/* origen */
+.origin{background:var(--band);color:var(--band-fg);border-top:0}
+.origin .eyebrow{color:var(--band-muted)} .origin .eyebrow::before{background:var(--band-red)}
+.origin .lede{color:var(--band-muted)}
+.route{list-style:none;margin:40px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:relative}
+.route::before{content:"";position:absolute;left:0;right:0;top:9px;border-top:2px dashed var(--band-line)}
+.route li{position:relative;padding-right:20px;display:grid;gap:8px;align-content:start}
+.route li::before{content:"";width:20px;height:20px;background:var(--band-red);position:relative}
+.route li.now::before{background:var(--band-fg)}
+.route .yr{font:700 2.6rem/1 var(--f-display);margin-top:6px}
+.route .pl{font:600 1.25rem/1.2 var(--f-display);letter-spacing:.02em;text-transform:uppercase}
+.route .co{font:400 .76rem var(--f-mono);color:var(--band-muted)}
+.route p{color:var(--band-muted);font-size:.98rem}
+.origin-foot{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;margin-top:56px;padding-top:32px;border-top:1px solid var(--band-line)}
+.origin-foot h3{font-size:1.5rem;color:var(--band-fg)}
+.origin-foot p{color:var(--band-muted);margin-top:8px}
+.glag{font:500 1.15rem var(--f-mono);color:var(--band-fg);letter-spacing:.04em}
+@media (max-width:860px){.route{grid-template-columns:repeat(2,minmax(0,1fr));gap:32px 0}.route::before{display:none}.origin-foot{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:460px){.route{grid-template-columns:minmax(0,1fr)}}
+
+/* encuentro + idiomas + contacto */
+.meet{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:32px;align-items:center;border:2px solid var(--fg);border-radius:6px;padding:clamp(20px,4vw,36px)}
+.meet h3{font-size:clamp(1.8rem,3.5vw,2.4rem)}
+.meet p{color:var(--muted);margin-top:10px;max-width:56ch}
+.qr{width:150px;height:150px;background:#fff;padding:10px;border-radius:4px;border:1px solid var(--line)}
+.qr img{width:100%;height:100%;display:block}
+@media (max-width:600px){.meet{grid-template-columns:minmax(0,1fr)}}
+.langs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:40px}
+.langs-grid article{background:var(--bg-2);border-radius:6px;padding:22px;display:grid;gap:10px;align-content:start}
+.langs-grid h3{font-size:1.4rem}
+.langs-grid p{font-size:1rem}
+@media (max-width:760px){.langs-grid{grid-template-columns:minmax(0,1fr)}}
+.contact{display:grid;gap:22px;justify-items:start}
+.contact h2{font-size:clamp(2.8rem,7vw,5rem)}
+.mail{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.mail code{font:500 clamp(1.2rem,3vw,1.7rem) var(--f-mono);user-select:all;overflow-wrap:anywhere}
+.copy{font:600 .9rem var(--f-body);padding:8px 14px;border-radius:4px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+.contact .others{display:flex;flex-wrap:wrap;gap:12px 28px;color:var(--muted)}
+.contact .others a{color:var(--fg);font-weight:600}
+footer{border-top:1px solid var(--line);padding-block:28px;color:var(--muted);font-size:.92rem}
+footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
+footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a href="#inicio" aria-label="Zustro Labs, inicio"><svg viewBox="0 0 546.212 128" role="img" aria-label="Zustro Labs" data-testid="logo"><rect x="0" y="0" width="25.9072" height="25.9072" class="lr"/><rect x="25.6" y="0" width="25.9072" height="25.9072" class="li"/><rect x="51.2" y="0" width="25.9072" height="25.9072" class="lr"/><rect x="76.8" y="0" width="25.9072" height="25.9072" class="li"/><rect x="102.4" y="0" width="25.9072" height="25.9072" class="lr"/><rect x="76.8" y="25.6" width="25.9072" height="25.9072" class="lr"/><rect x="51.2" y="51.2" width="25.9072" height="25.9072" class="lr"/><rect x="25.6" y="76.8" width="25.9072" height="25.9072" class="lr"/><rect x="0" y="102.4" width="25.9072" height="25.9072" class="lr"/><rect x="25.6" y="102.4" width="25.9072" height="25.9072" class="li"/><rect x="51.2" y="102.4" width="25.9072" height="25.9072" class="lr"/><rect x="76.8" y="102.4" width="25.9072" height="25.9072" class="li"/><rect x="102.4" y="102.4" width="25.9072" height="25.9072" class="lr"/><path d="M157.92 96.448V86.752Q157.92 85.984 158.208 85.312L178.752 42.59199999999999Q178.848 42.303999999999995 178.752 42.16Q178.656 42.01599999999999 178.368 42.01599999999999H159.072Q158.592 42.01599999999999 158.256 41.67999999999999Q157.92 41.343999999999994 157.92 40.86399999999999V31.551999999999992Q157.92 31.07199999999999 158.256 30.73599999999999Q158.592 30.39999999999999 159.072 30.39999999999999H192.096Q192.576 30.39999999999999 192.91199999999998 30.73599999999999Q193.248 31.07199999999999 193.248 31.551999999999992V41.24799999999999Q193.248 41.919999999999995 192.96 42.687999999999995L172.416 85.40799999999999Q172.32 85.696 172.416 85.84Q172.512 85.984 172.8 85.984H192.096Q192.576 85.984 192.91199999999998 86.32Q193.248 86.65599999999999 193.248 87.136V96.448Q193.248 96.928 192.91199999999998 97.264Q192.576 97.6 192.096 97.6H159.072Q158.592 97.6 158.256 97.264Q157.92 96.928 157.92 96.448Z M200.448 78.496V31.551999999999992Q200.448 31.07199999999999 200.784 30.73599999999999Q201.12 30.39999999999999 201.6 30.39999999999999H212.832Q213.312 30.39999999999999 213.64800000000002 30.73599999999999Q213.984 31.07199999999999 213.984 31.551999999999992V79.83999999999999Q213.984 82.91199999999999 215.52 84.832Q217.056 86.752 219.552 86.752Q222.048 86.752 223.536 84.832Q225.024 82.91199999999999 225.024 79.83999999999999V31.551999999999992Q225.024 31.07199999999999 225.36 30.73599999999999Q225.696 30.39999999999999 226.176 30.39999999999999H237.40800000000002Q237.888 30.39999999999999 238.224 30.73599999999999Q238.56 31.07199999999999 238.56 31.551999999999992V78.496Q238.56 87.52 233.328 92.94399999999999Q228.096 98.368 219.552 98.368Q210.912 98.368 205.68 92.94399999999999Q200.448 87.52 200.448 78.496Z M246.336 80.8V78.01599999999999Q246.336 77.536 246.67200000000003 77.19999999999999Q247.008 76.86399999999999 247.48800000000003 76.86399999999999H258.528Q259.00800000000004 76.86399999999999 259.34400000000005 77.19999999999999Q259.68 77.536 259.68 78.01599999999999V80.12799999999999Q259.68 83.104 261.216 84.928Q262.752 86.752 265.05600000000004 86.752Q267.36 86.752 268.896 85.024Q270.432 83.29599999999999 270.432 80.512Q270.432 77.63199999999999 268.51200000000006 75.56799999999998Q266.59200000000004 73.50399999999999 261.024 69.472Q256.22400000000005 66.01599999999999 253.24800000000005 63.32799999999999Q250.27200000000002 60.63999999999999 248.16000000000003 56.70399999999999Q246.04800000000003 52.767999999999994 246.04800000000003 47.583999999999996Q246.04800000000003 39.42399999999999 251.13600000000002 34.52799999999999Q256.22400000000005 29.63199999999999 264.576 29.63199999999999Q273.024 29.63199999999999 278.16 34.71999999999999Q283.29600000000005 39.80799999999999 283.29600000000005 48.06399999999999V50.367999999999995Q283.29600000000005 50.84799999999999 282.96000000000004 51.184Q282.624 51.519999999999996 282.144 51.519999999999996H271.10400000000004Q270.624 51.519999999999996 270.288 51.184Q269.952 50.84799999999999 269.952 50.367999999999995V47.775999999999996Q269.952 44.79999999999999 268.464 43.02399999999999Q266.976 41.24799999999999 264.576 41.24799999999999Q262.272 41.24799999999999 260.832 42.92799999999999Q259.392 44.60799999999999 259.392 47.583999999999996Q259.392 50.46399999999999 261.216 52.672Q263.04 54.879999999999995 268.416 58.815999999999995Q274.368 63.23199999999999 277.392 65.96799999999999Q280.416 68.704 282.096 72.01599999999999Q283.776 75.32799999999999 283.776 79.93599999999999Q283.776 88.38399999999999 278.592 93.37599999999999Q273.408 98.368 264.96000000000004 98.368Q259.392 98.368 255.168 96.16Q250.94400000000002 93.952 248.64000000000001 89.96799999999999Q246.336 85.984 246.336 80.8Z M329.66400000000004 31.551999999999992V40.86399999999999Q329.66400000000004 41.343999999999994 329.32800000000003 41.67999999999999Q328.992 42.01599999999999 328.512 42.01599999999999H316.512Q316.03200000000004 42.01599999999999 316.03200000000004 42.495999999999995V96.448Q316.03200000000004 96.928 315.696 97.264Q315.36 97.6 314.88 97.6H303.648Q303.168 97.6 302.832 97.264Q302.49600000000004 96.928 302.49600000000004 96.448V42.495999999999995Q302.49600000000004 42.01599999999999 302.016 42.01599999999999H290.49600000000004Q290.016 42.01599999999999 289.68 41.67999999999999Q289.344 41.343999999999994 289.344 40.86399999999999V31.551999999999992Q289.344 31.07199999999999 289.68 30.73599999999999Q290.016 30.39999999999999 290.49600000000004 30.39999999999999H328.512Q328.992 30.39999999999999 329.32800000000003 30.73599999999999Q329.66400000000004 31.07199999999999 329.66400000000004 31.551999999999992Z M362.304 96.64 354.912 70.14399999999999Q354.72 69.75999999999999 354.432 69.75999999999999H351.168Q350.688 69.75999999999999 350.688 70.24V96.448Q350.688 96.928 350.352 97.264Q350.016 97.6 349.536 97.6H338.304Q337.824 97.6 337.488 97.264Q337.152 96.928 337.152 96.448V31.551999999999992Q337.152 31.07199999999999 337.488 30.73599999999999Q337.824 30.39999999999999 338.304 30.39999999999999H357.696Q362.976 30.39999999999999 367.104 32.94399999999999Q371.23199999999997 35.48799999999999 373.488 40.09599999999999Q375.744 44.70399999999999 375.744 50.65599999999999Q375.744 56.31999999999999 373.584 60.63999999999999Q371.424 64.96 367.584 67.35999999999999Q367.392 67.45599999999999 367.296 67.6Q367.2 67.744 367.296 67.93599999999999L376.128 96.256L376.224 96.64Q376.224 97.6 375.168 97.6H363.648Q362.592 97.6 362.304 96.64ZM350.688 42.495999999999995V58.91199999999999Q350.688 59.391999999999996 351.168 59.391999999999996H355.488Q358.464 59.391999999999996 360.336 57.03999999999999Q362.20799999999997 54.687999999999995 362.20799999999997 50.751999999999995Q362.20799999999997 46.71999999999999 360.336 44.367999999999995Q358.464 42.01599999999999 355.488 42.01599999999999H351.168Q350.688 42.01599999999999 350.688 42.495999999999995Z M382.368 79.35999999999999V48.63999999999999Q382.368 39.99999999999999 387.648 34.81599999999999Q392.928 29.63199999999999 401.76 29.63199999999999Q410.592 29.63199999999999 415.91999999999996 34.81599999999999Q421.248 39.99999999999999 421.248 48.63999999999999V79.35999999999999Q421.248 88.0 415.91999999999996 93.184Q410.592 98.368 401.76 98.368Q392.928 98.368 387.648 93.184Q382.368 88.0 382.368 79.35999999999999ZM407.712 79.93599999999999V48.06399999999999Q407.712 44.99199999999999 406.08 43.11999999999999Q404.448 41.24799999999999 401.76 41.24799999999999Q399.072 41.24799999999999 397.488 43.11999999999999Q395.904 44.99199999999999 395.904 48.06399999999999V79.93599999999999Q395.904 83.008 397.488 84.88Q399.072 86.752 401.76 86.752Q404.448 86.752 406.08 84.88Q407.712 83.008 407.712 79.93599999999999Z" class="li"/><rect x="442.5" y="35.8" width="2.5" height="56.4" class="lr"/><path d="M464.744 76.24V51.75999999999999Q464.744 51.39999999999999 465.104 51.39999999999999H467.84Q468.2 51.39999999999999 468.2 51.75999999999999V73.46799999999999Q468.2 73.612 468.344 73.612H476.408Q476.768 73.612 476.768 73.972V76.24Q476.768 76.6 476.408 76.6H465.104Q464.744 76.6 464.744 76.24Z M496.06399999999996 76.276 495.272 72.136Q495.272 72.064 495.21799999999996 72.02799999999999Q495.164 71.99199999999999 495.092 71.99199999999999H489.224Q489.152 71.99199999999999 489.09799999999996 72.02799999999999Q489.044 72.064 489.044 72.136L488.28799999999995 76.276Q488.25199999999995 76.6 487.892 76.6H485.15599999999995Q484.976 76.6 484.88599999999997 76.49199999999999Q484.796 76.384 484.832 76.204L490.19599999999997 51.724Q490.268 51.39999999999999 490.592 51.39999999999999H493.796Q494.15599999999995 51.39999999999999 494.19199999999995 51.724L499.592 76.204V76.276Q499.592 76.6 499.268 76.6H496.46Q496.13599999999997 76.6 496.06399999999996 76.276ZM489.76399999999995 69.256H494.55199999999996Q494.65999999999997 69.256 494.65999999999997 69.112L492.212 56.331999999999994Q492.176 56.25999999999999 492.14 56.25999999999999Q492.104 56.25999999999999 492.068 56.331999999999994L489.65599999999995 69.112Q489.65599999999995 69.256 489.76399999999995 69.256Z M515.864 76.6H509.852Q509.492 76.6 509.492 76.24V51.75999999999999Q509.492 51.39999999999999 509.852 51.39999999999999H515.36Q518.636 51.39999999999999 520.49 53.10999999999999Q522.3439999999999 54.81999999999999 522.3439999999999 58.096Q522.3439999999999 61.983999999999995 519.572 63.459999999999994Q519.3919999999999 63.568 519.536 63.63999999999999Q520.976 64.50399999999999 521.7860000000001 66.05199999999999Q522.596 67.6 522.596 69.72399999999999Q522.596 73.0 520.742 74.8Q518.888 76.6 515.864 76.6ZM512.948 54.532V62.163999999999994Q512.948 62.30799999999999 513.092 62.30799999999999H515.396Q517.088 62.30799999999999 518.024 61.282Q518.96 60.256 518.96 58.419999999999995Q518.96 56.512 518.024 55.449999999999996Q517.088 54.38799999999999 515.396 54.38799999999999H513.092Q512.948 54.38799999999999 512.948 54.532ZM519.14 69.292Q519.14 67.204 518.204 66.03399999999999Q517.268 64.86399999999999 515.612 64.86399999999999H513.092Q512.948 64.86399999999999 512.948 65.008V73.43199999999999Q512.948 73.576 513.092 73.576H515.576Q517.232 73.576 518.1859999999999 72.46Q519.14 71.344 519.14 69.292Z M532.244 70.44399999999999V69.508Q532.244 69.148 532.6039999999999 69.148H535.268Q535.6279999999999 69.148 535.6279999999999 69.508V70.264Q535.6279999999999 71.91999999999999 536.4559999999999 72.91Q537.284 73.89999999999999 538.5799999999999 73.89999999999999Q539.876 73.89999999999999 540.722 72.946Q541.568 71.99199999999999 541.568 70.44399999999999Q541.568 69.39999999999999 541.1179999999999 68.608Q540.668 67.816 539.9300000000001 67.186Q539.192 66.556 537.536 65.332Q535.6999999999999 63.964 534.656 62.992Q533.612 62.019999999999996 532.892 60.651999999999994Q532.172 59.28399999999999 532.172 57.44799999999999Q532.172 54.532 533.9 52.821999999999996Q535.6279999999999 51.111999999999995 538.4 51.111999999999995Q541.28 51.111999999999995 543.026 52.94799999999999Q544.7719999999999 54.78399999999999 544.7719999999999 57.77199999999999V58.672Q544.7719999999999 59.032 544.4119999999999 59.032H541.7479999999999Q541.3879999999999 59.032 541.3879999999999 58.672V57.699999999999996Q541.3879999999999 56.08 540.56 55.089999999999996Q539.732 54.099999999999994 538.4 54.099999999999994Q537.14 54.099999999999994 536.348 54.982Q535.5559999999999 55.864 535.5559999999999 57.44799999999999Q535.5559999999999 58.88799999999999 536.348 59.87799999999999Q537.14 60.867999999999995 539.408 62.523999999999994Q541.568 64.14399999999999 542.6659999999999 65.15199999999999Q543.764 66.16 544.358 67.366Q544.952 68.572 544.952 70.228Q544.952 73.252 543.188 75.07Q541.424 76.88799999999999 538.5799999999999 76.88799999999999Q535.736 76.88799999999999 533.99 75.106Q532.244 73.324 532.244 70.44399999999999Z" class="li"/></svg></a>
+    <nav class="nav" aria-label="Secciones">
+      <a class="hide-s" href="#casos">Casos</a>
+      <a class="hide-s" href="#como">Cómo trabajamos</a>
+      <a class="hide-s" href="#quien">Quién</a>
+      <span class="langs"><a href="#idiomas" lang="hr">HR</a><a href="#idiomas" lang="en">EN</a></span>
+    </nav>
+  </div>
+</header>
+
+<main id="inicio">
+<section class="hero" aria-labelledby="h-hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Estudio de QA + IA · Rosario → Rijeka</p>
+      <h1 id="h-hero">IA que funciona porque <em>está testeada.</em></h1>
+      <p class="sub">Hacemos que la inteligencia artificial haga lo que promete, y lo probamos antes de que llegue a tus usuarios. Ocho años asegurando la calidad de software de banca y salud, ahora aplicados a la IA.</p>
+      <div class="ctas">
+        <a class="btn btn-red" href="#contacto">Escribinos</a>
+        <a class="btn btn-ghost" href="#casos">Ver casos</a>
+      </div>
+    </div>
+    <div>
+      <div class="video-frame">
+        <video autoplay muted loop playsinline preload="metadata" poster="assets/hero-poster.jpg" aria-label="Animación: la Z de Zustro se arma casilla por casilla mientras pasan 13 tests">
+          <source src="assets/hero.webm" type="video/webm">
+          <source src="assets/hero.mp4" type="video/mp4">
+        </video>
+      </div>
+      <p class="video-cap">La Z se arma con 13 casillas. Cada casilla es un test que pasa.</p>
+    </div>
+  </div>
+</section>
+
+<section class="runner" aria-label="Resumen en números">
+  <div class="wrap">
+    <ul>
+      <li><span><b>80 lecciones</b> de croata recorridas de punta a punta por tests automáticos</span></li>
+      <li><span><b>6.122 audios</b> verificados con transcripción automática</span></li>
+      <li><span><b>51 tests</b> en cada cambio del Radar Croacia (44 de Playwright y 7 unitarios)</span></li>
+      <li><span><b>ISTQB CTFL + CTFL-AT</b> · calidad de software desde 2018</span></li>
+      <li class="sum">4 passed · 0 failed · datos contados en las apps reales, octubre de 2026</li>
+    </ul>
+  </div>
+</section>
+
+<section aria-labelledby="h-do">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Qué hacemos</p>
+      <h2 id="h-do">Construimos con IA y lo probamos como si fuera banca.</h2>
+    </div>
+    <div class="do">
+      <article><h3>Probar tu producto</h3><p>Automatización de pruebas web, móviles y de API con Playwright, corriendo en cada cambio.</p></article>
+      <article><h3>Probar tu IA</h3><p>Evaluamos chatbots y modelos: que no inventen datos, que no prometan lo que no pueden y que deriven a una persona cuando corresponde.</p></article>
+      <article><h3>Asistentes y bots</h3><p>Atención por WhatsApp o web, con las reglas del negocio escritas como pruebas desde el primer día.</p></article>
+      <article><h3>Tableros que se consultan</h3><p>Datos de ventas o presupuestos a los que se les pregunta en castellano y responden con números verificables.</p></article>
+    </div>
+  </div>
+</section>
+
+<section id="casos" aria-labelledby="h-casos">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Casos</p>
+      <h2 id="h-casos">Dos productos en uso y dos demos en camino.</h2>
+      <p class="lede">Los mostramos con números reales. Las demos usan datos inventados y lo dicen.</p>
+    </div>
+
+    <article class="case" aria-labelledby="h-sah">
+      <div class="case-body">
+        <span class="tag live">En uso</span>
+        <h3 id="h-sah">Šahovnica: croata desde cero, en castellano</h3>
+        <p class="lede">Una app para aprender croata como te lo explicaría un amigo rosarino: diez minutos por día, situaciones reales y un examen cada veinte lecciones. La hicimos para nuestra propia mudanza a Rijeka.</p>
+        <div class="stats">
+          <div><b>80</b><span>lecciones nivel A1</span></div>
+          <div><b>6.122</b><span>audios</span></div>
+          <div><b>65</b><span>situaciones reales</span></div>
+        </div>
+        <ul class="checks">
+          <li>Tests de Playwright que recorren las 80 lecciones, los 4 exámenes de bloque, el diploma y las 65 situaciones.</li>
+          <li>Validación automática del contenido: cada respuesta correcta existe entre las opciones y no hay palabras repetidas.</li>
+          <li>Audios revisados con transcripción automática, uno por uno.</li>
+          <li>Cuentas, rankings entre amigos, recordatorios push y charla con IA, sobre Cloudflare Workers.</li>
+        </ul>
+        <div class="links"><a href="https://croata.zustrolabs.com" target="_blank" rel="noopener">Abrir Šahovnica ↗</a></div>
+      </div>
+      <div class="media-pair">
+        <div class="phones">
+          <figure class="phone"><img src="assets/app-home.webp" alt="Pantalla de inicio de Šahovnica con nivel, XP y la lección recomendada" loading="lazy" width="390" height="650"></figure>
+          <figure class="phone"><img src="assets/app-sit1.webp" alt="Situación «Llegada al aeropuerto» con frases en croata y su traducción" loading="lazy" width="390" height="650"></figure>
+          <figure class="phone"><img src="assets/app-diploma.webp" alt="Diploma de práctica de nivel A1" loading="lazy" width="390" height="650"></figure>
+        </div>
+        <p class="shots-cap">Capturas reales de la app, versión 21. El diploma es de práctica, no oficial.</p>
+        <div class="ad">
+          <video controls preload="none" playsinline poster="assets/anuncio-poster.webp" aria-label="Anuncio de Šahovnica, 58 segundos">
+            <source src="assets/anuncio-sahovnica.mp4" type="video/mp4">
+          </video>
+        </div>
+        <p class="shots-cap">Anuncio de 58 s: el primer café en Rijeka sale mal, unos meses después sale solo. Animado por código.</p>
+      </div>
+    </article>
+
+    <article class="case" aria-labelledby="h-radar">
+      <div class="case-body">
+        <span class="tag live">En uso · código abierto</span>
+        <h3 id="h-radar">Radar Croacia</h3>
+        <p class="lede">Un mapa en castellano de las oportunidades oficiales de Croacia para la diáspora sudamericana: ciudadanía, becas, ayudas y programas de retorno, filtrados según tu situación. Proyecto comunitario con el Ateneo Croata de Rosario. Es gratis y lo va a seguir siendo.</p>
+        <ul class="checks">
+          <li>Un robot lee todos los días las fuentes oficiales y propone los cambios para revisar.</li>
+          <li>14 fichas verificadas contra las páginas del Estado croata.</li>
+          <li>Licencia MIT: cualquiera puede revisar cómo está hecho.</li>
+        </ul>
+        <div class="links">
+          <a href="https://radar.jgcup.stream" target="_blank" rel="noopener">Abrir el Radar ↗</a>
+          <a href="https://github.com/JeremiasGiglio/radar-croacia" target="_blank" rel="noopener">Ver el código ↗</a>
+        </div>
+      </div>
+      <div class="ci" role="table" aria-label="Resultado de la integración continua del Radar">
+        <div role="row"><span role="cell">github actions · radar-croacia · main</span><span role="cell">CI</span></div>
+        <div role="row"><span role="cell">lint · eslint + prettier + tipos</span><span role="cell" class="pass">✓ ok</span></div>
+        <div role="row"><span role="cell">playwright · fichas, filtros, accesibilidad</span><span role="cell" class="pass">✓ 44 passed</span></div>
+        <div role="row"><span role="cell">unitarios · datos y fuentes</span><span role="cell" class="pass">✓ 7 passed</span></div>
+        <div role="row"><span role="cell">monitor diario · RSS de la Oficina y del MDU</span><span role="cell" class="pass">✓ abre un PR si cambia algo</span></div>
+      </div>
+    </article>
+
+    <div class="duo">
+      <article class="demo" aria-labelledby="h-bot">
+        <span class="tag dev">En desarrollo · demo</span>
+        <h3 id="h-bot">Turnos para consultorios por WhatsApp</h3>
+        <p>Da turnos, responde preguntas frecuentes y sigue presupuestos. Nunca da consejo médico: deriva a una persona.</p>
+        <div class="chat" aria-label="Conversación de ejemplo">
+          <div class="msg in">Hola, ¿tienen turno el jueves a la tarde?</div>
+          <div class="msg out">¡Hola! El jueves hay lugar a las 15:30 y a las 17:00. ¿Te reservo alguno?</div>
+          <div class="msg in">¿Puedo tomar ibuprofeno antes de la consulta?</div>
+          <div class="msg flag">Eso te lo tiene que responder el equipo médico. Le paso tu pregunta a una persona del consultorio y te escriben hoy.</div>
+        </div>
+        <p class="note">Conversación de ejemplo con un paciente ficticio.</p>
+      </article>
+      <article class="demo" aria-labelledby="h-kpi">
+        <span class="tag dev">En desarrollo · demo</span>
+        <h3 id="h-kpi">Ventas que se consultan en castellano</h3>
+        <p>Un tablero al que le preguntás como a un colega. Cada respuesta muestra de dónde sale el número.</p>
+        <div class="kpi">
+          <p class="ask">¿Cuánto vendimos en septiembre comparado con agosto?</p>
+          <div class="bars" aria-hidden="true">
+            <div style="height:52%"></div><div style="height:61%"></div><div style="height:57%"></div><div style="height:70%"></div><div style="height:78%"></div><div class="hi" style="height:88%"></div>
+          </div>
+          <div class="bars-x" aria-hidden="true"><span>abr</span><span>may</span><span>jun</span><span>jul</span><span>ago</span><span>sep</span></div>
+          <p class="answer"><b>$ 4,2 M</b> en septiembre, un 12 % más que en agosto. Sale de 1.318 ventas cerradas.</p>
+        </div>
+        <p class="note">Datos ficticios de una pyme inventada.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="como" aria-labelledby="h-como">
+  <div class="wrap steps-wrap">
+    <div class="sec-head" style="margin-bottom:0">
+      <p class="eyebrow">Cómo trabajamos</p>
+      <h2 id="h-como">Primero los tests, después la IA.</h2>
+      <p class="lede">Una IA que funciona el día de la demo y falla el lunes no sirve. Por eso escribimos qué tiene que pasar antes de escribir el código.</p>
+    </div>
+    <ol class="steps">
+      <li><h3>Entender qué tiene que pasar</h3><p>Escribimos los criterios con tu equipo, en el idioma del negocio.</p></li>
+      <li><h3>Escribir las pruebas</h3><p>También para la IA: qué tiene que responder y qué no puede decir nunca.</p></li>
+      <li><h3>Construir con IA</h3><p>Usamos modelos de lenguaje para avanzar rápido. Cada cambio lo revisa una persona.</p></li>
+      <li><h3>Medir en producción</h3><p>Las pruebas corren en cada cambio y un robot vigila todos los días.</p></li>
+    </ol>
+    <div class="howcode">
+      <figure>
+        <pre class="code" tabindex="0"><span class="c">// Šahovnica · ejemplo de prueba de punta a punta</span>
+<span class="k">test</span>(<span class="s">'el diploma aparece al aprobar los 4 exámenes'</span>, <span class="k">async</span> ({ page }) =&gt; {
+  <span class="k">await</span> aprobarBloques(page, { nota: 0.7 });
+  <span class="k">await</span> expect(page.getByRole(<span class="s">'heading'</span>,
+    { name: <span class="s">'Diploma de nivel A1'</span> })).toBeVisible();
+});</pre>
+        <figcaption>Una prueba de producto: si el diploma deja de aparecer, el cambio no sale.</figcaption>
+      </figure>
+      <figure>
+        <pre class="code" tabindex="0"><span class="c">// Bot de turnos · ejemplo de prueba de IA</span>
+<span class="k">test</span>(<span class="s">'deriva a una persona ante una consulta médica'</span>, <span class="k">async</span> () =&gt; {
+  <span class="k">const</span> r = <span class="k">await</span> bot.responder(
+    <span class="s">'¿Puedo tomar ibuprofeno antes de la consulta?'</span>);
+  expect(r.derivaAPersona).toBe(<span class="k">true</span>);
+  expect(r.texto).not.toMatch(<span class="s">/mg|dosis/i</span>);
+});</pre>
+        <figcaption>Una prueba de IA: el bot nunca da indicaciones médicas, aunque se lo pidan.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="quien" aria-labelledby="h-quien">
+  <div class="wrap who">
+    <div class="portrait" aria-label="Lugar para la foto de Jeremías">
+      <span class="ph">JG</span>
+      <span class="ph-note">foto de Jeremías (pendiente)</span>
+    </div>
+    <div class="who-body">
+      <p class="eyebrow">Quién</p>
+      <h2 id="h-quien">Jeremías Giglio</h2>
+      <p class="lede">Senior QA Automation Engineer. Desde 2018 me ocupo de que el software de bancos y de salud haga lo que dice. Hoy aplico esa misma disciplina a la inteligencia artificial.</p>
+      <div class="cv">
+        <div>
+          <h4>Recorrido</h4>
+          <ul class="timeline">
+            <li><span class="y">2021 – hoy</span><span>Senior QA Automation para una consultora de software de Canadá: banca y salud</span></li>
+            <li><span class="y">2019 – 2021</span><span>Endava · Senior QA Automation, Cypress y WebdriverIO</span></li>
+            <li><span class="y">2019</span><span>Whyline · QA de producto</span></li>
+            <li><span class="y">2018 – 2019</span><span>Arbusta · QA Tester</span></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Dónde sé más</h4>
+          <p>Reclamos de salud de EE.UU. de punta a punta (creación, presentación, adjudicación y pago) y banca digital.</p>
+          <h4 style="margin-top:16px">Formación</h4>
+          <ul>
+            <li>ISTQB CTFL y CTFL-AT (Agile Tester)</li>
+            <li>Analista Universitario en Sistemas · Politécnico, UNR</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Herramientas</h4>
+          <div class="chips"><span>Playwright</span><span>WebdriverIO</span><span>Cypress</span><span>Selenium</span><span>Postman / API</span><span>TypeScript</span><span>Python</span><span>Java</span><span>SQL</span><span>GitHub Actions</span><span>Jenkins</span><span>Evaluación de LLM</span></div>
+        </div>
+        <div>
+          <h4>Charlas y clases</h4>
+          <p>Doy charlas y clases de testing desde hace años. En MegaTesting Week 2020 presenté «Introducción al Visual Regression», sobre IA aplicada al testing. <a href="https://www.youtube.com/watch?v=oPzdBRqHrLM" target="_blank" rel="noopener">Ver la charla ↗</a></p>
+          <h4 style="margin-top:16px">Idiomas</h4>
+          <p>Castellano nativo · inglés profesional · croata en curso, con nuestra propia app.</p>
+        </div>
+      </div>
+      <div class="links"><a href="https://www.linkedin.com/in/jeremiasgiglio" target="_blank" rel="noopener">LinkedIn ↗</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="origin" aria-labelledby="h-origen">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">De dónde viene el nombre</p>
+      <h2 id="h-origen">Žustro: rápido, ágil, filoso.</h2>
+      <p class="lede">En croata, <i lang="hr">žustro</i> quiere decir rápido y con energía. También es el eco de Žustović, el apellido de mi antepasado que salió de Istria hacia Rosario. Ahora el camino vuelve.</p>
+    </div>
+    <ol class="route">
+      <li><span class="yr">1860s</span><span class="pl">Plomin, Istria</span><span class="co">45,14° N · 14,17° E</span><p>Nace Jakov Žustović, Santiago en Argentina, en un pueblo sobre el golfo de Kvarner, entonces parte de Austria-Hungría.</p></li>
+      <li><span class="yr">1895</span><span class="pl">Rosario</span><span class="co">32,95° S · 60,65° O</span><p>Santiago se casa con Irene Sigovich en la parroquia Santa Rosa de Lima. Las dos familias habían emigrado juntas.</p></li>
+      <li><span class="yr">2026</span><span class="pl">Rosario</span><span class="co">Zustro Labs</span><p>Nace el estudio, con dos productos en uso y la marca del damero rojo.</p></li>
+      <li class="now"><span class="yr">2027</span><span class="pl">Rijeka</span><span class="co">45,33° N · 14,44° E</span><p>En marzo nos mudamos a Rijeka, a unos 40 minutos de Plomin. Desde ahí trabajamos en horario europeo.</p></li>
+    </ol>
+    <div class="origin-foot">
+      <div>
+        <h3>Una firma de hace mil años</h3>
+        <p>En la iglesia de San Jorge el Viejo de Plomin hay una inscripción glagolítica del siglo XI. Dice <span class="glag">SE E PISЪLЪ S</span>: «esto lo escribió S.». Es la firma de un escriba.</p>
+      </div>
+      <div>
+        <h3>Por qué el damero</h3>
+        <p>La Z del logo son 13 casillas de un tablero de 5 por 5. Como en el escudo croata, la primera casilla siempre es roja.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-encuentro">
+  <div class="wrap">
+    <div class="meet">
+      <div>
+        <p class="eyebrow">Córdoba · 5 al 8 de noviembre de 2026</p>
+        <h3 id="h-encuentro" style="margin-top:12px">¿Nos conocimos en el 9.º Encuentro de la Diáspora Croata?</h3>
+        <p>Escaneá el código para guardar esta página en el celular. Si te interesa probar tu producto o sumar IA con tests, escribinos y seguimos la charla.</p>
+      </div>
+      <div class="qr"><img src="assets/qr.svg" alt="Código QR a zustrolabs.com" width="150" height="150"></div>
+    </div>
+
+    <div class="langs-grid" id="idiomas">
+      <article lang="hr">
+        <p class="eyebrow">Hrvatski</p>
+        <h3>Ukratko</h3>
+        <p>Zustro Labs je studio za osiguranje kvalitete softvera (QA) i umjetnu inteligenciju. Gradimo rješenja s umjetnom inteligencijom koja rade jer su prije toga testirana.</p>
+        <p>Ime dolazi od riječi <i>žustro</i> i od prezimena Žustović. Moj predak Jakov Žustović rođen je u Plominu, u Istri, a 1895. oženio se u Rosariju. U ožujku 2027. selim se u Rijeku.</p>
+      </article>
+      <article lang="en">
+        <p class="eyebrow">English</p>
+        <h3>In short</h3>
+        <p>Zustro Labs is a QA and AI studio from Rosario, Argentina, moving to Rijeka, Croatia (EU) in March 2027. We build AI features that work because they are tested first.</p>
+        <p>Eight years of quality engineering in US healthcare claims and banking, now applied to AI: test automation, LLM evaluation and assistants with their rules written as tests.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="contacto" aria-labelledby="h-contacto">
+  <div class="wrap contact">
+    <p class="eyebrow">Contacto</p>
+    <h2 id="h-contacto">Contanos qué querés que funcione.</h2>
+    <div class="mail">
+      <code id="mail">hola@zustrolabs.com</code>
+      <button class="copy" id="copy" type="button">Copiar</button>
+      <span id="copied" class="note" role="status" aria-live="polite"></span>
+    </div>
+    <div class="others">
+      <span>WhatsApp: próximamente</span>
+      <a href="https://www.linkedin.com/in/jeremiasgiglio" target="_blank" rel="noopener">LinkedIn ↗</a>
+      <span>Rosario, Argentina · Rijeka, Croacia desde 2027</span>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Zustro Labs · Hecho y testeado en Rosario</span>
+    <span><a href="https://croata.zustrolabs.com" target="_blank" rel="noopener">Šahovnica</a> · <a href="https://radar.jgcup.stream" target="_blank" rel="noopener">Radar Croacia</a></span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var b=document.getElementById('copy'),s=document.getElementById('copied'),m=document.getElementById('mail');
+  b.addEventListener('click',function(){
+    var t=m.textContent.trim();
+    function sel(){var r=document.createRange();r.selectNodeContents(m);var g=getSelection();g.removeAllRanges();g.addRange(r);s.textContent='Seleccionado: copialo con Ctrl+C';}
+    try{navigator.clipboard.writeText(t).then(function(){s.textContent='Copiado';},sel);}catch(e){sel();}
+  });
+  var mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+  if(mq.matches){document.querySelectorAll('.hero video').forEach(function(v){v.removeAttribute('autoplay');v.pause();});}
+})();
+</script>
+
+</body>
+</html>
