@@ -159,6 +159,12 @@ section+section{border-top:1px solid var(--line)}
 .msg.out{background:var(--fg);color:var(--bg);justify-self:end;border-bottom-right-radius:2px}
 .msg.flag{border:1px dashed var(--red);background:transparent;justify-self:end;color:var(--fg)}
 .note{font:400 .75rem var(--f-mono);color:var(--muted)}
+.vid{border-radius:6px;overflow:hidden;border:1px solid var(--line);aspect-ratio:16/9;background:var(--bg-2);max-width:100%}
+.vid video{width:100%;height:100%;display:block;object-fit:cover}
+.vid-dark{border-color:var(--band-line);background:#161C28}
+.vid-cap{font:400 .78rem/1.5 var(--f-mono);color:var(--muted);margin-top:8px}
+.origin .vid-cap{color:var(--band-muted)}
+.origin-video{margin-top:8px;max-width:960px}
 .kpi{background:var(--bg-2);border-radius:6px;padding:14px;display:grid;gap:12px}
 .ask{font-size:.95rem;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
 .bars{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;height:120px}
@@ -305,7 +311,7 @@ footer a{color:var(--muted)}
     </div>
     <div class="do">
       <article><h3>Probar tu producto</h3><p>Automatización de pruebas web, móviles y de API con Playwright, corriendo en cada cambio.</p></article>
-      <article><h3>Probar tu IA</h3><p>Evaluamos chatbots y modelos: que no inventen datos, que no prometan lo que no pueden y que deriven a una persona cuando corresponde.</p></article>
+      <article><h3>Probar tu IA</h3><p>Evaluamos chatbots y modelos: que no inventen datos, que no prometan lo que no pueden y que deriven a una persona cuando corresponda.</p></article>
       <article><h3>Asistentes y bots</h3><p>Atención por WhatsApp o web, con las reglas del negocio escritas como pruebas desde el primer día.</p></article>
       <article><h3>Tableros que se consultan</h3><p>Datos de ventas o presupuestos a los que se les pregunta en castellano y responden con números verificables.</p></article>
     </div>
@@ -383,27 +389,15 @@ footer a{color:var(--muted)}
         <span class="tag dev">En desarrollo · demo</span>
         <h3 id="h-bot">Turnos para consultorios por WhatsApp</h3>
         <p>Da turnos, responde preguntas frecuentes y sigue presupuestos. Nunca da consejo médico: deriva a una persona.</p>
-        <div class="chat" aria-label="Conversación de ejemplo">
-          <div class="msg in">Hola, ¿tienen turno el jueves a la tarde?</div>
-          <div class="msg out">¡Hola! El jueves hay lugar a las 15:30 y a las 17:00. ¿Te reservo alguno?</div>
-          <div class="msg in">¿Puedo tomar ibuprofeno antes de la consulta?</div>
-          <div class="msg flag">Eso te lo tiene que responder el equipo médico. Le paso tu pregunta a una persona del consultorio y te escriben hoy.</div>
-        </div>
-        <p class="note">Conversación de ejemplo con un paciente ficticio.</p>
+        <div class="vid"><video controls preload="none" playsinline poster="assets/demo-bot-poster.jpg" aria-label="Demo del bot de turnos con un paciente ficticio, 31 segundos"><source src="assets/demo-bot.mp4" type="video/mp4"></video></div>
+        <p class="note">Demo de 31 s · consultorio y paciente ficticios.</p>
       </article>
       <article class="demo" aria-labelledby="h-kpi">
         <span class="tag dev">En desarrollo · demo</span>
         <h3 id="h-kpi">Ventas que se consultan en castellano</h3>
         <p>Un tablero al que le preguntás como a un colega. Cada respuesta muestra de dónde sale el número.</p>
-        <div class="kpi">
-          <p class="ask">¿Cuánto vendimos en septiembre comparado con agosto?</p>
-          <div class="bars" aria-hidden="true">
-            <div style="height:52%"></div><div style="height:61%"></div><div style="height:57%"></div><div style="height:70%"></div><div style="height:78%"></div><div class="hi" style="height:88%"></div>
-          </div>
-          <div class="bars-x" aria-hidden="true"><span>abr</span><span>may</span><span>jun</span><span>jul</span><span>ago</span><span>sep</span></div>
-          <p class="answer"><b>$ 4,2 M</b> en septiembre, un 12 % más que en agosto. Sale de 1.318 ventas cerradas.</p>
-        </div>
-        <p class="note">Datos ficticios de una pyme inventada.</p>
+        <div class="vid"><video controls preload="none" playsinline poster="assets/demo-kpi-poster.jpg" aria-label="Demo del tablero de ventas con datos ficticios, 21 segundos"><source src="assets/demo-kpi.mp4" type="video/mp4"></video></div>
+        <p class="note">Demo de 21 s · datos ficticios de una pyme inventada.</p>
       </article>
     </div>
   </div>
@@ -422,6 +416,7 @@ footer a{color:var(--muted)}
       <li><h3>Construir con IA</h3><p>Usamos modelos de lenguaje para avanzar rápido. Cada cambio lo revisa una persona.</p></li>
       <li><h3>Medir en producción</h3><p>Las pruebas corren en cada cambio y un robot vigila todos los días.</p></li>
     </ol>
+    <figure style="margin:0"><div class="vid vid-dark"><video controls preload="none" playsinline poster="assets/tests-poster.jpg" aria-label="Corrida real de los tests de esta página, 22 segundos"><source src="assets/tests.mp4" type="video/mp4"></video></div><figcaption class="vid-cap">Corrida real de los tests de esta página: encontraron 4 fallas, las arreglamos y pasaron los 17.</figcaption></figure>
     <div class="howcode">
       <figure>
         <pre class="code" tabindex="0"><span class="c">// Šahovnica · ejemplo de prueba de punta a punta</span>
@@ -498,6 +493,7 @@ footer a{color:var(--muted)}
       <h2 id="h-origen">Žustro: rápido, ágil, filoso.</h2>
       <p class="lede">En croata, <i lang="hr">žustro</i> quiere decir rápido y con energía. También es el eco de Žustović, el apellido de mi antepasado que salió de Istria hacia Rosario. Ahora el camino vuelve.</p>
     </div>
+    <figure class="origin-video" style="margin:0 0 8px"><div class="vid vid-dark"><video controls preload="none" playsinline poster="assets/ruta-poster.jpg" aria-label="La ruta Plomin, Rosario, Rijeka, 32 segundos, con voz y subtítulos en castellano y croata"><source src="assets/ruta.mp4" type="video/mp4"></video></div><figcaption class="vid-cap">La ruta en 32 segundos, con subtítulos en castellano y croata.</figcaption></figure>
     <ol class="route">
       <li><span class="yr">1860s</span><span class="pl">Plomin, Istria</span><span class="co">45,14° N · 14,17° E</span><p>Nace Jakov Žustović, Santiago en Argentina, en un pueblo sobre el golfo de Kvarner, entonces parte de Austria-Hungría.</p></li>
       <li><span class="yr">1895</span><span class="pl">Rosario</span><span class="co">32,95° S · 60,65° O</span><p>Santiago se casa con Irene Sigovich en la parroquia Santa Rosa de Lima. Las dos familias habían emigrado juntas.</p></li>
