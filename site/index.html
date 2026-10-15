@@ -192,8 +192,15 @@ section+section{border-top:1px solid var(--line)}
 /* quién */
 .who{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:clamp(28px,5vw,64px);align-items:start}
 .portrait{position:relative;aspect-ratio:4/5;border-radius:4px;background:var(--bg-2);display:grid;place-items:center;overflow:hidden;max-width:100%}
-.portrait .ph{font:700 5rem/1 var(--f-display);color:var(--muted);opacity:.5}
-.portrait .ph-note{position:absolute;bottom:12px;left:12px;right:12px;font:400 .74rem var(--f-mono);color:var(--muted);text-align:center}
+.portrait img{width:100%;height:100%;object-fit:cover;display:block}
+.portrait-wrap{margin:0;display:grid;gap:10px;align-content:start;min-width:0}
+.portrait-wrap figcaption{font:400 .8rem/1.5 var(--f-mono);color:var(--muted)}
+.portrait::before{z-index:1}
+.talks{grid-column:1/-1;border-top:1px solid var(--line);padding-top:18px}
+.talks ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.talks li{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px}
+.talks .y{font:400 .84rem/1.6 var(--f-mono);color:var(--muted)}
+.talks .w{color:var(--muted)}
 .portrait::before{content:"";position:absolute;top:0;left:0;width:calc(var(--cell)*5);height:calc(var(--cell)*5);
   background:conic-gradient(from -90deg,var(--red) 25%,transparent 0 50%,var(--red) 0 75%,transparent 0) 0 0/calc(var(--cell)*2) calc(var(--cell)*2)}
 .who-body{display:grid;gap:22px;min-width:0}
@@ -206,7 +213,8 @@ section+section{border-top:1px solid var(--line)}
 .timeline .y{font:400 .84rem/1.6 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chips span{font:400 .8rem var(--f-mono);border:1px solid var(--line);padding:4px 8px;border-radius:3px}
-@media (max-width:860px){.who{grid-template-columns:minmax(0,1fr)}.portrait{max-width:320px}}
+@media (max-width:860px){.who{grid-template-columns:minmax(0,1fr)}.portrait-wrap{max-width:320px}}
+@media (max-width:520px){.talks li{grid-template-columns:minmax(0,1fr);gap:0}}
 @media (max-width:520px){.cv{grid-template-columns:minmax(0,1fr)}}
 
 /* origen */
@@ -443,14 +451,14 @@ footer a{color:var(--muted)}
 
 <section id="quien" aria-labelledby="h-quien">
   <div class="wrap who">
-    <div class="portrait" aria-label="Lugar para la foto de Jeremías">
-      <span class="ph">JG</span>
-      <span class="ph-note">foto de Jeremías (pendiente)</span>
-    </div>
+    <figure class="portrait-wrap">
+      <div class="portrait"><img src="assets/jeremias.webp" alt="Jeremías Giglio sonriendo, con remera amarilla y un diploma en la mano" width="640" height="800"></div>
+      <figcaption>Con el diploma de una competencia de pérdida de peso: bajé 40 kilos. Lo que se mide, se mejora.</figcaption>
+    </figure>
     <div class="who-body">
       <p class="eyebrow">Quién</p>
       <h2 id="h-quien">Jeremías Giglio</h2>
-      <p class="lede">Senior QA Automation Engineer. Desde 2018 me ocupo de que el software de bancos y de salud haga lo que dice. Hoy aplico esa misma disciplina a la inteligencia artificial.</p>
+      <p class="lede">Senior QA Automation Engineer. Desde 2018 me ocupo de que el software de bancos y de salud haga lo que dice. En 2020 ya daba charlas sobre inteligencia artificial y testing; hoy aplico esa disciplina a la IA.</p>
       <div class="cv">
         <div>
           <h4>Recorrido</h4>
@@ -475,10 +483,18 @@ footer a{color:var(--muted)}
           <div class="chips"><span>Playwright</span><span>WebdriverIO</span><span>Cypress</span><span>Selenium</span><span>Postman / API</span><span>TypeScript</span><span>Python</span><span>Java</span><span>SQL</span><span>GitHub Actions</span><span>Jenkins</span><span>Evaluación de LLM</span></div>
         </div>
         <div>
-          <h4>Charlas y clases</h4>
-          <p>Doy charlas y clases de testing desde hace años. En MegaTesting Week 2020 presenté «Introducción al Visual Regression», sobre IA aplicada al testing. <a href="https://www.youtube.com/watch?v=oPzdBRqHrLM" target="_blank" rel="noopener">Ver la charla ↗</a></p>
-          <h4 style="margin-top:16px">Idiomas</h4>
+          <h4>Idiomas</h4>
           <p>Castellano nativo · inglés profesional · croata en curso, con nuestra propia app.</p>
+        </div>
+        <div class="talks">
+          <h4>Charlas y clases</h4>
+          <ul>
+            <li><span class="y">nov 2021</span><span>«API Testing», clase online gratuita <span class="w">· Catu Testing y B&amp;B Consultores</span></span></li>
+            <li><span class="y">oct 2021</span><span>«Testing manual y automation», dos clases online gratuitas <span class="w">· Catu Testing y B&amp;B Consultores</span></span></li>
+            <li><span class="y">nov 2020</span><span>«Introducción al visual testing» <span class="w">· Endava, ciclo WebStories</span></span></li>
+            <li><span class="y">sep 2020</span><span>«Introducción al Visual Regression» <span class="w">· Endava en Mega Testing Week</span> · <a href="https://www.youtube.com/watch?v=oPzdBRqHrLM" target="_blank" rel="noopener">ver la charla ↗</a></span></li>
+            <li><span class="y">may 2020</span><span>«Principios de inteligencia artificial: una mirada desde testing» <span class="w">· Endava, ciclo WebStories</span></span></li>
+          </ul>
         </div>
       </div>
       <div class="links"><a href="https://www.linkedin.com/in/jeremiasgiglio" target="_blank" rel="noopener">LinkedIn ↗</a></div>
