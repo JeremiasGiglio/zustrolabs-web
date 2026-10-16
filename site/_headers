@@ -1,8 +1,24 @@
 /*
   X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; img-src 'self' data:; media-src 'self'; frame-ancestors 'none'; base-uri 'self'
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self' https://cloudflareinsights.com https://formsubmit.co; form-action 'self' https://formsubmit.co; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests
 
+# Imágenes y videos: una semana en caché.
 /assets/*
   Cache-Control: public, max-age=604800
+
+# La hoja de estilos y el script cambian con cada publicación: se revalidan siempre (Cloudflare responde 304 si no cambiaron).
+/assets/site.css
+  Cache-Control: public, max-age=0, must-revalidate
+/assets/site.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Las páginas de apoyo no van a buscadores.
+/expo/*
+  X-Robots-Tag: noindex
+/pantalla/*
+  X-Robots-Tag: noindex
