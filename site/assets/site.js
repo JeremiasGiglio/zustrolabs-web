@@ -8,11 +8,16 @@
       var open = nav.classList.toggle('open');
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
+    var cerrar = function () { nav.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
     nav.addEventListener('click', function (e) {
-      if (e.target.tagName === 'A' && nav.classList.contains('open')) {
-        nav.classList.remove('open');
-        btn.setAttribute('aria-expanded', 'false');
-      }
+      if (e.target.tagName === 'A' && nav.classList.contains('open')) cerrar();
+    });
+    // Escape o un toque fuera del menú lo cierran
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && nav.classList.contains('open')) { cerrar(); btn.focus(); }
+    });
+    document.addEventListener('click', function (e) {
+      if (nav.classList.contains('open') && !nav.contains(e.target) && !btn.contains(e.target)) cerrar();
     });
   }
 

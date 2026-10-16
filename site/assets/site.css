@@ -460,3 +460,31 @@ footer{border-top:1px solid var(--line);padding-block:40px 32px;color:var(--mute
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .form-card{border-color:var(--fg);box-shadow:0 0 32px rgba(0,0,0,.6)}:root:not([data-theme="light"]) .form-card:hover{border-color:var(--red)}}
 @media (max-width:560px){.form-card{box-shadow:0 0 24px rgba(0,0,0,.2)}}
 @media (prefers-reduced-motion: reduce){.form-card{transition:none}.form-card:hover{transform:none}}
+
+/* ===== Celular (ZL-72). Todo va dentro de media queries: la versión de computadora no cambia. ===== */
+.menu-btn .x{display:none}
+@media (max-width:900px){
+  /* cabecera: logo a la izquierda; modo oscuro y menú juntos, el menú a la derecha del todo */
+  .top .wrap{gap:8px}
+  .top .logo{margin-right:auto}
+  .theme-btn{order:2;margin-left:0;width:44px;height:44px}
+  .menu-btn{order:3;margin-left:0;display:grid;place-items:center;width:44px;height:44px;padding:0}
+  .menu-btn[aria-expanded="true"] .bars{display:none}
+  .menu-btn[aria-expanded="true"] .x{display:block}
+  /* menú abierto: se separa del contenido y, si no entra, se desplaza */
+  .nav{box-shadow:0 22px 30px -20px rgba(0,0,0,.45);max-height:calc(100dvh - 68px);overflow-y:auto;overscroll-behavior:contain}
+  /* idioma: tres botones iguales, cómodos para el dedo */
+  .nav .lang{align-self:stretch;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:18px;padding:4px;border-radius:4px;font-size:.9rem}
+  .nav .lang a{display:grid;place-items:center;min-height:44px;padding:0;border-bottom:0;border-radius:3px;font-size:inherit;letter-spacing:.14em}
+  .nav .btn{min-height:50px;justify-content:center}
+}
+@media (max-width:560px){
+  .hero .kicker{letter-spacing:.06em;line-height:1.25}
+  /* botones principales a lo ancho, uno debajo del otro */
+  .hero .ctas{flex-direction:column;align-items:stretch}
+  .hero .ctas .btn{width:100%;min-height:52px}
+  /* el teléfono de ejemplo, centrado */
+  .hero .phone-col{justify-items:center}
+  .hero .phone-cap{text-align:center}
+  .contact-alt .copy{min-height:36px;padding:8px 14px}
+}
