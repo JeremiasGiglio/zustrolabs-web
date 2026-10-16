@@ -67,9 +67,11 @@
   }
 })();
 
-// Formulario de contacto: valida, manda a FormSubmit y, si falla, ofrece el correo con el mensaje armado.
+// Formulario de contacto: valida, lo manda a /api/contacto (Worker propio en Cloudflare, ver worker/)
+// y, si falla, ofrece el correo con el mensaje armado. Nada de lo que escribe la persona se mete como HTML.
 (function () {
   var form = document.getElementById('form-contacto'); if (!form) return;
+  var inicio = Date.now();
   var err = document.getElementById('form-error'), ok = document.getElementById('form-ok'), fail = document.getElementById('form-fail');
   var mailto = document.getElementById('form-mailto'), enviar = document.getElementById('form-enviar'), d = form.dataset;
   function mostrar(cual) { form.hidden = cual !== 'form'; ok.hidden = cual !== 'ok'; fail.hidden = cual !== 'fail'; }
@@ -92,18 +94,21 @@
     var problema = validar();
     if (problema) { err.textContent = problema; err.hidden = false; return; }
     err.hidden = true;
-    // FormSubmit convierte este JSON en un correo a hola@zustrolabs.com (sin cuenta ni clave; el primer envío pide confirmar el destino)
-    var datos = { name: valor('nombre'), email: valor('email'), phone: valor('telefono'), topic: valor('tema'), message: valor('mensaje'), page: location.pathname, lang: document.documentElement.lang,
-      _subject: d.asunto + ' · ' + valor('tema') + ' · ' + valor('nombre'), _replyto: valor('email'), _template: 'table', _captcha: 'false', _honey: valor('web') };
+    // El Worker valida todo de nuevo y lo manda por correo a la casilla del estudio; no guarda nada.
+    // «web» es el campo trampa y «t» los milisegundos desde que cargó el formulario (un bot tarda menos de 2,5 s).
+    var datos = { nombre: valor('nombre'), email: valor('email'), telefono: valor('telefono'), tema: valor('tema'), mensaje: valor('mensaje'),
+      pagina: location.pathname, idioma: document.documentElement.lang, web: valor('web'), t: Date.now() - inicio };
     enviar.disabled = true; enviar.textContent = d.enviando;
-    fetch(form.getAttribute('action'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(datos) })
+    var corte = typeof AbortController === 'function' ? new AbortController() : null;
+    var reloj = corte ? setTimeout(function () { corte.abort(); }, 15000) : 0;
+    fetch(form.getAttribute('action'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(datos), credentials: 'omit', signal: corte ? corte.signal : undefined })
       .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-      .then(function (j) { if (!j || !(j.success === true || j.success === 'true')) throw new Error('respuesta'); mostrar('ok'); form.reset(); })
+      .then(function (j) { if (!j || j.ok !== true) throw new Error('respuesta'); mostrar('ok'); form.reset(); })
       .catch(function () {
-        var cuerpo = [datos.name, datos.email, datos.phone, datos.topic, '', datos.message].filter(Boolean).join('\n');
-        mailto.href = 'mailto:hola@zustrolabs.com?subject=' + encodeURIComponent(d.asunto + ' · ' + datos.name) + '&body=' + encodeURIComponent(cuerpo);
+        var cuerpo = [datos.nombre, datos.email, datos.telefono, datos.tema, '', datos.mensaje].filter(Boolean).join('\n');
+        mailto.href = 'mailto:hola@zustrolabs.com?subject=' + encodeURIComponent(d.asunto + ' · ' + datos.nombre) + '&body=' + encodeURIComponent(cuerpo);
         mostrar('fail');
       })
-      .then(function () { enviar.disabled = false; enviar.textContent = d.enviar; });
+      .then(function () { clearTimeout(reloj); enviar.disabled = false; enviar.textContent = d.enviar; });
   });
 })();

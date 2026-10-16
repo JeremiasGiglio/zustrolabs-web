@@ -252,7 +252,7 @@
                 <li>ISTQB CTFL i CTFL-AT (Agile Tester)</li>
                 <li>Sveučilišni analitičar sustava · Politécnico, UNR</li>
               </ul>
-              <h4 style="margin-top:18px">Alati</h4>
+              <h4 class="cv-sep">Alati</h4>
               <p>Playwright, WebdriverIO, Cypress, Selenium, Postman, TypeScript, Python, Java, SQL, GitHub Actions, Jenkins, evaluacija jezičnih modela.</p>
             </div>
             <div class="talks">
@@ -301,10 +301,10 @@
       <p class="lede">Svojim riječima, bez stručnih izraza. Odgovara vam osoba.</p>
     </div>
     <div class="form-card">
-      <form id="form-contacto" method="post" action="https://formsubmit.co/ajax/hola@zustrolabs.com" novalidate
+      <form id="form-contacto" method="post" action="/api/contacto" novalidate
         data-err-nombre="Recite nam svoje ime." data-err-contacto="Ostavite e-poštu ili telefon da vam možemo odgovoriti." data-err-email="Ta e-pošta ne izgleda ispravno." data-err-mensaje="Recite nam ukratko što trebate." data-enviando="Šaljem…" data-enviar="Pošalji →" data-asunto="Upit s web stranice">
         <div class="f-grid">
-          <label>Ime<input name="nombre" required autocomplete="name" placeholder="npr. Lucija Benić"></label>
+          <label>Ime<input name="nombre" type="text" maxlength="100" required autocomplete="name" placeholder="npr. Lucija Benić"></label>
           <label>Što trebate<select name="tema">
             <option value="WhatsApp agent">WhatsApp agenta</option>
             <option value="Moje brojke običnim jezikom">Moje brojke običnim jezikom</option>
@@ -312,11 +312,11 @@
             <option value="Pregled nečega što već imam">Pregled nečega što već imam</option>
             <option value="Ostalo">Ostalo</option>
           </select></label>
-          <label>E-pošta<input name="email" type="email" autocomplete="email" inputmode="email" placeholder="lucija@vasa-posta.hr"></label>
-          <label>Telefon<input name="telefono" type="tel" autocomplete="tel" inputmode="tel" placeholder="+385 ..."></label>
+          <label>E-pošta<input name="email" maxlength="254" type="email" autocomplete="email" inputmode="email" placeholder="lucija@vasa-posta.hr"></label>
+          <label>Telefon<input name="telefono" maxlength="40" type="tel" autocomplete="tel" inputmode="tel" placeholder="+385 ..."></label>
           <p class="f-hint full">Dovoljna je e-pošta ili telefon.</p>
           <label class="full">Recite nam ukratko<textarea name="mensaje" rows="4" required maxlength="500" placeholder="npr. želim da agent odgovara na termine moje ordinacije na WhatsAppu"></textarea></label>
-          <label class="hp" aria-hidden="true">Ostavite prazno<input name="web" tabindex="-1" autocomplete="off"></label>
+          <label class="hp" aria-hidden="true">Ostavite prazno<input name="web" type="text" maxlength="200" tabindex="-1" autocomplete="off"></label>
         </div>
         <p class="f-error" id="form-error" role="alert" hidden></p>
         <div class="f-actions"><button class="btn btn-red" type="submit" id="form-enviar">Pošalji →</button></div>

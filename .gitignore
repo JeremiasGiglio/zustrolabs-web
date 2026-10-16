@@ -5,3 +5,5 @@ playwright-report/
 privado/
 *.zip
 .playwright/
+.wrangler/
+.dev.vars

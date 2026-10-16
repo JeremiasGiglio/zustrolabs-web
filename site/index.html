@@ -252,7 +252,7 @@
                 <li>ISTQB CTFL y CTFL-AT (Agile Tester)</li>
                 <li>Analista Universitario en Sistemas · Politécnico, UNR</li>
               </ul>
-              <h4 style="margin-top:18px">Herramientas</h4>
+              <h4 class="cv-sep">Herramientas</h4>
               <p>Playwright, WebdriverIO, Cypress, Selenium, Postman, TypeScript, Python, Java, SQL, GitHub Actions, Jenkins, evaluación de modelos de lenguaje.</p>
             </div>
             <div class="talks">
@@ -301,10 +301,10 @@
       <p class="lede">En tus palabras, sin tecnicismos. Te responde una persona.</p>
     </div>
     <div class="form-card">
-      <form id="form-contacto" method="post" action="https://formsubmit.co/ajax/hola@zustrolabs.com" novalidate
+      <form id="form-contacto" method="post" action="/api/contacto" novalidate
         data-err-nombre="Decinos tu nombre." data-err-contacto="Dejanos un correo o un teléfono para responderte." data-err-email="Ese correo no parece válido." data-err-mensaje="Contanos un poco qué necesitás." data-enviando="Enviando…" data-enviar="Enviar →" data-asunto="Consulta desde la web">
         <div class="f-grid">
-          <label>Nombre<input name="nombre" required autocomplete="name" placeholder="Ej.: Lucía Benítez"></label>
+          <label>Nombre<input name="nombre" type="text" maxlength="100" required autocomplete="name" placeholder="Ej.: Lucía Benítez"></label>
           <label>Qué necesitás<select name="tema">
             <option value="Agente de WhatsApp">Un agente de WhatsApp</option>
             <option value="Mis números en castellano">Mis números en castellano</option>
@@ -312,11 +312,11 @@
             <option value="Revisar algo que ya tengo">Revisar algo que ya tengo</option>
             <option value="Otros">Otros</option>
           </select></label>
-          <label>Correo<input name="email" type="email" autocomplete="email" inputmode="email" placeholder="lucia@tucorreo.com"></label>
-          <label>Teléfono<input name="telefono" type="tel" autocomplete="tel" inputmode="tel" placeholder="+54 9 341 ..."></label>
+          <label>Correo<input name="email" maxlength="254" type="email" autocomplete="email" inputmode="email" placeholder="lucia@tucorreo.com"></label>
+          <label>Teléfono<input name="telefono" maxlength="40" type="tel" autocomplete="tel" inputmode="tel" placeholder="+54 9 341 ..."></label>
           <p class="f-hint full">Con un correo o un teléfono alcanza.</p>
           <label class="full">Contanos un poco<textarea name="mensaje" rows="4" required maxlength="500" placeholder="Ej.: quiero que un agente responda los turnos del consultorio por WhatsApp"></textarea></label>
-          <label class="hp" aria-hidden="true">No completar<input name="web" tabindex="-1" autocomplete="off"></label>
+          <label class="hp" aria-hidden="true">No completar<input name="web" type="text" maxlength="200" tabindex="-1" autocomplete="off"></label>
         </div>
         <p class="f-error" id="form-error" role="alert" hidden></p>
         <div class="f-actions"><button class="btn btn-red" type="submit" id="form-enviar">Enviar →</button></div>

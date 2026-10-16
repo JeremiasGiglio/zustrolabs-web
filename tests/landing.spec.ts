@@ -14,7 +14,8 @@ const PAGINAS = [
     prohibidas: [/\bcijen/i,/\btvrtk/i, /\bpoduzeć/i, /d\.o\.o\./i] },
 ] as const;
 
-const COMUNES = [/\bdeel\b/i, /\bblanc labs\b/i, /USD|U\$S|US\$/, /\$\s?\d/];
+// El nombre del cliente actual no se escribe en este repo público: lo controla tests/seguridad.spec.ts por hash.
+const COMUNES = [/\bdeel\b/i, /USD|U\$S|US\$/, /\$\s?\d/];
 
 for (const p of PAGINAS) {
   test.describe(`${p.lang} · ${p.url}`, () => {
@@ -145,19 +146,28 @@ for (const p of PAGINAS) {
         await expect(page.locator('#form-error')).toContainText(/correo|email|e-po/i);
         // con teléfono alcanza: se envía y muestra la confirmación
         let enviado: any = null;
-        await page.route('**/formsubmit.co/**', async (route) => { enviado = route.request().postDataJSON(); await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":"true"}' }); });
+        let pedido: any = null;
+        await page.route('**/api/contacto', async (route) => { pedido = route.request(); enviado = pedido.postDataJSON(); await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }); });
         await f.locator('[name=telefono]').fill('+54 341 555 0000');
         await f.locator('#form-enviar').click();
         await expect(page.locator('#form-ok')).toBeVisible();
-        expect(enviado.name).toBe('Prueba');
-        expect(enviado.phone).toBe('+54 341 555 0000');
-        expect(enviado._captcha).toBe('false');
-        expect(enviado.lang).toBe(p.lang);
+        // va al Worker propio, del mismo origen, por POST y en JSON
+        expect(new URL(pedido.url()).pathname).toBe('/api/contacto');
+        expect(new URL(pedido.url()).origin).toBe(new URL(page.url()).origin);
+        expect(pedido.method()).toBe('POST');
+        expect(pedido.headers()['content-type']).toMatch(/^application\/json/);
+        expect(enviado.nombre).toBe('Prueba');
+        expect(enviado.telefono).toBe('+54 341 555 0000');
+        expect(enviado.idioma).toBe(p.lang);
+        expect(enviado.web).toBe('');
+        expect(typeof enviado.t).toBe('number');
+        // nada de lo escrito queda en la dirección de la página
+        expect(page.url()).not.toMatch(/Prueba|555|\?/);
       });
 
       test('si el envío falla, el formulario ofrece el correo con el mensaje armado', async ({ page }) => {
         await page.goto(p.url);
-        await page.route('**/formsubmit.co/**', (route) => route.fulfill({ status: 502, contentType: 'application/json', body: '{"success":"false"}' }));
+        await page.route('**/api/contacto', (route) => route.fulfill({ status: 502, contentType: 'application/json', body: '{"ok":false,"error":"envio"}' }));
         const f = page.locator('#form-contacto');
         await f.scrollIntoViewIfNeeded();
         await f.locator('[name=nombre]').fill('Prueba');
@@ -290,13 +300,13 @@ test.describe('cabeceras de seguridad (site/_headers)', () => {
     const { readFileSync } = await import('node:fs');
     const h = readFileSync('site/_headers', 'utf8');
     for (const must of [
-      "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'", "form-action 'self' https://formsubmit.co",
+      "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'", "form-action 'self';",
       'Strict-Transport-Security: max-age=31536000', 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY',
       '/assets/site.css\n  Cache-Control: public, max-age=0, must-revalidate',
     ]) expect(h, `falta ${must}`).toContain(must);
     expect(h).not.toMatch(/unsafe-eval/);
     // ningún origen fuera de la lista acordada en SEGURIDAD.md
-    const permitidos = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://static.cloudflareinsights.com', 'https://cloudflareinsights.com', 'https://formsubmit.co'];
+    const permitidos = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://static.cloudflareinsights.com', 'https://cloudflareinsights.com'];
     for (const o of h.match(/https:\/\/[a-z0-9.-]+/g) ?? []) expect(permitidos, `origen no acordado: ${o}`).toContain(o);
   });
 });
