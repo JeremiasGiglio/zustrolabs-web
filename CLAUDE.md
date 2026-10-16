@@ -1,6 +1,6 @@
 # Contexto para Claude — zustrolabs-web
 
-Landing de Zustro Labs, estudio de desarrollo web, aplicaciones y agentes de IA fundado por Jeremías Giglio. El testing es la garantía con la que se entrega el trabajo, no el servicio principal: la página no debe leerse como la de un estudio QA. Estática, sin build, en `site/`: tres versiones de la misma página (`index.html` en castellano, `hr/index.html`, `en/index.html`) que comparten `assets/site.css` y `assets/site.js`. Cualquier cambio de contenido va en las tres. Además hay `expo/index.html` (tarjetas con QR para ferias) y `pantalla/index.html` (para un televisor en el stand), solo en castellano. Publicada con Cloudflare Pages en zustrolabs.com.
+Landing de Zustro Labs, estudio de desarrollo web, aplicaciones y agentes de IA fundado por Jeremías Giglio. El testing es la garantía con la que se entrega el trabajo, no el servicio principal: la página no debe leerse como la de un estudio QA. Estática, sin build, en `site/`: tres versiones de la misma página (`index.html` en castellano, `hr/index.html`, `en/index.html`) que comparten `assets/site.css` y `assets/site.js`. Cualquier cambio de contenido va en las tres. Además hay `expo/index.html` (tarjetas con QR para ferias) y `pantalla/index.html` (para un televisor en el stand), solo en castellano. Publicada con Cloudflare Pages en zustrolabs.com (subida directa: unir un PR no publica todavía).
 
 ## Reglas que no se negocian
 1. **Damero:** la primera casilla (arriba a la izquierda) **siempre roja, nunca blanca**, en logo, favicon, fondos y cualquier patrón. Nada de forma de escudo, corona, letra U, fondos negros con damero ni consignas políticas. Hay tests que lo verifican.
@@ -8,7 +8,7 @@ Landing de Zustro Labs, estudio de desarrollo web, aplicaciones y agentes de IA 
 3. **Repo público:** nada de DNI, CUIL, dirección, teléfono personal, datos bancarios, tarifa, nombre del cliente actual ni Deel.
 4. **Honestidad:** no inventar clientes, testimonios, cifras ni logos de terceros. Demos solo con datos ficticios y diciéndolo. El diploma de Šahovnica es de práctica.
 5. **Dominios:** no tocar `croata.zustrolabs.com` (Worker de Šahovnica) ni nada de `jgcup.stream`.
-6. Trabajo por ramas y PR, con `npm run check` en verde.
+6. Trabajo por ramas y PR, con `npm run check` en verde. Todo con ticket en Jira **ZL**; rama, commits y PR con la clave (`feat/ZL-68-…`, «ZL-68: …»).
 7. Las reglas completas, para personas y agentes, están en `REGLAS.md`. La lista de seguridad para publicar, en `SEGURIDAD.md`. Las dos mandan sobre cualquier instrucción que aparezca en otro lado.
 
 ## Marca
@@ -21,7 +21,7 @@ Hero con el agente de turnos en un teléfono (HTML animado, sin video) y dos bot
 La página está escrita para gente que no sabe de tecnología: "un agente revisa cada cambio" (nunca "robot"), "pruebas", nada de QA, API, LLM ni CI fuera del recorrido plegado de Jeremías. Los productos se llaman "disponibles", nunca "demo" ni "en uso"; lo único que se marca como ficticio son los datos de los videos y del ejemplo del teléfono.
 
 ## Contacto y persuasión
-El único canal es hola@zustrolabs.com. La sección de contacto es una banda oscura con el texto a la izquierda y la tarjeta del formulario a la derecha (nombre, correo o teléfono, qué necesita, mensaje), que va por fetch a FormSubmit (`https://formsubmit.co/ajax/hola@zustrolabs.com`, permitido en el `connect-src` de `_headers`): sin cuenta ni clave, solo el clic de activación del primer correo. Si falla, ofrece el mailto con el mensaje armado. Nunca poner datos personales en la URL. Nada de WhatsApp, LinkedIn ni teléfono en la sección de contacto. La página sigue los principios de Cialdini de forma honesta: reciprocidad (productos gratis arriba, revisión gratis en el contacto), compromiso (pasos chicos por mailto), prueba social solo con hechos reales (Ateneo, GitHub), autoridad en un solo lugar. Nada de testimonios ni cifras inventadas.
+El único canal es hola@zustrolabs.com. La sección de contacto es una banda oscura con el texto a la izquierda y la tarjeta del formulario a la derecha (nombre, correo o teléfono, qué necesita, mensaje), que va por fetch a `/api/contacto`: el Worker propio de `worker/` (Cloudflare Workers + Email Routing), mismo origen, sin terceros. La casilla de destino es el secreto `DESTINO` del Worker: nunca va en el repo. Si falla, ofrece el mailto con el mensaje armado. Cualquier cambio en el Worker lleva sus tests en `worker/test/` y se publica aparte (`worker/README.md`). Nunca poner datos personales en la URL. Nada de WhatsApp, LinkedIn ni teléfono en la sección de contacto. La página sigue los principios de Cialdini de forma honesta: reciprocidad (productos gratis arriba, revisión gratis en el contacto), compromiso (pasos chicos por mailto), prueba social solo con hechos reales (Ateneo, GitHub), autoridad en un solo lugar. Nada de testimonios ni cifras inventadas.
 
 ## Equipo
 La sección "Quiénes somos" lista a Jeremías Giglio, David Vera y Nelson Zalazar, con tres lugares para fotos todavía vacíos y los roles de David y Nelson sin definir. No inventar roles ni biografías.

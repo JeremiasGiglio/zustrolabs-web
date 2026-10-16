@@ -8,6 +8,7 @@ Valen para personas y para agentes de IA por igual. Si una tarea obliga a romper
 - Nunca se borra un test "porque molesta". Nunca se marca `test.skip` para pasar.
 
 ## 2. Trabajo por ramas y PR
+- Todo trabajo tiene ticket en Jira, proyecto **ZL** (https://davidveracontacto.atlassian.net/jira/software/projects/ZL/boards/67). La rama, los commits y el título del PR llevan la clave: `feat/ZL-68-landing-v2`, «ZL-68: …».
 - `main` es lo que está publicado. Nadie hace push directo a `main`; todo entra por PR con la CI en verde.
 - Prohibido `git push --force` sobre `main`. Prohibido reescribir historia compartida.
 - Un PR hace una cosa. Si tocás tres cosas, son tres PR.
@@ -36,11 +37,11 @@ Valen para personas y para agentes de IA por igual. Si una tarea obliga a romper
 
 ## 8. Dominios y servicios ajenos
 - No se toca `croata.zustrolabs.com` (Worker de Šahovnica), `radar.zustrolabs.com` (Radar) ni nada de `jgcup.stream` desde este repo. Solo se enlazan.
-- El correo de contacto es `hola@zustrolabs.com` y el envío va por FormSubmit a esa casilla. No se cambia el destino ni el servicio sin una decisión escrita de Jeremías.
+- El correo de contacto es `hola@zustrolabs.com`. El formulario va al Worker propio `worker/` (`/api/contacto`), que manda el correo con Cloudflare Email Routing. La casilla de destino es un secreto del Worker y nunca se escribe en el repo. No se cambia el destino ni se suma un servicio de terceros sin una decisión escrita de Jeremías.
 
 ## 9. Sitio estático, sin build, sin dependencias de producción
 - No se agregan frameworks, bundlers ni dependencias que corran en el navegador. Solo `devDependencies` para los tests.
-- Scripts y estilos externos permitidos: Google Fonts, Cloudflare Web Analytics y FormSubmit. Cualquier otro requiere actualizar la CSP en `site/_headers`, leer `SEGURIDAD.md` y decirlo en el PR. Nada de iframes.
+- Scripts y estilos externos permitidos: Google Fonts y Cloudflare Web Analytics. Cualquier otro requiere actualizar la CSP en `site/_headers`, leer `SEGURIDAD.md` y decirlo en el PR. Nada de iframes.
 - `site/_headers` no se afloja. Se puede endurecer.
 
 ## 10. Texto

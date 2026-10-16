@@ -18,35 +18,24 @@ Esta carpeta es la landing de Zustro Labs completa, lista para subir a GitHub y 
 
 No hay `node_modules/` ni resultados de tests en la entrega: se regeneran con los comandos de abajo.
 
-## Primer día: subirlo a GitHub y publicarlo
+## Cómo se integró (15/10/2026, ZL-68)
 
-1. Descomprimir la carpeta y abrir una terminal adentro.
-2. Instalar y comprobar que todo pasa:
-   ```bash
-   npm ci
-   npx playwright install chromium
-   npm run check
-   ```
-   Tiene que terminar en verde (hoy: 184 tests).
-3. Crear el repositorio en GitHub (público, vacío, sin README) y subir:
-   ```bash
-   git init -b main
-   git add .
-   git commit -m "Landing de Zustro Labs"
-   git remote add origin https://github.com/<usuario>/zustrolabs-web.git
-   git push -u origin main
-   ```
-4. En Cloudflare → Workers & Pages → *Create* → *Pages* → *Connect to Git* → elegir el repo. Configuración:
-   - Framework preset: **None**
-   - Build command: **vacío**
-   - Build output directory: **`site`**
-5. En el proyecto de Pages → *Custom domains*: agregar `zustrolabs.com` y `www.zustrolabs.com`.
-6. Entrar a la página publicada y mandar un mensaje de prueba por el formulario. Llega a `hola@zustrolabs.com` un correo de FormSubmit para **activar** el destino: tocar el botón. Desde ahí llegan todos los mensajes.
-7. Hacer la lista de `SEGURIDAD.md` (una sola vez, 20 minutos): HTTPS estricto, DNSSEC, Bot Fight Mode, WAF, una regla de rate limiting, 2FA, protección de la rama `main`.
+Esta entrega entró al repo existente `JeremiasGiglio/zustrolabs-web` por el PR de ZL-68, no como repo nuevo. En ese PR:
+
+- el formulario dejó FormSubmit y pasó a un Worker propio (`worker/`);
+- se sumaron tests de seguridad y `html-validate`;
+- se revisó la responsividad.
+
+**Publicar hoy:**
+
+1. Publicar el Worker (`worker/README.md`).
+2. Subir `site/` en Cloudflare: *Workers & Pages → zustrolabs-web → Create deployment*.
+
+El proyecto de Pages es de subida directa y no está conectado a Git.
 
 ## Cómo se trabaja después
 
-- Siempre en una rama y por PR. `main` es lo publicado; cada PR genera una vista previa en Cloudflare para mirar antes de mezclar.
+- Siempre con ticket en Jira ZL, en una rama con la clave y por PR. `main` es lo publicado.
 - Antes de pedir el PR: `npm run check` en verde. La CI lo vuelve a correr y bloquea si falla.
 - Para mirar la página en local: `npm run serve` y abrir `http://localhost:4173`.
 - Cualquier cambio de texto va en los tres idiomas. Si no hay traducción, se dice en el PR.

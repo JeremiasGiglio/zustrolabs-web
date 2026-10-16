@@ -1,17 +1,24 @@
 # Seguridad — zustrolabs-web
 
-Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y GitHub, y qué hacer si algo pasa. El sitio es estático: no hay servidor propio, base de datos ni cuentas de usuario, así que la superficie de ataque es chica. Lo que queda es proteger el dominio, el tráfico y el formulario.
+Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y GitHub, y qué hacer si algo pasa. El sitio es estático: no hay base de datos ni cuentas de usuario. La única parte con código del lado del servidor es el Worker del formulario (`worker/`), que valida, manda un correo y no guarda nada. Lo que queda es proteger el dominio, el tráfico y el formulario.
 
 ## Lo que ya hace el sitio (está en el repo)
 
-- **Sin servidor ni secretos.** HTML, CSS y JS servidos por Cloudflare Pages. No hay nada que "hackear" del lado nuestro: no hay login, no hay base de datos, no hay claves en el repo.
+- **Sin secretos en el repo.** HTML, CSS y JS servidos por Cloudflare Pages. No hay login ni base de datos. El único secreto (la casilla a la que llegan las consultas) vive en Cloudflare, como secreto del Worker.
 - **Cabeceras de seguridad** en `site/_headers`:
-  - `Content-Security-Policy`: solo se cargan scripts, estilos, fuentes y conexiones de la lista (el propio sitio, Google Fonts, Cloudflare Web Analytics y FormSubmit). Nada de iframes (`frame-ancestors 'none'`), ni plugins (`object-src 'none'`), ni formularios que manden datos a otro lado (`form-action`).
+  - `Content-Security-Policy`: solo se cargan scripts, estilos, fuentes y conexiones de la lista (el propio sitio, Google Fonts y Cloudflare Web Analytics). Nada de iframes (`frame-ancestors 'none'`), ni plugins (`object-src 'none'`), ni formularios ni conexiones que manden datos a otro sitio (`form-action 'self'`, `connect-src 'self'`).
   - `Strict-Transport-Security`: el navegador recuerda un año que el sitio es solo HTTPS, incluidos los subdominios.
   - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` (cámara, micrófono, ubicación y pago bloqueados), `Cross-Origin-Opener-Policy`.
   - `upgrade-insecure-requests`: cualquier recurso `http://` se pide como `https://`.
 - **Caché pensada para publicar sin sustos:** imágenes y videos una semana; `site.css` y `site.js` se revalidan en cada visita, así nadie ve estilos viejos después de un deploy.
-- **Formulario de contacto:** va a FormSubmit por HTTPS, con un campo trampa (`_honey`) que descarta bots y sin pasar datos por la URL. Si el servicio falla, el visitante ve el correo y un link con el mensaje armado. FormSubmit aplica sus propios límites de envío.
+- **Formulario de contacto, con un Worker propio** (`worker/`, en `zustrolabs.com/api/contacto`). Los detalles están en `worker/README.md`.
+  - Solo acepta POST en JSON desde `zustrolabs.com` o `www`: otro sitio no puede usarlo.
+  - Cuerpo de 8 KB como máximo y campos validados y acotados.
+  - Contra bots: campo trampa y tiempo mínimo de 2,5 s.
+  - Límites de 5 por minuto por IP (por /64 en IPv6) y de 30 por minuto en total. Si faltan, no manda nada.
+  - El destino sale de un secreto. El correo del visitante solo se acepta en ASCII seguro y el asunto va codificado: nadie puede agregar destinatarios ni cabeceras.
+  - No guarda nada. Los logs solo llevan métricas, sin los registros automáticos de cada pedido.
+  - Si falla, el visitante ve el correo y un link con el mensaje armado.
 - **Sin cookies ni rastreo propio.** Si se activa Cloudflare Web Analytics, tampoco usa cookies.
 - **Páginas de apoyo (`/expo/`, `/pantalla/`)** fuera de los buscadores (`noindex`).
 - **Tests automáticos** que, entre otras cosas, verifican que no haya precios ni datos prohibidos, que los links externos lleven `rel="noopener"`, que el único contacto sea el correo y que las cabeceras de seguridad sigan en su lugar.
@@ -38,8 +45,10 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 
 ### Correo y formulario
 - [ ] `hola@zustrolabs.com` tiene que ser una casilla real que alguien lea. Si es un alias, configurarlo en *Cloudflare → Email Routing* para que reenvíe a una casilla que se mire todos los días.
-- [ ] El primer envío del formulario dispara un correo de activación de FormSubmit a `hola@`: **tocar "Activate"**. Hasta entonces, no llega nada.
-- [ ] Si empieza a llegar spam por el formulario: activar en Cloudflare *Turnstile* (gratis, es su alternativa al captcha, sin molestar a las personas) y agregarlo al formulario. Hoy no está porque no hace falta y porque pide una clave de sitio; es la única mejora de esta lista que requiere configuración.
+- [ ] **Publicar el Worker del formulario** (una vez, desde `worker/`): `npx wrangler deploy` y `npx wrangler secret put DESTINO`, con una casilla **verificada** en *Email Routing → Destination addresses*. Ver `worker/README.md`.
+- [ ] Mandar una consulta de prueba desde zustrolabs.com y comprobar que llega y que «Responder» va al visitante.
+- [ ] Si hay una *Redirect Rule* de `www` al dominio sin `www`, que excluya `/api/*`.
+- [ ] Si empieza a llegar spam por el formulario: activar *Turnstile* de Cloudflare (gratis, sin captchas molestos) en el formulario y en el Worker. El campo trampa y el tiempo mínimo los controla el navegador, así que un script dedicado los puede saltear; hoy lo que de verdad frena el abuso son los dos límites. Turnstile pide una clave de sitio (pública) y una secreta (secreto del Worker).
 
 ### Dominio
 - [ ] **Bloqueo de transferencia** (*Registrar lock*) activado en donde esté registrado el dominio, y los datos de contacto del registro al día.
@@ -56,7 +65,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 |---|---|
 | El sitio se cae o va lento por tráfico raro | Cloudflare → Security → *Under Attack Mode* activado. Mirar *Security → Events* para ver de dónde viene. Desactivar cuando se calme. |
 | Se publicó algo roto | Workers & Pages → el proyecto → Deployments → en el deployment anterior, **Rollback**. Es un clic y tarda segundos. |
-| Llega spam por el formulario | Primero *Bot Fight Mode* y la regla de rate limiting (arriba). Si sigue, Turnstile. |
+| Llega spam por el formulario | Mirar los logs del Worker (`resultado`). Bajar `LIMITE_GLOBAL` en `worker/wrangler.toml` y volver a publicar. Si sigue, Turnstile. En una emergencia: *Workers & Pages → zustrolabs-contacto → Settings → Domains & Routes*, sacar las rutas; la página ofrece el correo. |
 | Alguien sin permiso entró a Cloudflare o GitHub | Cambiar la contraseña, revocar sesiones y tokens, revisar DNS y deployments recientes. Activar 2FA si no estaba. |
 | Una clave tocó el repo por error | Revocarla en el servicio de origen **aunque ya se haya borrado del código**. El historial de git la conserva. |
 | Un desconocido reporta una falla de seguridad | Responder desde hola@zustrolabs.com, agradecer, arreglar, no discutir. |
@@ -64,8 +73,9 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 ## Lo que no se hace
 - No se agrega `'unsafe-eval'` a la CSP, ni se abren `frame-ancestors`, ni se permiten scripts de dominios fuera de la lista "para probar".
 - No se instalan dependencias de producción: el sitio no tiene build y así se queda.
-- No se guardan datos de visitantes en ningún lado nuestro. El formulario los manda y los olvida.
+- No se guardan datos de visitantes en ningún lado nuestro. El Worker los manda por correo y los olvida; en sus logs no va nada personal.
+- No se agrega un servicio de terceros para el formulario: va por el Worker propio.
 - No se pone el correo de contacto en la URL de nada.
 
 ## Nota técnica honesta
-La CSP permite `'unsafe-inline'` en scripts y estilos porque el sitio tiene dos scripts cortos en línea (la elección del modo oscuro antes de pintar la página, y las frases que rotan en `/pantalla/`) y estilos en línea en un par de elementos. Quitarlo exigiría *nonces*, que un sitio estático sin build no puede generar. El riesgo es bajo: no hay entrada de usuario que se imprima en la página, así que no hay dónde inyectar un script. Si algún día la página imprime algo que escribió un visitante, esta nota deja de ser cierta y hay que revisar la CSP antes.
+La CSP permite `'unsafe-inline'` en scripts y estilos porque el sitio tiene dos scripts cortos en línea (la elección del modo oscuro antes de pintar la página, y las frases que rotan en `/pantalla/`) y estilos en línea en un par de elementos. Quitarlo exigiría *nonces*, que un sitio estático sin build no puede generar. El riesgo es bajo: no hay entrada de usuario que se imprima en la página, así que no hay dónde inyectar un script. Si algún día la página imprime algo que escribió un visitante, esta nota deja de ser cierta y hay que revisar la CSP antes. Hay tests que verifican que `site.js` no use `innerHTML` ni `eval`, y que un intento de XSS en el formulario no se ejecute.
