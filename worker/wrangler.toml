@@ -1,0 +1,43 @@
+# Worker del formulario de contacto de zustrolabs.com.
+# Se publica desde esta carpeta con `npm ci && npx wrangler deploy` (ver worker/README.md).
+# Nada secreto acá: la casilla de destino se carga con `npx wrangler secret put DESTINO`.
+name = "zustrolabs-contacto"
+main = "src/index.js"
+compatibility_date = "2026-09-15"
+workers_dev = false
+preview_urls = false
+
+# Solo esta ruta: el resto de zustrolabs.com lo sigue sirviendo Cloudflare Pages.
+routes = [
+  { pattern = "zustrolabs.com/api/contacto", zone_name = "zustrolabs.com" },
+  { pattern = "www.zustrolabs.com/api/contacto", zone_name = "zustrolabs.com" },
+]
+
+[vars]
+REMITENTE = "web@zustrolabs.com"
+ORIGENES = "https://zustrolabs.com,https://www.zustrolabs.com"
+
+# Envío con Email Routing. Sin destination_address: el destino sale del secreto DESTINO,
+# que tiene que ser una dirección verificada en Email Routing → Destination addresses.
+[[send_email]]
+name = "CORREO"
+
+# Límites (el Worker no manda nada si faltan): 5 envíos por minuto por IP (o /64 en IPv6)
+# y 30 por minuto en total. Los cuenta cada centro de datos de Cloudflare, de forma aproximada.
+[[ratelimits]]
+name = "LIMITE"
+namespace_id = "1068"
+simple = { limit = 5, period = 60 }
+
+[[ratelimits]]
+name = "LIMITE_GLOBAL"
+namespace_id = "1069"
+simple = { limit = 30, period = 60 }
+
+# Solo los console.log del Worker (métricas sin datos personales). Sin registros automáticos
+# de cada pedido, que incluirían IP, ubicación y cabeceras del visitante.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false

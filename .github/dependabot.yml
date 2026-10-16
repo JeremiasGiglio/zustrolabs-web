@@ -1,0 +1,15 @@
+# Avisos y actualizaciones de dependencias (solo de desarrollo: el sitio no tiene dependencias en producción).
+# Cada PR de Dependabot se revisa uno por uno: las versiones mayores pueden romper.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /worker
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
