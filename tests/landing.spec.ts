@@ -231,6 +231,68 @@ for (const p of PAGINAS) {
         expect(r.min).toBeGreaterThanOrEqual(11.5); // los rótulos en mayúscula de .74rem (11,8 px) son el piso
       });
 
+      test('en celular la cabecera tiene el menú a la derecha del todo y el modo oscuro a su izquierda', async ({ page }) => {
+        for (const width of [320, 390, 430, 768]) {
+          await page.setViewportSize({ width, height: 844 });
+          await page.goto(p.url);
+          const menu = (await page.locator('#menu').boundingBox())!;
+          const tema = (await page.locator('#theme').boundingBox())!;
+          const logo = (await page.locator('.top .logo').boundingBox())!;
+          expect(width - (menu.x + menu.width), `${width}px: margen derecho del menú`).toBeLessThanOrEqual(32);
+          expect(tema.x + tema.width, `${width}px: el tema va antes que el menú`).toBeLessThanOrEqual(menu.x);
+          expect(logo.x + logo.width, `${width}px: el logo no se pisa con los botones`).toBeLessThan(tema.x);
+          expect(menu.width).toBeGreaterThanOrEqual(44); expect(menu.height).toBeGreaterThanOrEqual(44);
+        }
+      });
+
+      test('en celular el selector de idioma del menú tiene tres botones cómodos que no se pisan', async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 700 });
+        await page.goto(p.url);
+        await page.locator('#menu').click();
+        const cajas = await page.locator('#nav .lang a').evaluateAll((as) => as.map((a) => a.getBoundingClientRect().toJSON()));
+        expect(cajas).toHaveLength(3);
+        for (const c of cajas) { expect(c.height).toBeGreaterThanOrEqual(44); expect(c.width).toBeGreaterThanOrEqual(60); }
+        for (let i = 1; i < 3; i++) expect(cajas[i].left).toBeGreaterThanOrEqual(cajas[i - 1].right);
+      });
+
+      test('en celular el menú se cierra con Escape y tocando afuera, y muestra la cruz mientras está abierto', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(p.url);
+        const nav = page.locator('#nav');
+        await page.locator('#menu').click();
+        await expect(page.locator('#menu .x')).toBeVisible();
+        await expect(page.locator('#menu .bars')).toBeHidden();
+        await page.keyboard.press('Escape');
+        await expect(nav).toBeHidden();
+        await expect(page.locator('#menu')).toBeFocused();
+        await page.locator('#menu').click();
+        await expect(nav).toBeVisible();
+        await page.mouse.click(200, 800);
+        await expect(nav).toBeHidden();
+        await expect(page.locator('#menu')).toHaveAttribute('aria-expanded', 'false');
+      });
+
+      test('en celular los dos botones del inicio van a lo ancho, uno debajo del otro', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(p.url);
+        const [a, b] = await page.locator('.hero .ctas .btn').evaluateAll((bs) => bs.map((x) => x.getBoundingClientRect().toJSON()));
+        expect(Math.abs(a.width - b.width)).toBeLessThanOrEqual(1);
+        expect(a.width).toBeGreaterThan(390 - 2 * 32);
+        expect(b.top).toBeGreaterThan(a.bottom);
+      });
+
+      test('en computadora la cabecera sigue igual: menú en línea, sin botón de menú', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.goto(p.url);
+        await expect(page.locator('#menu')).toBeHidden();
+        await expect(page.locator('#nav')).toBeVisible();
+        const nav = (await page.locator('#nav').boundingBox())!;
+        const tema = (await page.locator('#theme').boundingBox())!;
+        expect(nav.x + nav.width).toBeLessThanOrEqual(tema.x);
+        const lang = await page.locator('#nav .lang a').first().boundingBox();
+        expect(lang!.height).toBeLessThan(40);
+      });
+
       test('en celular el menú se abre y se cierra', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(p.url);
