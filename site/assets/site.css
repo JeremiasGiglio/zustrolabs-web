@@ -181,6 +181,7 @@ section+section{border-top:1px solid var(--line)}
 .bio details[open] summary::after{content:"–"}
 .cv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 32px;padding:8px 0 20px}
 .cv h4{margin:0 0 8px;font:600 .74rem/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.cv h4.cv-sep{margin-top:18px}
 .cv p,.cv li{font-size:.98rem}
 .cv ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}
 .timeline li{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px}
