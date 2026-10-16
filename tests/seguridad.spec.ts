@@ -107,6 +107,10 @@ test.describe('cabeceras (site/_headers)', () => {
     expect(csp['connect-src']).toEqual(["'self'", 'https://cloudflareinsights.com']);
     expect(csp['img-src']).toEqual(["'self'", 'data:']);
     expect(csp['media-src']).toEqual(["'self'"]);
+    // 'unsafe-inline' sigue por el script del tema antes de pintar (ver la nota técnica de SEGURIDAD.md); nada más
+    expect(csp['script-src']).toEqual(["'self'", "'unsafe-inline'", 'https://static.cloudflareinsights.com']);
+    expect(csp['style-src']).toEqual(["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com']);
+    expect(csp['font-src']).toEqual(['https://fonts.gstatic.com']);
     expect('upgrade-insecure-requests' in csp).toBe(true);
     const todo = Object.values(csp).flat();
     expect(todo).not.toContain("'unsafe-eval'");
@@ -168,11 +172,26 @@ test.describe('en el navegador', () => {
     });
   }
 
-  test('el servidor local no sirve archivos fuera de site/ ni el archivo de cabeceras', async ({ request }) => {
-    for (const ruta of ['/../package.json', '/%2e%2e/package.json', '/_headers', '/../worker/wrangler.toml']) {
-      const r = await request.get(ruta);
-      expect(r.status(), ruta).toBe(404);
+  test('el servidor local no sirve archivos fuera de site/ ni el archivo de cabeceras', async () => {
+    // pedido HTTP crudo: así la ruta llega tal cual, sin que un cliente la normalice antes
+    const { connect } = await import('node:net');
+    const crudo = (ruta: string) => new Promise<string>((ok, mal) => {
+      const s = connect(4173, '127.0.0.1', () => s.write(`GET ${ruta} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`));
+      let r = ''; s.on('data', (d) => (r += d)); s.on('end', () => ok(r)); s.on('error', mal);
+    });
+    for (const ruta of ['/../package.json', '/..%2fpackage.json', '/%2e%2e/%2e%2e/etc/passwd', '/..\\package.json', '/_headers', '/../worker/wrangler.toml', '/assets/../../REGLAS.md']) {
+      const r = await crudo(ruta);
+      expect(r.split('\r\n')[0], ruta).toBe('HTTP/1.1 404 Not Found');
+      expect(r, ruta).not.toMatch(/"devDependencies"|root:|ZL-68|Reglas inquebrantables/);
     }
+  });
+
+  test('site.js y site.css se revalidan siempre (sin la caché de una semana de /assets/*)', async ({ request }) => {
+    for (const ruta of ['/assets/site.js', '/assets/site.css']) {
+      const r = await request.get(ruta);
+      expect(r.headers()['cache-control'], ruta).toBe('public, max-age=0, must-revalidate');
+    }
+    expect((await request.get('/assets/hero-poster.jpg')).headers()['cache-control']).toBe('public, max-age=604800');
   });
 });
 

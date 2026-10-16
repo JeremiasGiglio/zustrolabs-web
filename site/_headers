@@ -12,9 +12,12 @@
   Cache-Control: public, max-age=604800
 
 # La hoja de estilos y el script cambian con cada publicación: se revalidan siempre (Cloudflare responde 304 si no cambiaron).
+# «! Cache-Control» saca la de /assets/* (si no, Cloudflare Pages juntaría las dos con una coma).
 /assets/site.css
+  ! Cache-Control
   Cache-Control: public, max-age=0, must-revalidate
 /assets/site.js
+  ! Cache-Control
   Cache-Control: public, max-age=0, must-revalidate
 
 # Las páginas de apoyo no van a buscadores.

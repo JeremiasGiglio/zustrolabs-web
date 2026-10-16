@@ -14,7 +14,9 @@ export const LIMITES = {
 };
 
 const IDIOMAS = new Set(['es', 'en', 'hr']);
-const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+// Parte local solo con caracteres ASCII permitidos (RFC 5322 «atext» y puntos): nada de controles, bidi ni no ASCII,
+// porque esta dirección es lo único del visitante que va sin codificar a una cabecera (Reply-To).
+const EMAIL_RE = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const TEL_RE = /^[\d+()\s.-]{6,40}$/;
 // Controles: todo menos tab y salto de línea (estos dos solo se aceptan en el mensaje).
 const CONTROL_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029]/g;
@@ -81,9 +83,31 @@ function base64Utf8(texto) {
   return btoa(bin);
 }
 
-/** Cabecera con texto no ASCII (RFC 2047). */
+/**
+ * Cabecera con texto no ASCII (RFC 2047): palabras codificadas de hasta 45 bytes de texto
+ * (≤ 75 caracteres cada una), separadas por un pliegue CRLF + espacio. No corta caracteres por la mitad.
+ */
 export function cabeceraUtf8(texto) {
-  return `=?UTF-8?B?${base64Utf8(unaLinea(texto, 200))}?=`;
+  const enc = new TextEncoder();
+  const palabras = [];
+  let actual = '';
+  for (const ch of unaLinea(texto, 200)) {
+    if (enc.encode(actual + ch).length > 45) { palabras.push(actual); actual = ''; }
+    actual += ch;
+  }
+  if (actual) palabras.push(actual);
+  return palabras.map((p) => `=?UTF-8?B?${base64Utf8(p)}?=`).join('\r\n ');
+}
+
+/** Clave para el límite: la IP, y en IPv6 su prefijo /64 (una sola conexión puede tener millones de direcciones). */
+export function claveIp(ip) {
+  if (!ip) return 'sin-ip';
+  if (!ip.includes(':')) return ip;
+  const [cabeza, cola = ''] = ip.toLowerCase().split('::');
+  const a = cabeza ? cabeza.split(':') : [];
+  const b = cola ? cola.split(':') : [];
+  const grupos = ip.includes('::') ? [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b] : a;
+  return grupos.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':') + '::/64';
 }
 
 /**
@@ -169,10 +193,16 @@ export function crearHandler({ enviar, log = (o) => console.log(JSON.stringify(o
     if (!origen || !origenes.includes(origen)) { metrica('origen'); return json(403, { ok: false, error: 'origen' }); }
     if (!/^application\/json\b/i.test(request.headers.get('Content-Type') || '')) { metrica('tipo'); return json(415, { ok: false, error: 'tipo' }); }
 
-    if (env.LIMITE) {
-      const ip = request.headers.get('CF-Connecting-IP') || 'sin-ip';
-      const { success } = await env.LIMITE.limit({ key: ip });
-      if (!success) { metrica('limite'); return json(429, { ok: false, error: 'limite' }); }
+    // Dos límites: por IP (o prefijo /64 en IPv6) y uno global para todo el formulario.
+    // Si los bindings faltan o fallan, no se manda nada: falla cerrado.
+    if (!env.LIMITE || !env.LIMITE_GLOBAL) { metrica('config'); return json(500, { ok: false, error: 'config' }); }
+    try {
+      const porIp = await env.LIMITE.limit({ key: claveIp(request.headers.get('CF-Connecting-IP')) });
+      const global = porIp.success ? await env.LIMITE_GLOBAL.limit({ key: 'formulario' }) : { success: false };
+      if (!porIp.success || !global.success) { metrica('limite', { cual: porIp.success ? 'global' : 'ip' }); return json(429, { ok: false, error: 'limite' }); }
+    } catch {
+      metrica('limite-error');
+      return json(503, { ok: false, error: 'limite' });
     }
 
     const texto = await leerCuerpo(request, LIMITES.cuerpoBytes);

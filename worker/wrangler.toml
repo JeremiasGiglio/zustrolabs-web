@@ -22,11 +22,22 @@ ORIGENES = "https://zustrolabs.com,https://www.zustrolabs.com"
 [[send_email]]
 name = "CORREO"
 
-# Límite por IP: 5 envíos por minuto.
+# Límites (el Worker no manda nada si faltan): 5 envíos por minuto por IP (o /64 en IPv6)
+# y 30 por minuto en total. Los cuenta cada centro de datos de Cloudflare, de forma aproximada.
 [[ratelimits]]
 name = "LIMITE"
 namespace_id = "1068"
 simple = { limit = 5, period = 60 }
 
+[[ratelimits]]
+name = "LIMITE_GLOBAL"
+namespace_id = "1069"
+simple = { limit = 30, period = 60 }
+
+# Solo los console.log del Worker (métricas sin datos personales). Sin registros automáticos
+# de cada pedido, que incluirían IP, ubicación y cabeceras del visitante.
 [observability]
 enabled = true
+
+[observability.logs]
+invocation_logs = false

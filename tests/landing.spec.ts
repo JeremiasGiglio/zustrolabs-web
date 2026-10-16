@@ -320,7 +320,7 @@ test.describe('cabeceras de seguridad (site/_headers)', () => {
     for (const must of [
       "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'", "form-action 'self';",
       'Strict-Transport-Security: max-age=31536000', 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY',
-      '/assets/site.css\n  Cache-Control: public, max-age=0, must-revalidate',
+      '/assets/site.css\n  ! Cache-Control\n  Cache-Control: public, max-age=0, must-revalidate',
     ]) expect(h, `falta ${must}`).toContain(must);
     expect(h).not.toMatch(/unsafe-eval/);
     // ningún origen fuera de la lista acordada en SEGURIDAD.md

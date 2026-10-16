@@ -18,8 +18,10 @@ function leerHeaders(texto) {
   for (const linea of texto.split(/\r?\n/)) {
     if (!linea.trim() || linea.trim().startsWith('#')) continue;
     if (!/^\s/.test(linea)) { actual = { patron: linea.trim(), cabeceras: [] }; reglas.push(actual); continue; }
-    const i = linea.indexOf(':');
-    if (actual && i > 0) actual.cabeceras.push([linea.slice(0, i).trim(), linea.slice(i + 1).trim()]);
+    const t = linea.trim();
+    if (actual && t.startsWith('!')) { actual.cabeceras.push([t.slice(1).trim(), null]); continue; }
+    const i = t.indexOf(':');
+    if (actual && i > 0) actual.cabeceras.push([t.slice(0, i).trim(), t.slice(i + 1).trim()]);
   }
   return reglas.map((r) => ({ ...r, re: new RegExp('^' + r.patron.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$') }));
 }
@@ -28,7 +30,10 @@ const reglas = leerHeaders(readFileSync(join(root, '_headers'), 'utf8'));
 
 function cabecerasPara(ruta) {
   const h = {};
-  for (const r of reglas) if (r.re.test(ruta)) for (const [k, v] of r.cabeceras) h[k] = v;
+  // Como Cloudflare Pages: las reglas que coinciden se suman; un mismo nombre se junta con coma y «! Nombre» lo saca.
+  for (const r of reglas) if (r.re.test(ruta)) for (const [k, v] of r.cabeceras) {
+    if (v === null) delete h[k]; else h[k] = h[k] ? `${h[k]}, ${v}` : v;
+  }
   delete h['Strict-Transport-Security'];
   if (h['Content-Security-Policy']) h['Content-Security-Policy'] = h['Content-Security-Policy'].replace(/;?\s*upgrade-insecure-requests/, '');
   return h;
@@ -48,4 +53,4 @@ http.createServer(async (req, res) => {
   } catch {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('not found');
   }
-}).listen(port, () => console.log(`http://localhost:${port}`));
+}).listen(port, '127.0.0.1', () => console.log(`http://localhost:${port}`));
