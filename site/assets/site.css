@@ -220,7 +220,7 @@ footer{border-top:1px solid var(--line);padding-block:40px 32px;color:var(--mute
 .foot-grid svg{height:24px;width:auto;display:block;margin-bottom:12px}
 .foot-grid h4{font:600 .74rem/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
 .foot-grid ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
-.foot-grid a{color:var(--fg);text-decoration:none;display:inline-block;padding-block:3px}
+.foot-grid a{color:var(--fg);text-decoration:none;display:inline-block;padding-block:3px;min-width:24px}
 .foot-grid a:hover{text-decoration:underline;text-underline-offset:3px}
 .foot-grid a[aria-current="page"]{color:var(--muted)}
 .foot-bottom{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-top:32px;padding-top:20px;border-top:1px solid var(--line);font-size:.86rem}
