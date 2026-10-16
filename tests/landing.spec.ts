@@ -204,7 +204,7 @@ for (const p of PAGINAS) {
     });
 
     test.describe('pantalla', () => {
-      for (const width of [360, 390, 768, 1280]) {
+      for (const width of [320, 360, 390, 768, 1024, 1280, 1920]) {
         test(`sin scroll horizontal a ${width}px`, async ({ page }) => {
           await page.setViewportSize({ width, height: 900 });
           await page.goto(p.url);
@@ -212,6 +212,24 @@ for (const p of PAGINAS) {
           expect(sobra).toBeLessThanOrEqual(0);
         });
       }
+
+      test('en celular los botones y links sueltos miden al menos 24 px (WCAG 2.5.8) y la letra no baja de 11,5 px', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(p.url);
+        const r = await page.evaluate(() => {
+          const visible = (e: Element) => { const b = e.getBoundingClientRect(); const cs = getComputedStyle(e); return b.width > 0 && cs.display !== 'none' && cs.visibility !== 'hidden' && !e.closest('.hp, [hidden], nav:not(.open)'); };
+          // los links dentro de una oración quedan exceptuados por la norma
+          const enTexto = (e: Element) => e.tagName === 'A' && !!e.closest('p, li span, .talks li');
+          const chicos = [...document.querySelectorAll('a, button, input, select, textarea, summary')].filter((e) => visible(e) && !enTexto(e))
+            .filter((e) => { const b = e.getBoundingClientRect(); return b.height < 23.5 || b.width < 23.5; })
+            .map((e) => `${e.tagName} «${(e.textContent || e.getAttribute('aria-label') || '').trim().slice(0, 24)}» ${Math.round(e.getBoundingClientRect().width)}×${Math.round(e.getBoundingClientRect().height)}`);
+          const letras = [...document.querySelectorAll('body *')].filter((e) => visible(e) && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim()))
+            .map((e) => parseFloat(getComputedStyle(e).fontSize));
+          return { chicos, min: Math.min(...letras) };
+        });
+        expect(r.chicos).toEqual([]);
+        expect(r.min).toBeGreaterThanOrEqual(11.5); // los rótulos en mayúscula de .74rem (11,8 px) son el piso
+      });
 
       test('en celular el menú se abre y se cierra', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
