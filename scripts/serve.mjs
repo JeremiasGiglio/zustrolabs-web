@@ -51,6 +51,12 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream', ...cabecerasPara(ruta) });
     res.end(body);
   } catch {
-    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('not found');
+    // Como Cloudflare Pages: lo que no existe responde site/404.html con estado 404 (nunca la portada con 200).
+    try {
+      const body = await readFile(join(root, '404.html'));
+      res.writeHead(404, { 'content-type': types['.html'], ...cabecerasPara('/404.html') }); res.end(body);
+    } catch {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('not found');
+    }
   }
 }).listen(port, '127.0.0.1', () => console.log(`http://localhost:${port}`));

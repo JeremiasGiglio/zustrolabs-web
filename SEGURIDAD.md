@@ -10,7 +10,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
   - `Strict-Transport-Security`: el navegador recuerda un año que el sitio es solo HTTPS, incluidos los subdominios.
   - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` (cámara, micrófono, ubicación y pago bloqueados), `Cross-Origin-Opener-Policy`.
   - `upgrade-insecure-requests`: cualquier recurso `http://` se pide como `https://`.
-- **Caché pensada para publicar sin sustos:** imágenes y videos una semana; `site.css` y `site.js` se revalidan en cada visita, así nadie ve estilos viejos después de un deploy.
+- **Caché pensada para publicar sin sustos:** imágenes y videos una semana; `site.css` y `site.js` se revalidan en cada visita y cada HTML los pide con la versión de su contenido (`?v=<hash>`, `npm run versionar`), así nadie ve estilos viejos después de un deploy. Lo que no existe responde `404.html` con estado 404, para que la caché no guarde la portada en lugar de otro archivo (ZL-71).
 - **Formulario de contacto, con un Worker propio** (`worker/`, en `zustrolabs.com/api/contacto`). Los detalles están en `worker/README.md`.
   - Solo acepta POST en JSON desde `zustrolabs.com` o `www`: otro sitio no puede usarlo.
   - Cuerpo de 8 KB como máximo y campos validados y acotados.

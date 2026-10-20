@@ -7,7 +7,8 @@ Landing de **Zustro Labs**, estudio de desarrollo web, aplicaciones y agentes de
 ## Cómo está hecha
 - Sitio **estático, sin framework y sin build**: todo está en `site/`.
 - Tres versiones de la misma página: `site/index.html` (castellano), `site/hr/index.html` (croata) y `site/en/index.html` (inglés), enlazadas entre sí con `hreflang` y un selector de idioma en la cabecera y el pie.
-- Las tres comparten `site/assets/site.css` y `site/assets/site.js` (menú en celular, botón de copiar el correo y "reducir movimiento").
+- Las tres comparten `site/assets/site.css` y `site/assets/site.js` (menú en celular, botón de copiar el correo y "reducir movimiento"). Cada HTML los pide con la versión de su contenido (`site.css?v=<hash>`): **después de tocar cualquiera de los dos, correr `npm run versionar`**, que actualiza todas las páginas. Si alguien se olvida, un test falla.
+- `site/404.html` es la página de error, en los tres idiomas: Cloudflare Pages la responde con estado 404 a cualquier ruta que no exista (sin ella respondería la portada con 200, y la caché podía guardarla como si fuera otro archivo; pasó con `site.js`, ZL-71).
 - Dos páginas de apoyo para exposiciones, solo en castellano y fuera de los buscadores: `site/expo/` (tres tarjetas con QR: Radar, Šahovnica y servicios; también sirve impresa) y `site/pantalla/` (versión para un televisor en el stand, con el video del hero y frases que rotan). Los QR están en `site/assets/qr-*.svg`.
 - La captura del Radar (`site/assets/radar-home.jpg`) se regenera con `node scripts/captura-radar.mjs` cuando el sitio cambie.
 - `site/assets/` tiene las imágenes y los videos que la página usa. Lo que dejó de usarse está en `archivo/`, fuera de `site/`, para que no se publique.
@@ -64,14 +65,15 @@ npm run test:links   # chequea que Šahovnica, el Radar y GitHub respondan
 - que no aparezcan precios, «contratá» ni figuras de empresa, en ninguno de los tres idiomas;
 - accesibilidad con axe (WCAG 2 A/AA, sin violaciones serias);
 - el formulario: exige nombre, mensaje y un correo o un teléfono, manda el JSON correcto por POST al mismo sitio y, si falla, ofrece el correo con el mensaje armado;
-- las páginas `/expo/` y `/pantalla/`.
+- las páginas `/expo/` y `/pantalla/`;
+- la página 404: una ruta o un archivo que no existe da 404 (nunca la portada con 200), con el logo en rojo y links a los tres idiomas.
 
 **Seguridad** (`tests/seguridad.spec.ts`):
 - **CSP y cabeceras:**
     * sin `unsafe-eval`, sin iframes ni plugins;
     * formularios y conexiones solo al propio sitio;
     * HSTS de un año, nosniff, COOP y permisos del navegador cerrados;
-    * `site.js` y `site.css` que se revalidan siempre.
+    * `site.js` y `site.css` que se revalidan siempre y que cada HTML pide con la versión de su contenido.
 - **HTML:**
     * sin manejadores en línea, sin `javascript:` y sin `http://`;
     * scripts y estilos externos solo de la lista acordada;
@@ -88,7 +90,7 @@ npm run test:links   # chequea que Šahovnica, el Radar y GitHub respondan
     * sin el nombre del cliente actual (se compara por hash, para no escribirlo);
     * sin carpetas sensibles;
     * el Worker sin secretos en `wrangler.toml`.
-- **Servidor local:** no sirve nada fuera de `site/`.
+- **Servidor local:** no sirve nada fuera de `site/` y responde `site/404.html` con 404, igual que Cloudflare Pages.
 
 La CI corre `npm run check` en cada push y PR, y los lunes revisa que los links sigan vivos.
 
