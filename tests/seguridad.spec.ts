@@ -193,6 +193,33 @@ test.describe('en el navegador', () => {
     }
     expect((await request.get('/assets/hero-poster.jpg')).headers()['cache-control']).toBe('public, max-age=604800');
   });
+
+  // ZL-71: con la versión en la dirección, cada publicación pide archivos nuevos y una copia vieja en caché no se usa.
+  test('cada HTML pide site.css y site.js con la versión de su contenido (npm run versionar)', async () => {
+    const { hashDe, paginas } = await import('../scripts/versionar.mjs');
+    const v = { 'site.css': hashDe('site.css'), 'site.js': hashDe('site.js') };
+    const htmls = paginas();
+    expect(htmls.length).toBeGreaterThanOrEqual(6);
+    for (const f of htmls) {
+      const html = readFileSync(f, 'utf8');
+      const refs = html.match(/\/assets\/site\.(css|js)[^"']*/g) ?? [];
+      for (const r of refs) {
+        const archivo = r.slice('/assets/'.length).split('?')[0] as 'site.css' | 'site.js';
+        expect(r, `${f}: falta la versión o está vieja; correr npm run versionar`).toBe(`/assets/${archivo}?v=${v[archivo]}`);
+      }
+    }
+    for (const url of ['/', '/en/', '/hr/']) {
+      const html = readFileSync(ARCHIVO(url), 'utf8');
+      expect(html, url).toContain(`/assets/site.css?v=${v['site.css']}`);
+      expect(html, url).toContain(`/assets/site.js?v=${v['site.js']}`);
+    }
+  });
+
+  test('una versión de site.js que no existe responde el script igual, como JavaScript', async ({ request }) => {
+    const r = await request.get('/assets/site.js?v=0000000000');
+    expect(r.status()).toBe(200);
+    expect(r.headers()['content-type']).toMatch(/javascript/);
+  });
 });
 
 test.describe('repo público', () => {

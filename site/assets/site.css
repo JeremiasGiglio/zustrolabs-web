@@ -488,3 +488,8 @@ footer{border-top:1px solid var(--line);padding-block:40px 32px;color:var(--mute
   .hero .phone-cap{text-align:center}
   .contact-alt .copy{min-height:36px;padding:8px 14px}
 }
+
+/* Página 404: una sola columna */
+.hero.solo{min-height:calc(100svh - 69px);display:flex;align-items:center}
+.hero.solo .wrap{grid-template-columns:minmax(0,1fr);width:100%}
+.hero.solo .sub+.sub{margin-top:8px}

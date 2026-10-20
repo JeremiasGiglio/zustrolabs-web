@@ -374,6 +374,52 @@ for (const url of ['/expo/', '/pantalla/']) {
   });
 }
 
+// Página 404 (ZL-71): lo que no existe responde 404 con esta página, nunca la portada con 200.
+// El servidor local hace lo mismo que Cloudflare Pages con site/404.html.
+test.describe('página 404', () => {
+  test('una ruta inexistente da 404 con la página de error, no la portada', async ({ page }) => {
+    const r = await page.goto('/no-existe');
+    expect(r!.status()).toBe(404);
+    expect(r!.headers()['content-type']).toMatch(/text\/html/);
+    await expect(page.locator('h1')).toHaveCount(1);
+    await expect(page.locator('h1')).toContainText('no existe');
+    await expect(page.locator('meta[name=robots]')).toHaveAttribute('content', 'noindex');
+    await expect(page.locator('#h-hero')).toHaveCount(0);
+    // vuelve a la portada de cada idioma
+    for (const href of ['/', '/hr/', '/en/']) await expect(page.locator(`main a[href="${href}"]`)).toHaveCount(1);
+  });
+
+  test('un archivo que no existe en /assets/ da 404, nunca 200', async ({ request }) => {
+    for (const ruta of ['/assets/no-existe.js', '/assets/no-existe.css', '/en/no-existe/']) {
+      expect((await request.get(ruta)).status(), ruta).toBe(404);
+    }
+  });
+
+  test('carga los estilos aunque la ruta sea profunda (rutas absolutas)', async ({ page }) => {
+    await page.goto('/a/b/c/no-existe');
+    const fondo = await page.locator('.hero').evaluate((e) => getComputedStyle(e).backgroundColor);
+    expect(fondo).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`la primera casilla del logo es roja (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto('/no-existe');
+      const fill = await page.locator('[data-testid=logo] rect').first().evaluate((r) => getComputedStyle(r).fill);
+      expect(fill).toBe(RED[scheme]);
+    });
+  }
+
+  test('sin scroll horizontal a 360px y sin violaciones graves de axe', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto('/no-existe');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    const graves = r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+    expect(graves.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+  });
+});
+
 // Las cabeceras las aplica Cloudflare Pages a partir de site/_headers: se revisa el archivo, no la respuesta local.
 test.describe('cabeceras de seguridad (site/_headers)', () => {
   test('la CSP y las cabeceras clave siguen en su lugar', async () => {

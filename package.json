@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "serve": "node scripts/serve.mjs",
+    "versionar": "node scripts/versionar.mjs",
     "test": "playwright test",
     "test:worker": "node --test 'worker/test/*.test.js'",
     "lint:html": "html-validate 'site/**/*.html'",
