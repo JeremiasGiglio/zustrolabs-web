@@ -1,0 +1,60 @@
+# Worker del WhatsApp de Zustro Labs: asistente + panel de atención (ver whatsapp/README.md).
+# Se publica desde esta carpeta con `npm ci && npx wrangler deploy`. Nada secreto acá: los secretos se cargan
+# con `npx wrangler secret put` (lista en el README).
+name = "zustrolabs-whatsapp"
+main = "src/worker.js"
+compatibility_date = "2026-09-15"
+workers_dev = false
+preview_urls = false
+
+# El webhook va por una ruta de zustrolabs.com (el resto lo sigue sirviendo Cloudflare Pages);
+# el panel, por un subdominio propio que crea Wrangler. No tocar `atencion` (es el panel del Radar).
+routes = [
+  { pattern = "zustrolabs.com/api/whatsapp", zone_name = "zustrolabs.com" },
+  { pattern = "equipo.zustrolabs.com", custom_domain = true },
+]
+
+[vars]
+MODELO = "claude-haiku-5-5"
+# Lo completa el segundo PR, cuando estén el número y la app de Access (no son secretos):
+# WHATSAPP_PHONE_NUMBER_ID = "…"
+# ACCESS_TEAM_DOMAIN = "floral-shape-d2bf.cloudflareaccess.com"
+# ACCESS_AUD = "…"
+# Mientras falten, el webhook responde 503 y el panel también: nada queda abierto.
+
+# Memoria: un solo Durable Object con almacenamiento SQLite (entra en el plan gratis). Guarda {idioma, humanoHasta}
+# por número (90 días), las charlas con PERSONA (30 días) y contadores cortos; una alarma diaria borra lo vencido.
+# No usa KV: así no gasta la cuota diaria de escrituras de la cuenta, que usa el Radar. Ver src/atencion.js.
+[[durable_objects.bindings]]
+name = "ATENCION"
+class_name = "Atencion"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Atencion"]
+
+# Límites (sin ellos no responde): 20 mensajes por minuto por número (pasado eso, silencio) y 30 respuestas de la IA
+# por minuto en total, que es el tope de gasto de este canal. Además, 40 respuestas de la IA por número y por día
+# (TOPE_DIARIO en src/whatsapp.js).
+[[ratelimits]]
+name = "LIMITE"
+namespace_id = "1072"
+simple = { limit = 20, period = 60 }
+
+[[ratelimits]]
+name = "LIMITE_GLOBAL"
+namespace_id = "1073"
+simple = { limit = 30, period = 60 }
+
+# Aviso por correo cuando alguien escribe PERSONA (sale de avisos@avisos.zustrolabs.com hacia el secreto AVISO_PARA,
+# que tiene que estar verificado en Email Routing → Destination addresses).
+[[send_email]]
+name = "AVISO"
+
+# Solo los console.log del Worker (métricas sin número ni texto). Sin los registros automáticos de cada
+# pedido: la ruta del panel lleva el número de WhatsApp de la persona.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false
