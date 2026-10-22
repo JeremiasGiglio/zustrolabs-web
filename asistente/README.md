@@ -23,7 +23,7 @@ navegador ──POST JSON──▶ zustrolabs.com/api/chat (este Worker) ──�
 | Límite global | 60 por minuto en total, binding `LIMITE_GLOBAL`: es también el tope de gasto | 429 |
 | Sin límites | Si falta un binding no responde (falla cerrado); si el límite falla, 503 | 500 / 503 |
 | Tamaño | Cuerpo de 16 KB como máximo, 8 turnos, 500 caracteres por mensaje | 413 / 422 |
-| Salida | JSON con esquema; secciones y enlaces solo de una lista cerrada, sin repetir y con tope | 502 si no cumple |
+| Salida | JSON con esquema, sin listas: una sección y un enlace como máximo, de una lista cerrada. Si la respuesta sale cortada, se reintenta una vez | 502 si no cumple |
 | Texto | Sin markdown ni links. Solo puede nombrar el correo `hola@zustrolabs.com`. Se saca toda oración con plata, teléfonos o palabras prohibidas (potpora del HZZ, en los 3 idiomas) | — |
 | Fuera de tema | Sin botones | — |
 | Instrucciones en el mensaje | Lo que escribe la persona es un dato, nunca una orden (regla del modelo y evals de inyección) | — |
