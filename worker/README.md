@@ -49,7 +49,7 @@ En local no sale ningún correo: Wrangler lo guarda como `.eml` en `.wrangler/tm
 
 ## Publicar (lo hace Jeremías, desde la Mac)
 
-Hace falta tener **Email Routing** activo en `zustrolabs.com` y la casilla de destino **verificada** en *Email → Email Routing → Destination addresses*. Ya está hecho para el Gmail que recibe `hola@`.
+Hace falta tener **Email Routing** activo en el subdominio `avisos.zustrolabs.com` (el remitente es `web@avisos.zustrolabs.com`: el correo de `zustrolabs.com` lo maneja Zoho Mail desde el 22/10/2026, ZL-107) y la casilla de destino **verificada** en *Email → Email Routing → Destination addresses*. Las direcciones verificadas son de la cuenta y sirven para cualquier dominio o subdominio.
 
 ```bash
 cd zustrolabs-web/worker

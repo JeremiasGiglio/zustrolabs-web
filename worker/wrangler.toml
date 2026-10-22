@@ -14,7 +14,9 @@ routes = [
 ]
 
 [vars]
-REMITENTE = "web@zustrolabs.com"
+# Desde el subdominio avisos: el correo de zustrolabs.com lo maneja Zoho Mail (ZL-107) y el envío de
+# Cloudflare sale de avisos.zustrolabs.com, que tiene su propio Email Routing.
+REMITENTE = "web@avisos.zustrolabs.com"
 ORIGENES = "https://zustrolabs.com,https://www.zustrolabs.com"
 
 # Envío con Email Routing. Sin destination_address: el destino sale del secreto DESTINO,
