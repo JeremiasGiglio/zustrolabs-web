@@ -151,6 +151,9 @@ section+section{border-top:1px solid var(--line)}
 .phone{margin:0;flex:1 1 0;max-width:200px;min-width:0;border:5px solid var(--fg);border-radius:20px;overflow:hidden;background:#fff;aspect-ratio:390/650}
 .phone img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
 .phone:nth-child(2){margin-top:32px}
+.browser video{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--bg-2)}
+.promo{margin:56px 0 0}
+.promo .vid{max-width:960px;margin:0 auto}
 .shots-cap{margin-top:14px;font:400 .76rem/1.5 var(--f-mono);color:var(--muted);text-align:center}
 .also{margin-top:clamp(40px,5vw,56px);padding-top:24px;border-top:1px solid var(--line);display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 18px;align-items:baseline}
 .also .tag{align-self:center}

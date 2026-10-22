@@ -86,12 +86,44 @@ for (const p of PAGINAS) {
         const casos = page.locator('.case');
         await expect(casos).toHaveCount(2);
         await expect(casos.nth(0).locator('a[href="https://radar.zustrolabs.com"]')).toHaveCount(1);
-        await expect(casos.nth(0).locator('img[src="/assets/radar-home.jpg"]')).toHaveCount(1);
+        await expect(casos.nth(0).locator('video[poster="/assets/radar-home.jpg"]')).toHaveCount(1);
         // El Radar suma fichas todas las semanas: la tarjeta no fija cuántas tiene (quedaría vieja).
         const radar = (await casos.nth(0).locator('.case-body').innerText()).replace(/\s+/g, ' ');
         expect(radar).not.toMatch(/\b\d+\s+(oportunidades|opportunities|prilika|fichas|programas|programmes|programa)\b/i);
         expect(radar).not.toMatch(/descendientes|descent|potomke/i);
         await expect(casos.nth(1).locator('a[href="https://croata.zustrolabs.com"]')).toHaveCount(1);
+      });
+
+      test('videos (ZL-96): solo los de su idioma, sin arrancar solos, livianos y con subtítulos en los promos', async ({ page, request }) => {
+        await page.goto(p.url);
+        const dir = `/assets/video/${p.lang}/`;
+        const videos = page.locator('video');
+        await expect(videos).toHaveCount(4); // 2 productos, el promo de Zustro y el del Radar
+        const segundos = { es: /segundos/, en: /seconds/, hr: /sekund/ }[p.lang];
+        for (const v of await videos.all()) {
+          expect(await v.getAttribute('autoplay')).toBeNull();
+          await expect(v).toHaveAttribute('preload', 'none');
+          await expect(v).toHaveAttribute('aria-label', segundos);
+        }
+        const srcs = await page.locator('video source').evaluateAll((els) => els.map((e) => e.getAttribute('src')));
+        const tracks = await page.locator('video track').evaluateAll((els) => els.map((e) => ({ src: e.getAttribute('src'), lang: e.getAttribute('srclang'), def: e.hasAttribute('default'), kind: e.getAttribute('kind') })));
+        const posters = await page.locator('video').evaluateAll((els) => els.map((e) => e.getAttribute('poster')));
+        expect(tracks).toHaveLength(2);
+        // los promos ya traen los subtítulos en la imagen: el .vtt queda disponible (lectores de pantalla, botón CC) pero apagado, para no verlos dos veces
+        for (const t of tracks) expect(t).toMatchObject({ lang: p.lang, def: false, kind: 'subtitles' });
+        for (const src of [...srcs, ...tracks.map((t) => t.src)]) expect(src.startsWith(dir), src).toBe(true);
+        for (const src of srcs) {
+          const r = await request.get(src);
+          expect(r.status(), src).toBe(200);
+          // los demos de los productos, hasta 3 MB; los promos, hasta 15 MB (se bajan solo si alguien toca play)
+          expect((await r.body()).length, src).toBeLessThan((/demo-/.test(src) ? 3 : 15) * 1024 * 1024);
+        }
+        for (const t of tracks) {
+          const vtt = await (await request.get(t.src)).text();
+          expect(vtt.startsWith('WEBVTT'), t.src).toBe(true);
+          expect((vtt.match(/\d\d:\d\d:\d\d\.\d{3} --> \d\d:\d\d:\d\d\.\d{3}/g) || []).length, t.src).toBeGreaterThan(5);
+        }
+        for (const src of posters) expect((await request.get(src)).status(), src).toBe(200);
       });
 
       test('el botón de modo oscuro cambia el tema y lo recuerda', async ({ page }) => {
