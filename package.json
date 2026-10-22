@@ -13,7 +13,7 @@
     "check": "npm run test:worker && npm run lint:html && playwright test --grep-invert @red"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.10.1",
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.56.1",
     "html-validate": "11.16.0"
   }
