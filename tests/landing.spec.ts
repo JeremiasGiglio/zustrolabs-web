@@ -87,6 +87,10 @@ for (const p of PAGINAS) {
         await expect(casos).toHaveCount(2);
         await expect(casos.nth(0).locator('a[href="https://radar.zustrolabs.com"]')).toHaveCount(1);
         await expect(casos.nth(0).locator('img[src="/assets/radar-home.jpg"]')).toHaveCount(1);
+        // El Radar suma fichas todas las semanas: la tarjeta no fija cuántas tiene (quedaría vieja).
+        const radar = (await casos.nth(0).locator('.case-body').innerText()).replace(/\s+/g, ' ');
+        expect(radar).not.toMatch(/\b\d+\s+(oportunidades|opportunities|prilika|fichas|programas|programmes|programa)\b/i);
+        expect(radar).not.toMatch(/descendientes|descent|potomke/i);
         await expect(casos.nth(1).locator('a[href="https://croata.zustrolabs.com"]')).toHaveCount(1);
       });
 
