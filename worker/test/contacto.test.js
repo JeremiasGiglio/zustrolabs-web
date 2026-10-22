@@ -47,7 +47,7 @@ test('una consulta válida manda un correo al destino del secreto, con Reply-To 
   assert.equal(enviados.length, 1);
   assert.deepEqual(enviados[0].dirs, { de: 'web@avisos.zustrolabs.com', para: 'destino-verificado@example.com' });
   const { mime } = enviados[0];
-  assert.match(mime, /^From: =\?UTF-8\?B\?[^?]+\?= <web@zustrolabs\.com>\r\n/);
+  assert.match(mime, /^From: =\?UTF-8\?B\?[^?]+\?= <web@avisos\.zustrolabs\.com>\r\n/);
   assert.match(mime, /\r\nTo: <destino-verificado@example\.com>\r\n/);
   assert.match(mime, /\r\nReply-To: <lucia@example\.com>\r\n/);
   assert.match(mime, /\r\nMessage-ID: <id-fijo@zustrolabs\.com>\r\n/);
