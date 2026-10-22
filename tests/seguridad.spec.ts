@@ -163,7 +163,7 @@ test.describe('en el navegador', () => {
       expect(await page.evaluate(() => (window as any).__xss)).toBeUndefined();
       await expect(page.locator('img[src="x"]')).toHaveCount(0);
       const href = (await page.locator('#form-mailto').getAttribute('href'))!;
-      expect(href).toMatch(/^mailto:hola@zustrolabs\.com\?/);
+      expect(href).toMatch(/^mailto:contact@zustrolabs\.com\?/);
       expect(href).not.toMatch(/[<>"]/);
       expect(page.url()).not.toMatch(/xss|onerror|prueba/i);
       expect(await context.cookies()).toEqual([]);

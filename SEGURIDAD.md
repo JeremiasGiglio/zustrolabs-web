@@ -50,7 +50,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 - [ ] **Secret scanning** activado (viene por defecto en repos públicos; comprobar).
 
 ### Correo y formulario
-- [ ] `hola@zustrolabs.com` tiene que ser una casilla real que alguien lea. Si es un alias, configurarlo en *Cloudflare → Email Routing* para que reenvíe a una casilla que se mire todos los días.
+- [ ] `contact@zustrolabs.com` tiene que ser una casilla real que alguien lea: es la casilla de Zoho Mail del estudio (ZL-107; `hola@` queda como alias para quien la tenga guardada).
 - [ ] **Publicar el Worker del formulario** (una vez, desde `worker/`): `npx wrangler deploy` y `npx wrangler secret put DESTINO`, con una casilla **verificada** en *Email Routing → Destination addresses*. Ver `worker/README.md`.
 - [ ] **Publicar el Worker del asistente** (una vez, desde `asistente/`): crear una clave propia en la consola de Anthropic, con límite de gasto, `npx wrangler secret put ANTHROPIC_API_KEY` y `npx wrangler deploy`. Ver `asistente/README.md`.
 - [ ] Mandar una consulta de prueba desde zustrolabs.com y comprobar que llega y que «Responder» va al visitante.
@@ -76,7 +76,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 | Gasto raro o abuso del asistente | Bajar `LIMITE_GLOBAL` en `asistente/wrangler.toml` y volver a publicar. En una emergencia: *Workers & Pages → zustrolabs-asistente → Settings → Domains & Routes*, sacar las rutas; la página muestra el aviso con el correo. Si la clave se filtró, revocarla en la consola de Anthropic. |
 | Alguien sin permiso entró a Cloudflare o GitHub | Cambiar la contraseña, revocar sesiones y tokens, revisar DNS y deployments recientes. Activar 2FA si no estaba. |
 | Una clave tocó el repo por error | Revocarla en el servicio de origen **aunque ya se haya borrado del código**. El historial de git la conserva. |
-| Un desconocido reporta una falla de seguridad | Responder desde hola@zustrolabs.com, agradecer, arreglar, no discutir. |
+| Un desconocido reporta una falla de seguridad | Responder desde contact@zustrolabs.com, agradecer, arreglar, no discutir. |
 
 ## Lo que no se hace
 - No se agrega `'unsafe-eval'` a la CSP, ni se abren `frame-ancestors`, ni se permiten scripts de dominios fuera de la lista "para probar".

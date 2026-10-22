@@ -53,7 +53,7 @@ Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Š
 - La Z del logo son 13 casillas de un tablero de 5 por 5. Como en el escudo de Croacia, la primera casilla siempre es roja. Cada casilla es una prueba que pasa: de ahí el lema.
 
 ## Cómo escribirnos (sección «contacto»)
-- Con el formulario de la sección «Contacto» de esta página, o al correo hola@zustrolabs.com.
+- Con el formulario de la sección «Contacto» de esta página, o al correo contact@zustrolabs.com.
 - Se cuenta el proyecto con palabras propias, sin tecnicismos. Responde una persona.
 - No publicamos valores: cada proyecto es distinto, así que se charla después de que nos cuentes qué necesitás.
 
