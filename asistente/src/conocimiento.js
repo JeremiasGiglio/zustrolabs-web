@@ -36,7 +36,7 @@ export const CONOCIMIENTO = `
    - Lo que hacemos: la revisamos, la probamos y te decimos qué está mal y cómo arreglarlo.
 
 ## Productos disponibles (sección «productos»)
-Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Šahovnica se pueden usar gratis hoy.
+Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Šahovnica se pueden usar gratis hoy. Los videos están en el idioma de cada versión de la página; en la sección «servicios» hay además un video de 85 segundos que muestra cómo trabajamos, y la tarjeta del Radar tiene el suyo, de 60 segundos.
 - Agente de turnos por WhatsApp: atiende consultorios y comercios, ofrece horarios libres, confirma, manda recordatorios y deriva las preguntas médicas a una persona. Nunca da consejo médico.
 - Preguntale a tus ventas: le preguntás «¿cuánto vendimos en septiembre?» y responde con el número, la comparación con el mes anterior y de dónde sale el dato.
 - Radar Croacia (enlace «radar», gratis, código abierto en el enlace «codigo_radar»): programas, becas y oportunidades en Croacia para la diáspora sudamericana y para quien quiera ir, filtradas según la situación de cada persona, con la fuente oficial y la fecha de revisión de cada una. Tiene un chat con IA y un bot de WhatsApp que responden solo con lo verificado. Hecho con el Ateneo Croata de Rosario.
