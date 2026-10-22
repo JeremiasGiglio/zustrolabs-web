@@ -1,5 +1,5 @@
 // Tests de seguridad del sitio: lo que se publica (HTML, JS, cabeceras) y lo que hay en el repo público.
-// Los del Worker del formulario están en worker/test/ (node --test).
+// Los del Worker del formulario están en worker/test/ y los del asistente en asistente/test/ (node --test).
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -243,7 +243,7 @@ test.describe('repo público', () => {
   });
 
   test('sin datos personales en lo publicado ni en la documentación', () => {
-    const revisar = textos.filter((f) => /^(site\/|worker\/src\/|worker\/wrangler\.toml|scripts\/|[^/]+\.md$)/.test(f) && !f.endsWith('.svg'));
+    const revisar = textos.filter((f) => /^(site\/|worker\/src\/|worker\/wrangler\.toml|asistente\/src\/|asistente\/wrangler\.toml|asistente\/evals\/casos\.json|scripts\/|[^/]+\.md$)/.test(f) && !f.endsWith('.svg'));
     const patrones: [string, RegExp][] = [
       ['CUIL/CUIT', /\b(20|23|24|27|30|33|34)-?\d{8}-?\d\b/],
       ['DNI', /\b\d{2}\.\d{3}\.\d{3}\b/],

@@ -26,7 +26,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
-<link rel="stylesheet" href="/assets/site.css?v=d5c5b7991c">
+<link rel="stylesheet" href="/assets/site.css?v=fef049eff9">
 <script>(function(){try{var t=localStorage.getItem('tema');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 </head>
 <body>
@@ -383,6 +383,27 @@
   </div>
 </footer>
 
-<script src="/assets/site.js?v=3b0427c635"></script>
+<!-- Asistente «Ask Zustro» (ZL-105): responde con lo que dice esta página; ver asistente/ -->
+<div class="asis" id="asis" data-ids="services products team origin contact" data-pensando="Thinking…" data-escribirnos="Write to us" data-falla="I can’t answer right now. Write to us with the contact form or at hola@zustrolabs.com and a person will reply." data-limite="You asked a lot in a row. Wait a minute and try again." data-vos="You" data-zustro="Zustro">
+  <div class="asis-panel" id="asis-panel" role="dialog" aria-labelledby="asis-titulo" hidden>
+    <div class="asis-cab">
+      <p class="asis-titulo" id="asis-titulo"><svg viewBox="0 0 15 15" aria-hidden="true"><rect x="0" y="0" width="5" height="5" class="lr"/><rect x="10" y="0" width="5" height="5" class="lr"/><rect x="5" y="5" width="5" height="5" class="lr"/><rect x="0" y="10" width="5" height="5" class="lr"/><rect x="10" y="10" width="5" height="5" class="lr"/></svg>Ask Zustro</p>
+      <button class="asis-cerrar" id="asis-cerrar" type="button" aria-label="Close"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 2l14 14M16 2L2 16"/></svg></button>
+    </div>
+    <p class="asis-aviso">An AI answers with what this page says. We don’t keep the chat. For your project, a person replies.</p>
+    <div class="asis-log" id="asis-log" role="log" aria-live="polite">
+      <p class="asis-msg de-zustro">Hi. I can tell you what we build, which products we have and how to reach us. What would you like to know?</p>
+    </div>
+    <div class="asis-sug" id="asis-sug"><button type="button">What do you do?</button><button type="button">Can you build me a WhatsApp agent?</button><button type="button">Who are you?</button></div>
+    <form class="asis-form" id="asis-form" autocomplete="off">
+      <label class="vh" for="asis-texto">Your question</label>
+      <input id="asis-texto" type="text" maxlength="500" placeholder="Type your question">
+      <button class="btn btn-red btn-sm" type="submit" id="asis-enviar">Send</button>
+    </form>
+  </div>
+  <button class="asis-abrir" id="asis-abrir" type="button" aria-expanded="false" aria-controls="asis-panel" hidden><svg viewBox="0 0 15 15" aria-hidden="true"><rect x="0" y="0" width="5" height="5" class="lr"/><rect x="10" y="0" width="5" height="5" class="lr"/><rect x="5" y="5" width="5" height="5" class="lr"/><rect x="0" y="10" width="5" height="5" class="lr"/><rect x="10" y="10" width="5" height="5" class="lr"/></svg><span>Ask Zustro</span></button>
+</div>
+
+<script src="/assets/site.js?v=58d99adb4d"></script>
 </body>
 </html>

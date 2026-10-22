@@ -117,3 +117,99 @@
       .then(function () { clearTimeout(reloj); enviar.disabled = false; enviar.textContent = d.enviar; });
   });
 })();
+
+// Asistente «Preguntale a Zustro» (ZL-105): manda la pregunta a /api/chat (Worker propio, ver asistente/)
+// y muestra la respuesta como texto. La charla vive solo en esta variable: no se guarda en el navegador ni en el Worker.
+// Los botones de cada respuesta los arma esta página con sus propios links; la IA solo elige de una lista cerrada.
+(function () {
+  var raiz = document.getElementById('asis'); if (!raiz || !window.fetch || !window.JSON) return;
+  var abrir = document.getElementById('asis-abrir'), panel = document.getElementById('asis-panel');
+  var cerrar = document.getElementById('asis-cerrar'), log = document.getElementById('asis-log');
+  var form = document.getElementById('asis-form'), texto = document.getElementById('asis-texto');
+  var enviar = document.getElementById('asis-enviar'), sug = document.getElementById('asis-sug'), d = raiz.dataset;
+  var lang = document.documentElement.lang || 'es';
+  var CLAVES = ['servicios', 'productos', 'equipo', 'origen', 'contacto'];
+  var ids = (d.ids || '').split(' ');
+  var ENLACES = { radar: 'https://radar.zustrolabs.com', sahovnica: 'https://croata.zustrolabs.com', codigo_radar: 'https://github.com/JeremiasGiglio/radar-croacia' };
+  var charla = [], ocupado = false;
+
+  function abierto() { return !panel.hidden; }
+  function mostrar(si) {
+    panel.hidden = !si;
+    raiz.classList.toggle('abierto', si);
+    abrir.setAttribute('aria-expanded', si ? 'true' : 'false');
+    if (si) texto.focus(); else abrir.focus();
+  }
+  abrir.hidden = false;
+  abrir.addEventListener('click', function () { mostrar(true); });
+  cerrar.addEventListener('click', function () { mostrar(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && abierto()) mostrar(false); });
+
+  function burbuja(quien, contenido) {
+    var p = document.createElement('p');
+    p.className = 'asis-msg de-' + quien;
+    var q = document.createElement('span');
+    q.className = 'vh';
+    q.textContent = (quien === 'vos' ? d.vos : d.zustro) + ': ';
+    p.appendChild(q);
+    p.appendChild(document.createTextNode(contenido));
+    log.appendChild(p);
+    log.scrollTop = log.scrollHeight;
+    return p;
+  }
+  function chip(cont, href, rotulo, externo, clase) {
+    if (!rotulo) return;
+    var a = document.createElement('a');
+    a.href = href; a.textContent = rotulo + (externo ? ' ↗' : '');
+    if (clase) a.className = clase;
+    if (externo) { a.target = '_blank'; a.rel = 'noopener'; }
+    else a.addEventListener('click', function () { mostrar(false); });
+    cont.appendChild(a);
+  }
+  function botones(p, r) {
+    var cont = document.createElement('span');
+    cont.className = 'asis-chips';
+    (r.secciones || []).forEach(function (s) {
+      var i = CLAVES.indexOf(s); if (i < 0 || !ids[i]) return;
+      var a = document.querySelector('footer a[href="#' + ids[i] + '"]');
+      chip(cont, '#' + ids[i], a && a.textContent.trim(), false);
+    });
+    (r.enlaces || []).forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(ENLACES, k)) return;
+      var a = document.querySelector('footer a[href="' + ENLACES[k] + '"]');
+      chip(cont, ENLACES[k], a && a.textContent.trim(), true);
+    });
+    if (r.escribirnos && ids[4]) chip(cont, '#' + ids[4], d.escribirnos, false, 'escribir');
+    if (cont.childNodes.length) { p.appendChild(cont); log.scrollTop = log.scrollHeight; }
+  }
+
+  function preguntar(q) {
+    q = String(q || '').trim().slice(0, 500);
+    if (!q || ocupado) return;
+    ocupado = true; enviar.disabled = true; sug.hidden = true;
+    burbuja('vos', q);
+    charla.push({ de: 'persona', texto: q });
+    var espera = burbuja('zustro', d.pensando);
+    espera.classList.add('pensando');
+    var corte = typeof AbortController === 'function' ? new AbortController() : null;
+    var reloj = corte ? setTimeout(function () { corte.abort(); }, 30000) : 0;
+    fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, credentials: 'omit',
+      body: JSON.stringify({ idioma: lang, mensajes: charla.slice(-8) }), signal: corte ? corte.signal : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { estado: r.status, j: j }; }); })
+      .then(function (x) {
+        espera.remove();
+        if (x.estado === 200 && x.j && x.j.ok === true && typeof x.j.respuesta === 'string') {
+          charla.push({ de: 'asistente', texto: x.j.respuesta });
+          botones(burbuja('zustro', x.j.respuesta), x.j);
+        } else if (x.estado === 429) {
+          burbuja('zustro', d.limite);
+        } else {
+          botones(burbuja('zustro', d.falla), { escribirnos: true });
+        }
+      })
+      .catch(function () { espera.remove(); botones(burbuja('zustro', d.falla), { escribirnos: true }); })
+      .then(function () { clearTimeout(reloj); ocupado = false; enviar.disabled = false; if (abierto()) texto.focus(); });
+  }
+  form.addEventListener('submit', function (e) { e.preventDefault(); var q = texto.value; texto.value = ''; preguntar(q); });
+  sug.addEventListener('click', function (e) { if (e.target.tagName === 'BUTTON') preguntar(e.target.textContent); });
+})();

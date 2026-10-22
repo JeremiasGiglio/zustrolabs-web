@@ -1,0 +1,22 @@
+name: Evals del asistente
+# Prueba al asistente de zustrolabs.com con la IA real (asistente/evals/). Corre a mano o cuando un PR toca
+# asistente/. Sin el secreto ANTHROPIC_API_KEY en el repo, avisa y no falla.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['asistente/**']
+permissions: { contents: read }
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node asistente/evals/correr.mjs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: evals-asistente, path: asistente/evals/ultimo-resultado.json, if-no-files-found: ignore, retention-days: 30 }

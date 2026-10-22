@@ -1,6 +1,6 @@
 # Seguridad — zustrolabs-web
 
-Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y GitHub, y qué hacer si algo pasa. El sitio es estático: no hay base de datos ni cuentas de usuario. La única parte con código del lado del servidor es el Worker del formulario (`worker/`), que valida, manda un correo y no guarda nada. Lo que queda es proteger el dominio, el tráfico y el formulario.
+Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y GitHub, y qué hacer si algo pasa. El sitio es estático: no hay base de datos ni cuentas de usuario. Hay dos partes con código del lado del servidor: el Worker del formulario (`worker/`), que valida, manda un correo y no guarda nada, y el Worker del asistente (`asistente/`), que responde preguntas con la IA sobre lo publicado en la página y tampoco guarda nada. Lo que queda es proteger el dominio, el tráfico y el formulario.
 
 ## Lo que ya hace el sitio (está en el repo)
 
@@ -19,6 +19,12 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
   - El destino sale de un secreto. El correo del visitante solo se acepta en ASCII seguro y el asunto va codificado: nadie puede agregar destinatarios ni cabeceras.
   - No guarda nada. Los logs solo llevan métricas, sin los registros automáticos de cada pedido.
   - Si falla, el visitante ve el correo y un link con el mensaje armado.
+- **Asistente con IA, con un Worker propio** (`asistente/`, en `zustrolabs.com/api/chat`). Los detalles están en `asistente/README.md`.
+  - Mismo origen, mismos chequeos de método, tipo y tamaño que el formulario.
+  - Límites de 10 preguntas por minuto por IP y 60 por minuto en total (también es el tope de gasto). Si faltan, no responde.
+  - La clave de la IA es un secreto del Worker, propia del estudio y separada de la del Radar.
+  - La IA solo conoce lo publicado en la página. Su salida pasa por controles fijos: sin links, sin teléfonos, sin plata, sin palabras prohibidas y con botones elegidos de una lista cerrada.
+  - No guarda la charla. Los logs solo llevan métricas.
 - **Sin cookies ni rastreo propio.** Si se activa Cloudflare Web Analytics, tampoco usa cookies.
 - **Páginas de apoyo (`/expo/`, `/pantalla/`)** fuera de los buscadores (`noindex`).
 - **Tests automáticos** que, entre otras cosas, verifican que no haya precios ni datos prohibidos, que los links externos lleven `rel="noopener"`, que el único contacto sea el correo y que las cabeceras de seguridad sigan en su lugar.
@@ -46,6 +52,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 ### Correo y formulario
 - [ ] `hola@zustrolabs.com` tiene que ser una casilla real que alguien lea. Si es un alias, configurarlo en *Cloudflare → Email Routing* para que reenvíe a una casilla que se mire todos los días.
 - [ ] **Publicar el Worker del formulario** (una vez, desde `worker/`): `npx wrangler deploy` y `npx wrangler secret put DESTINO`, con una casilla **verificada** en *Email Routing → Destination addresses*. Ver `worker/README.md`.
+- [ ] **Publicar el Worker del asistente** (una vez, desde `asistente/`): crear una clave propia en la consola de Anthropic, con límite de gasto, `npx wrangler secret put ANTHROPIC_API_KEY` y `npx wrangler deploy`. Ver `asistente/README.md`.
 - [ ] Mandar una consulta de prueba desde zustrolabs.com y comprobar que llega y que «Responder» va al visitante.
 - [ ] Si hay una *Redirect Rule* de `www` al dominio sin `www`, que excluya `/api/*`.
 - [ ] Si empieza a llegar spam por el formulario: activar *Turnstile* de Cloudflare (gratis, sin captchas molestos) en el formulario y en el Worker. El campo trampa y el tiempo mínimo los controla el navegador, así que un script dedicado los puede saltear; hoy lo que de verdad frena el abuso son los dos límites. Turnstile pide una clave de sitio (pública) y una secreta (secreto del Worker).
@@ -66,6 +73,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 | El sitio se cae o va lento por tráfico raro | Cloudflare → Security → *Under Attack Mode* activado. Mirar *Security → Events* para ver de dónde viene. Desactivar cuando se calme. |
 | Se publicó algo roto | Workers & Pages → el proyecto → Deployments → en el deployment anterior, **Rollback**. Es un clic y tarda segundos. |
 | Llega spam por el formulario | Mirar los logs del Worker (`resultado`). Bajar `LIMITE_GLOBAL` en `worker/wrangler.toml` y volver a publicar. Si sigue, Turnstile. En una emergencia: *Workers & Pages → zustrolabs-contacto → Settings → Domains & Routes*, sacar las rutas; la página ofrece el correo. |
+| Gasto raro o abuso del asistente | Bajar `LIMITE_GLOBAL` en `asistente/wrangler.toml` y volver a publicar. En una emergencia: *Workers & Pages → zustrolabs-asistente → Settings → Domains & Routes*, sacar las rutas; la página muestra el aviso con el correo. Si la clave se filtró, revocarla en la consola de Anthropic. |
 | Alguien sin permiso entró a Cloudflare o GitHub | Cambiar la contraseña, revocar sesiones y tokens, revisar DNS y deployments recientes. Activar 2FA si no estaba. |
 | Una clave tocó el repo por error | Revocarla en el servicio de origen **aunque ya se haya borrado del código**. El historial de git la conserva. |
 | Un desconocido reporta una falla de seguridad | Responder desde hola@zustrolabs.com, agradecer, arreglar, no discutir. |
@@ -78,4 +86,4 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 - No se pone el correo de contacto en la URL de nada.
 
 ## Nota técnica honesta
-La CSP permite `'unsafe-inline'` en scripts y estilos porque el sitio tiene dos scripts cortos en línea (la elección del modo oscuro antes de pintar la página, y las frases que rotan en `/pantalla/`) y estilos en línea en un par de elementos. Quitarlo exigiría *nonces*, que un sitio estático sin build no puede generar. El riesgo es bajo: no hay entrada de usuario que se imprima en la página, así que no hay dónde inyectar un script. Si algún día la página imprime algo que escribió un visitante, esta nota deja de ser cierta y hay que revisar la CSP antes. Hay tests que verifican que `site.js` no use `innerHTML` ni `eval`, y que un intento de XSS en el formulario no se ejecute.
+La CSP permite `'unsafe-inline'` en scripts y estilos porque el sitio tiene dos scripts cortos en línea (la elección del modo oscuro antes de pintar la página, y las frases que rotan en `/pantalla/`) y estilos en línea en un par de elementos. Quitarlo exigiría *nonces*, que un sitio estático sin build no puede generar. El riesgo es bajo. Desde ZL-105 la página sí muestra texto que no escribimos nosotros: la pregunta del visitante y la respuesta del asistente. Por eso `site.js` los mete siempre con `textContent`, nunca como HTML, y los botones de cada respuesta salen de una lista fija de la página, no de la IA. Hay tests que intentan inyectar HTML y scripts en la respuesta y verifican que se muestren como texto. Si algún día la página imprime algo de afuera como HTML, esta nota deja de ser cierta y hay que revisar la CSP antes. Hay tests que verifican que `site.js` no use `innerHTML` ni `eval`, y que un intento de XSS en el formulario no se ejecute.

@@ -493,3 +493,42 @@ footer{border-top:1px solid var(--line);padding-block:40px 32px;color:var(--mute
 .hero.solo{min-height:calc(100svh - 69px);display:flex;align-items:center}
 .hero.solo .wrap{grid-template-columns:minmax(0,1fr);width:100%}
 .hero.solo .sub+.sub{margin-top:8px}
+
+/* Asistente «Preguntale a Zustro» (ZL-105): botón flotante y panel. Sin JavaScript no aparece. */
+.vh{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.asis{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:30;display:grid;justify-items:end;gap:12px;font-family:var(--f-body)}
+.asis svg .lr{fill:var(--logo-red)}
+.asis-abrir{display:inline-flex;align-items:center;gap:10px;padding:12px 18px 12px 14px;border-radius:999px;border:2px solid var(--fg);background:var(--bg);color:var(--fg);font:700 1rem/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;box-shadow:0 10px 26px -12px rgba(0,0,0,.45)}
+.asis-abrir:hover{border-color:var(--red)}
+.asis-abrir svg,.asis-titulo svg{width:15px;height:15px;flex:none}
+.asis.abierto .asis-abrir{display:none}
+.asis-panel{width:min(380px,calc(100vw - 32px));max-height:min(620px,calc(100dvh - 96px));display:flex;flex-direction:column;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-top:4px solid var(--red);border-radius:6px;box-shadow:0 24px 60px -24px rgba(0,0,0,.55);overflow:hidden}
+.asis-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 12px 8px 16px}
+.asis-titulo{display:flex;align-items:center;gap:10px;font:700 1.25rem/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+.asis-cerrar{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
+.asis-cerrar:hover{background:var(--bg-2)}
+.asis-aviso{padding:0 16px 10px;font-size:.85rem;line-height:1.4;color:var(--muted);border-bottom:1px solid var(--line)}
+.asis-log{flex:1;min-height:120px;overflow-y:auto;overscroll-behavior:contain;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.asis-msg{max-width:88%;padding:10px 13px;border-radius:12px;font-size:.98rem;line-height:1.45;white-space:pre-line;overflow-wrap:anywhere}
+.asis-msg.de-zustro{align-self:flex-start;background:var(--bg-2);border-bottom-left-radius:3px}
+.asis-msg.de-vos{align-self:flex-end;background:var(--band);color:var(--band-fg);border-bottom-right-radius:3px}
+.asis-msg.pensando{color:var(--muted);font-style:italic}
+.asis-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.asis-chips a{display:inline-flex;align-items:center;min-height:34px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--bg);font-size:.88rem;font-weight:600;text-decoration:none;color:var(--fg)}
+.asis-chips a:hover{border-color:var(--red)}
+.asis-chips a.escribir{background:#C8102E;border-color:#C8102E;color:#FFFFFF}
+.asis-sug{display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 12px}
+.asis-sug button{min-height:36px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--fg);font:600 .88rem/1.2 var(--f-body);cursor:pointer;text-align:left}
+.asis-sug button:hover{border-color:var(--red)}
+.asis-form{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);background:var(--bg-2)}
+.asis-form input{flex:1;min-width:0;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);font:400 1rem/1.3 var(--f-body)}
+.asis-form .btn{min-height:44px}
+.asis-form .btn:disabled{opacity:.6;cursor:wait}
+@media (max-width:560px){
+  .asis-abrir span{font-size:.92rem}
+  /* en el celular el panel ocupa el ancho y casi todo el alto */
+  .asis.abierto{left:max(8px,env(safe-area-inset-left,0px));right:max(8px,env(safe-area-inset-right,0px));bottom:max(8px,env(safe-area-inset-bottom,0px))}
+  .asis.abierto .asis-panel{width:100%;max-height:calc(100dvh - 16px)}
+  .asis-form input{font-size:16px} /* sin zoom automático en iPhone */
+}
+@media print{.asis{display:none}}

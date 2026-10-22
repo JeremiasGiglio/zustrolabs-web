@@ -25,6 +25,14 @@ La sección de contacto tiene el formulario a la vista: nombre, correo o teléfo
 
 En local, `npm run serve` no tiene el Worker: el formulario muestra el error y ofrece el correo. Los tests simulan la respuesta sin salir a internet.
 
+## Asistente con IA («Preguntale a Zustro», ZL-105)
+Abajo a la derecha de las tres versiones hay un botón que abre un chat. Responde preguntas sobre el estudio con lo que ya dice la página (qué construimos, productos, equipo, origen y cómo escribirnos) y, para todo lo demás, ofrece el formulario. El navegador manda la pregunta a **`/api/chat`**, otro Worker propio (`asistente/`), separado del formulario.
+
+- No guarda la charla, no da valores ni plazos, no inventa clientes y no responde temas que no sean del estudio.
+- Los botones de cada respuesta los arma la página con sus propios links; la IA solo elige de una lista cerrada. Todo se muestra como texto.
+- Sin JavaScript el botón no aparece.
+- Lo que sabe, los controles, las evals y cómo publicarlo: [`asistente/README.md`](asistente/README.md).
+
 ## Equipo en la página
 La sección "Quiénes somos" tiene tres lugares para fotos, hoy vacíos (`.portrait.empty`). Para cargarlas: poner cada retrato en `site/assets/` (4:5, unos 800 px de ancho, WebP) y reemplazar el `div.portrait.empty` por `div.portrait` con la `img` adentro. El damero rojo de la esquina lo pone el CSS. Los roles de David Vera y Nelson Zalazar están en blanco (`p.role`) hasta que se definan.
 
@@ -42,7 +50,7 @@ npm run test:links   # chequea que Šahovnica, el Radar y GitHub respondan
 ```
 `npm run check` corre tres cosas:
 
-1. **`npm run test:worker`:** 26 tests del Worker del formulario con `node --test`. Cubren:
+1. **`npm run test:worker`:** los tests de los dos Workers con `node --test`: 26 del formulario y 26 del asistente (`asistente/test/`). Los del formulario cubren:
     * orígenes, métodos, tipos y tamaños;
     * campo trampa y tiempo mínimo;
     * los dos límites (IPv4, IPv6 /64 y global) y qué pasa si fallan;

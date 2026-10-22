@@ -1,0 +1,37 @@
+# Worker del asistente de zustrolabs.com («Preguntale a Zustro»).
+# Se publica desde esta carpeta con `npm ci && npx wrangler deploy` (ver asistente/README.md).
+# Nada secreto acá: la clave de la IA se carga con `npx wrangler secret put ANTHROPIC_API_KEY`.
+name = "zustrolabs-asistente"
+main = "src/index.js"
+compatibility_date = "2026-09-15"
+workers_dev = false
+preview_urls = false
+
+# Solo esta ruta: el resto de zustrolabs.com lo sigue sirviendo Cloudflare Pages, y /api/contacto el otro Worker.
+routes = [
+  { pattern = "zustrolabs.com/api/chat", zone_name = "zustrolabs.com" },
+  { pattern = "www.zustrolabs.com/api/chat", zone_name = "zustrolabs.com" },
+]
+
+[vars]
+ORIGENES = "https://zustrolabs.com,https://www.zustrolabs.com"
+MODELO = "claude-haiku-5-5"
+
+# Límites (sin ellos el Worker no responde): 10 preguntas por minuto por IP (o /64 en IPv6)
+# y 60 por minuto en total, que es también el tope de gasto en IA.
+[[ratelimits]]
+name = "LIMITE"
+namespace_id = "1070"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "LIMITE_GLOBAL"
+namespace_id = "1071"
+simple = { limit = 60, period = 60 }
+
+# Solo los console.log del Worker (métricas sin texto de la charla ni datos personales).
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false

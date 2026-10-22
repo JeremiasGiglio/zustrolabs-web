@@ -1,0 +1,15 @@
+{
+  "name": "zustrolabs-asistente",
+  "private": true,
+  "description": "Asistente con IA de zustrolabs.com (Cloudflare Workers + Claude). Responde solo con lo publicado en la página.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test 'test/*.test.js'",
+    "evals": "node evals/correr.mjs",
+    "dev": "wrangler dev --local --port 8788",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}
