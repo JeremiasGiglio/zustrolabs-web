@@ -1,6 +1,6 @@
 # Seguridad — zustrolabs-web
 
-Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y GitHub, y qué hacer si algo pasa. El sitio es estático: no hay base de datos ni cuentas de usuario. Hay dos partes con código del lado del servidor: el Worker del formulario (`worker/`), que valida, manda un correo y no guarda nada, y el Worker del asistente (`asistente/`), que responde preguntas con la IA sobre lo publicado en la página y tampoco guarda nada. Lo que queda es proteger el dominio, el tráfico y el formulario.
+Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y GitHub, y qué hacer si algo pasa. El sitio es estático: no hay base de datos ni cuentas de usuario. Hay dos partes con código del lado del servidor: el Worker del formulario (`worker/`), que valida, manda un correo y no guarda nada, y el Worker del asistente (`asistente/`), que responde preguntas con la IA sobre lo publicado en la página y tampoco guarda nada. El tercero es el del WhatsApp de Zustro Labs (`whatsapp/`): el mismo asistente por WhatsApp y un panel para que responda una persona. Es el único que guarda algo: el idioma por número, durante 90 días, y las charlas en las que alguien escribió PERSONA, durante 30. Ver `whatsapp/README.md`. Lo que queda es proteger el dominio, el tráfico y el formulario.
 
 ## Lo que ya hace el sitio (está en el repo)
 
@@ -25,6 +25,11 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
   - La clave de la IA es un secreto del Worker, propia del estudio y separada de la del Radar.
   - La IA solo conoce lo publicado en la página. Su salida pasa por controles fijos: sin links, sin teléfonos, sin plata, sin palabras prohibidas y con botones elegidos de una lista cerrada.
   - No guarda la charla. Los logs solo llevan métricas.
+- **WhatsApp del estudio, con un Worker propio** (`whatsapp/`, webhook en `zustrolabs.com/api/whatsapp` y panel en `equipo.zustrolabs.com`). Los detalles están en `whatsapp/README.md`.
+  - Solo procesa pedidos firmados por Meta, con la firma HMAC del App secret.
+  - El panel está detrás de Cloudflare Access. Además, el Worker verifica el token de Access y la lista `PANEL_EMAILS`: si falta algo, responde 503.
+  - Mismo cerebro y mismos controles fijos que el asistente de la página, más un filtro de dominios y de plata dicha sin moneda. Los registros no llevan ni el número ni el texto.
+  - Límites: 20 mensajes por minuto por número, 30 respuestas de la IA por minuto en total y 40 por número y por día. Usa una clave de IA propia, con límite de gasto mensual.
 - **Sin cookies ni rastreo propio.** Si se activa Cloudflare Web Analytics, tampoco usa cookies.
 - **Páginas de apoyo (`/expo/`, `/pantalla/`)** fuera de los buscadores (`noindex`).
 - **Tests automáticos** que, entre otras cosas, verifican que no haya precios ni datos prohibidos, que los links externos lleven `rel="noopener"`, que el único contacto sea el correo y que las cabeceras de seguridad sigan en su lugar.
@@ -74,6 +79,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 | Se publicó algo roto | Workers & Pages → el proyecto → Deployments → en el deployment anterior, **Rollback**. Es un clic y tarda segundos. |
 | Llega spam por el formulario | Mirar los logs del Worker (`resultado`). Bajar `LIMITE_GLOBAL` en `worker/wrangler.toml` y volver a publicar. Si sigue, Turnstile. En una emergencia: *Workers & Pages → zustrolabs-contacto → Settings → Domains & Routes*, sacar las rutas; la página ofrece el correo. |
 | Gasto raro o abuso del asistente | Bajar `LIMITE_GLOBAL` en `asistente/wrangler.toml` y volver a publicar. En una emergencia: *Workers & Pages → zustrolabs-asistente → Settings → Domains & Routes*, sacar las rutas; la página muestra el aviso con el correo. Si la clave se filtró, revocarla en la consola de Anthropic. |
+| Gasto raro o abuso del WhatsApp | Bajar `LIMITE_GLOBAL` en `whatsapp/wrangler.toml` y volver a publicar. En una emergencia: en la app de Meta, sacar la suscripción del webhook, o en *Workers & Pages → zustrolabs-whatsapp → Settings → Domains & Routes*, sacar la ruta. Si se filtró el token de WhatsApp, revocarlo desde el usuario del sistema en Business settings. |
 | Alguien sin permiso entró a Cloudflare o GitHub | Cambiar la contraseña, revocar sesiones y tokens, revisar DNS y deployments recientes. Activar 2FA si no estaba. |
 | Una clave tocó el repo por error | Revocarla en el servicio de origen **aunque ya se haya borrado del código**. El historial de git la conserva. |
 | Un desconocido reporta una falla de seguridad | Responder desde contact@zustrolabs.com, agradecer, arreglar, no discutir. |
@@ -81,7 +87,7 @@ Qué protege al sitio hoy, qué hay que activar una sola vez en Cloudflare y Git
 ## Lo que no se hace
 - No se agrega `'unsafe-eval'` a la CSP, ni se abren `frame-ancestors`, ni se permiten scripts de dominios fuera de la lista "para probar".
 - No se instalan dependencias de producción: el sitio no tiene build y así se queda.
-- No se guardan datos de visitantes en ningún lado nuestro. El Worker los manda por correo y los olvida; en sus logs no va nada personal.
+- No se guardan datos de visitantes de la página en ningún lado nuestro. El Worker del formulario los manda por correo y los olvida; en sus logs no va nada personal. La excepción es el WhatsApp del estudio (`whatsapp/`), con plazos fijos y BORRAR para borrar todo.
 - No se agrega un servicio de terceros para el formulario: va por el Worker propio.
 - No se pone el correo de contacto en la URL de nada.
 

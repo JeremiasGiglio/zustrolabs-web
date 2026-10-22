@@ -53,7 +53,8 @@ const DOMINIOS_OK = new Set(['zustrolabs.com', 'radar.zustrolabs.com', 'croata.z
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029]/g;
 
-export function systemPrompt(idioma = 'es') {
+/** canal: texto extra para otro canal (el WhatsApp de whatsapp/ lo usa); en la página va vacío. */
+export function systemPrompt(idioma = 'es', canal = '') {
   return `Sos el asistente de la página de Zustro Labs (zustrolabs.com). Respondés preguntas sobre el estudio usando SOLO la información que está entre <informacion> y </informacion>.
 
 Reglas, en este orden:
@@ -69,7 +70,7 @@ Reglas, en este orden:
 
 <informacion>
 ${CONOCIMIENTO}
-</informacion>`;
+</informacion>${canal ? `\n\n${canal}` : ''}`;
 }
 
 export const ESQUEMA = {
@@ -108,11 +109,11 @@ export function validarPedido(entrada) {
   return { ok: true, mensajes, idioma };
 }
 
-export function armarPedidoApi({ mensajes, idioma }, { modelo = MODELO } = {}) {
+export function armarPedidoApi({ mensajes, idioma }, { modelo = MODELO, canal = '' } = {}) {
   return {
     model: modelo,
     max_tokens: LIMITES.maxTokens,
-    system: systemPrompt(idioma),
+    system: systemPrompt(idioma, canal),
     messages: mensajes,
     output_config: { format: { type: 'json_schema', schema: ESQUEMA } },
   };

@@ -7,7 +7,7 @@
     "serve": "node scripts/serve.mjs",
     "versionar": "node scripts/versionar.mjs",
     "test": "playwright test",
-    "test:worker": "node --test 'worker/test/*.test.js' 'asistente/test/*.test.js'",
+    "test:worker": "node --test 'worker/test/*.test.js' 'asistente/test/*.test.js' 'whatsapp/test/*.test.js'",
     "lint:html": "html-validate 'site/**/*.html'",
     "test:links": "playwright test --grep @red",
     "check": "npm run test:worker && npm run lint:html && playwright test --grep-invert @red"

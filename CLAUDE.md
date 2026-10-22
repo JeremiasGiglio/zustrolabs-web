@@ -20,6 +20,9 @@ Hero con el agente de turnos en un teléfono (HTML animado, sin video) y dos bot
 ## Asistente con IA
 Botón «Preguntale a Zustro» abajo a la derecha en las tres versiones (`#asis` en cada `index.html`, lógica en `site.js`). Va a `/api/chat`, Worker propio en `asistente/`, que responde solo con `asistente/src/conocimiento.js`: si cambia el contenido de la landing, se actualiza ese archivo en el mismo PR. Sin precios, clientes ni roles inventados. Detalle en `asistente/README.md`.
 
+## WhatsApp del estudio
+Worker propio en `whatsapp/` (`zustrolabs-whatsapp`). El webhook está en `zustrolabs.com/api/whatsapp` y el panel de atención en `equipo.zustrolabs.com`, detrás de Access. Usa el mismo cerebro que el asistente (`asistente/src/asistente.js` + `conocimiento.js`), con una nota de canal. Es separado del Radar: otra app de Meta, otro número, otra memoria y la clave del estudio. El número no se muestra en la landing: la regla de contacto sigue igual. Puesta en marcha y comandos en `whatsapp/README.md`.
+
 ## Texto
 La página está escrita para gente que no sabe de tecnología: "un agente revisa cada cambio" (nunca "robot"), "pruebas", nada de QA, API, LLM ni CI fuera del recorrido plegado de Jeremías. Los productos se llaman "disponibles", nunca "demo" ni "en uso"; lo único que se marca como ficticio son los datos de los videos y del ejemplo del teléfono.
 
