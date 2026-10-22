@@ -5,7 +5,7 @@ import { crearHandler, validar, armarMime, unaLinea, claveIp, cabeceraUtf8, LIMI
 
 const ENV = {
   ORIGENES: 'https://zustrolabs.com,https://www.zustrolabs.com',
-  REMITENTE: 'web@zustrolabs.com',
+  REMITENTE: 'web@avisos.zustrolabs.com',
   DESTINO: 'destino-verificado@example.com',
 };
 const BUENO = { nombre: 'Lucía Benítez', email: 'lucia@example.com', telefono: '', tema: 'Sitio web', mensaje: 'Hola,\nquiero una web.', pagina: '/', idioma: 'es', web: '', t: 8000 };
@@ -45,9 +45,9 @@ test('una consulta válida manda un correo al destino del secreto, con Reply-To 
   assert.deepEqual(await r.json(), { ok: true });
   assert.equal(r.headers.get('Cache-Control'), 'no-store');
   assert.equal(enviados.length, 1);
-  assert.deepEqual(enviados[0].dirs, { de: 'web@zustrolabs.com', para: 'destino-verificado@example.com' });
+  assert.deepEqual(enviados[0].dirs, { de: 'web@avisos.zustrolabs.com', para: 'destino-verificado@example.com' });
   const { mime } = enviados[0];
-  assert.match(mime, /^From: =\?UTF-8\?B\?[^?]+\?= <web@zustrolabs\.com>\r\n/);
+  assert.match(mime, /^From: =\?UTF-8\?B\?[^?]+\?= <web@avisos\.zustrolabs\.com>\r\n/);
   assert.match(mime, /\r\nTo: <destino-verificado@example\.com>\r\n/);
   assert.match(mime, /\r\nReply-To: <lucia@example\.com>\r\n/);
   assert.match(mime, /\r\nMessage-ID: <id-fijo@zustrolabs\.com>\r\n/);
@@ -282,7 +282,7 @@ test('validar ignora campos desconocidos y normaliza idioma y página', () => {
 });
 
 test('el MIME es válido: CRLF, base64 en líneas de 76 y asunto codificado', () => {
-  const mime = armarMime({ de: 'web@zustrolabs.com', para: 'd@example.com', datos: validar(BUENO).datos, fecha: new Date('2026-10-16T12:00:00Z'), id: 'x' });
+  const mime = armarMime({ de: 'web@avisos.zustrolabs.com', para: 'd@example.com', datos: validar(BUENO).datos, fecha: new Date('2026-10-16T12:00:00Z'), id: 'x' });
   assert.ok(!/[^\r]\n/.test(mime), 'todos los saltos son CRLF');
   const [, cuerpo] = mime.split('\r\n\r\n');
   for (const linea of cuerpo.trim().split('\r\n')) assert.ok(linea.length <= 76);
