@@ -11,7 +11,7 @@ import { CONOCIMIENTO, ENLACES, SECCIONES } from '../src/conocimiento.js';
 const ORIGEN = 'https://zustrolabs.com';
 const limiteOk = { limit: async () => ({ success: true }) };
 const ENV = { ORIGENES: 'https://zustrolabs.com,https://www.zustrolabs.com', LIMITE: limiteOk, LIMITE_GLOBAL: limiteOk, ANTHROPIC_API_KEY: 'prueba' };
-const salida = (o = {}) => ({ respuesta: 'Hacemos sitios, apps y agentes de IA, probados antes de entregarlos.', secciones: ['servicios'], enlaces: [], escribirnos: false, fuera_de_tema: false, ...o });
+const salida = (o = {}) => ({ respuesta: 'Hacemos sitios, apps y agentes de IA, probados antes de entregarlos.', seccion: 'servicios', enlace: 'ninguno', escribirnos: false, fuera_de_tema: false, ...o });
 
 function pedido(cuerpo, { origen = ORIGEN, tipo = 'application/json', metodo = 'POST', ip = '190.0.0.1' } = {}) {
   const headers = { 'CF-Connecting-IP': ip };
@@ -95,6 +95,21 @@ test('sin clave de IA o si la IA falla: 503/502 con el texto de respaldo en el i
   const falla = await fetch(pedido(unaPregunta('Bok', 'hr')), ENV);
   assert.equal(falla.status, 502);
   assert.equal((await falla.json()).respuesta, TEXTOS.hr.falla);
+});
+
+test('si la respuesta sale cortada, se reintenta una sola vez', async () => {
+  let n = 0;
+  const fetch = crearHandler({ llamar: async () => { n++; if (n === 1) throw new Error('cortada'); return { salida: salida(), uso: {} }; }, log: () => {} });
+  assert.equal((await fetch(pedido(unaPregunta('Što radite?', 'hr')), ENV)).status, 200);
+  assert.equal(n, 2);
+  let m = 0;
+  const siempre = crearHandler({ llamar: async () => { m++; throw new Error('cortada'); }, log: () => {} });
+  assert.equal((await siempre(pedido(unaPregunta()), ENV)).status, 502);
+  assert.equal(m, 2);
+  let k = 0;
+  const otra = crearHandler({ llamar: async () => { k++; throw new Error('api-400'); }, log: () => {} });
+  await otra(pedido(unaPregunta()), ENV);
+  assert.equal(k, 1);
 });
 
 test('los logs solo llevan métricas: nunca el texto de la charla ni la IP', async () => {
@@ -198,23 +213,28 @@ test('controles: sin markdown, con tope de largo y sin dejar la respuesta vacía
   assert.equal(vacia.escribirnos, true);
 });
 
-test('controles: secciones y enlaces solo de la lista, sin repetir y con tope; fuera de tema sin botones', () => {
-  const c = controlar(salida({ secciones: ['equipo', 'equipo', 'admin', 'origen', 'productos'], enlaces: ['radar', 'javascript:alert(1)', 'radar', 'sahovnica', 'codigo_radar'] }));
-  assert.deepEqual(c.secciones, ['equipo', 'origen']);
-  assert.deepEqual(c.enlaces, ['radar', 'sahovnica']);
-  const f = controlar(salida({ fuera_de_tema: true, secciones: ['servicios'], enlaces: ['radar'], escribirnos: true }));
+test('controles: sección y enlace solo de la lista; fuera de tema sin botones', () => {
+  const c = controlar(salida({ seccion: 'equipo', enlace: 'radar' }));
+  assert.deepEqual([c.secciones, c.enlaces], [['equipo'], ['radar']]);
+  for (const raro of ['admin', 'javascript:alert(1)', '__proto__', 'constructor', 'ninguna', 'ninguno']) {
+    const r = controlar(salida({ seccion: raro, enlace: raro }));
+    assert.deepEqual([r.secciones, r.enlaces], [[], []], raro);
+  }
+  const f = controlar(salida({ fuera_de_tema: true, seccion: 'servicios', enlace: 'radar', escribirnos: true }));
   assert.deepEqual([f.secciones, f.enlaces, f.escribirnos], [[], [], false]);
   // si ya ofrece escribirnos, no repite la sección de contacto como botón
-  assert.deepEqual(controlar(salida({ secciones: ['contacto', 'servicios'], escribirnos: true })).secciones, ['servicios']);
+  assert.deepEqual(controlar(salida({ seccion: 'contacto', escribirnos: true })).secciones, []);
 });
 
 test('esquema: cumpleEsquema rechaza salidas incompletas o con tipos raros', () => {
   assert.equal(cumpleEsquema(salida()), true);
   assert.equal(cumpleEsquema({ ...salida(), escribirnos: 'sí' }), false);
-  assert.equal(cumpleEsquema({ ...salida(), secciones: [1] }), false);
+  assert.equal(cumpleEsquema({ ...salida(), seccion: ['servicios'] }), false);
   assert.equal(cumpleEsquema(null), false);
   assert.equal(ESQUEMA.additionalProperties, false);
-  assert.deepEqual(ESQUEMA.properties.secciones.items.enum, SECCIONES);
+  assert.deepEqual(ESQUEMA.properties.seccion.enum, [...SECCIONES, 'ninguna']);
+  assert.deepEqual(ESQUEMA.properties.enlace.enum, [...Object.keys(ENLACES), 'ninguno']);
+  assert.doesNotMatch(JSON.stringify(ESQUEMA), /"type":"array"/); // sin listas: el modelo se cortaba repitiendo
   assert.doesNotMatch(JSON.stringify(ESQUEMA), /minLength|maxItems|pattern/);
 });
 

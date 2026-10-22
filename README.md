@@ -50,7 +50,7 @@ npm run test:links   # chequea que Šahovnica, el Radar y GitHub respondan
 ```
 `npm run check` corre tres cosas:
 
-1. **`npm run test:worker`:** los tests de los dos Workers con `node --test`: 26 del formulario y 26 del asistente (`asistente/test/`). Los del formulario cubren:
+1. **`npm run test:worker`:** los tests de los dos Workers con `node --test`: 26 del formulario y 27 del asistente (`asistente/test/`). Los del formulario cubren:
     * orígenes, métodos, tipos y tamaños;
     * campo trampa y tiempo mínimo;
     * los dos límites (IPv4, IPv6 /64 y global) y qué pasa si fallan;
