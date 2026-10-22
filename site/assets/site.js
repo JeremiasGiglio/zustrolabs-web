@@ -111,7 +111,7 @@
       .then(function (j) { if (!j || j.ok !== true) throw new Error('respuesta'); mostrar('ok'); form.reset(); })
       .catch(function () {
         var cuerpo = [datos.nombre, datos.email, datos.telefono, datos.tema, '', datos.mensaje].filter(Boolean).join('\n');
-        mailto.href = 'mailto:hola@zustrolabs.com?subject=' + encodeURIComponent(d.asunto + ' · ' + datos.nombre) + '&body=' + encodeURIComponent(cuerpo);
+        mailto.href = 'mailto:contact@zustrolabs.com?subject=' + encodeURIComponent(d.asunto + ' · ' + datos.nombre) + '&body=' + encodeURIComponent(cuerpo);
         mostrar('fail');
       })
       .then(function () { clearTimeout(reloj); enviar.disabled = false; enviar.textContent = d.enviar; });

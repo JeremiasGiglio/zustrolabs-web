@@ -77,7 +77,7 @@ for (const p of PAGINAS) {
         await expect(page.locator('.solutions .prob')).toHaveCount(4);
         await expect(page.locator('.solutions .sol')).toHaveCount(4);
         await expect(page.locator('.hero .btn-ghost')).toHaveAttribute('href', /#(productos|products|proizvodi)$/);
-        await expect(page.locator('.contact-alt #mail')).toHaveText('hola@zustrolabs.com');
+        await expect(page.locator('.contact-alt #mail')).toHaveText('contact@zustrolabs.com');
         await expect(page.locator('.product')).toHaveCount(2);
         await expect(page.locator('.product video')).toHaveCount(2);
         await expect(page.locator('.form-card #form-contacto')).toHaveCount(1);
@@ -110,9 +110,9 @@ for (const p of PAGINAS) {
         for (const v of await page.locator('video').all()) await expect(v).toHaveAttribute('poster', /.+/);
       });
 
-      test('el contacto es hola@zustrolabs.com', async ({ page }) => {
+      test('el contacto es contact@zustrolabs.com', async ({ page }) => {
         await page.goto(p.url);
-        await expect(page.locator('#mail')).toHaveText('hola@zustrolabs.com');
+        await expect(page.locator('#mail')).toHaveText('contact@zustrolabs.com');
       });
 
       test('sin precios, sin "contratá" y sin figuras de empresa (potpora HZZ)', async ({ page }) => {
@@ -176,7 +176,7 @@ for (const p of PAGINAS) {
         await f.locator('#form-enviar').click();
         await expect(page.locator('#form-fail')).toBeVisible();
         const href = await page.locator('#form-mailto').getAttribute('href');
-        expect(href).toMatch(/^mailto:hola@zustrolabs\.com\?subject=/);
+        expect(href).toMatch(/^mailto:contact@zustrolabs\.com\?subject=/);
         expect(decodeURIComponent(href!)).toContain('Prueba');
       });
 

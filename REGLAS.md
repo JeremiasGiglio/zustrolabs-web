@@ -37,7 +37,7 @@ Valen para personas y para agentes de IA por igual. Si una tarea obliga a romper
 
 ## 8. Dominios y servicios ajenos
 - No se toca `croata.zustrolabs.com` (Worker de Šahovnica), `radar.zustrolabs.com` (Radar) ni nada de `jgcup.stream` desde este repo. Solo se enlazan.
-- El correo de contacto es `hola@zustrolabs.com`. El formulario va al Worker propio `worker/` (`/api/contacto`), que manda el correo con Cloudflare Email Routing. La casilla de destino es un secreto del Worker y nunca se escribe en el repo. No se cambia el destino ni se suma un servicio de terceros sin una decisión escrita de Jeremías.
+- El correo de contacto es `contact@zustrolabs.com`. El formulario va al Worker propio `worker/` (`/api/contacto`), que manda el correo con Cloudflare Email Routing. La casilla de destino es un secreto del Worker y nunca se escribe en el repo. No se cambia el destino ni se suma un servicio de terceros sin una decisión escrita de Jeremías.
 - El asistente (`/api/chat`) es otro Worker propio (`asistente/`). Su clave de IA es un secreto del Worker, propia del estudio. Lo que sabe está en `asistente/src/conocimiento.js` y sale de la landing: no se le agrega nada que no esté publicado.
 
 ## 9. Sitio estático, sin build, sin dependencias de producción

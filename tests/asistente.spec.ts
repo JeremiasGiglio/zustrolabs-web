@@ -87,7 +87,7 @@ for (const p of PAGINAS) {
       await abrir(page, p.url, p.boton);
       await preguntar(page, 'hola');
       const r = page.locator('#asis-log .de-zustro').last();
-      await expect(r).toContainText('hola@zustrolabs.com');
+      await expect(r).toContainText('contact@zustrolabs.com');
       await expect(r.locator(`a.escribir[href="${p.contacto}"]`)).toHaveCount(1);
       await preguntar(page, 'otra');
       await expect(page.locator('#asis-log .de-zustro').last()).toContainText(p.limite);
@@ -98,7 +98,7 @@ for (const p of PAGINAS) {
       await page.route('**/api/chat', (route) => route.abort('internetdisconnected'));
       await abrir(page, p.url, p.boton);
       await preguntar(page, 'hola');
-      await expect(page.locator('#asis-log .de-zustro').last()).toContainText('hola@zustrolabs.com');
+      await expect(page.locator('#asis-log .de-zustro').last()).toContainText('contact@zustrolabs.com');
     });
 
     test('las sugerencias preguntan con un toque y se ocultan después', async ({ page }) => {

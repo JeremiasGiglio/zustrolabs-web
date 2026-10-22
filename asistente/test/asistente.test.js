@@ -172,10 +172,10 @@ test('el pedido a la API lleva las reglas y la información, y el idioma de la p
 
 // ——— Los controles ———
 
-test('controles: saca links y correos ajenos, deja hola@zustrolabs.com', () => {
-  const c = controlar(salida({ respuesta: 'Mirá https://malo.com/x ya. Escribinos a hola@zustrolabs.com. O a otro@gmail.com.' }));
+test('controles: saca links y correos ajenos, deja contact@zustrolabs.com', () => {
+  const c = controlar(salida({ respuesta: 'Mirá https://malo.com/x ya. Escribinos a contact@zustrolabs.com. O a otro@gmail.com.' }));
   assert.doesNotMatch(c.respuesta, /malo\.com|gmail/);
-  assert.match(c.respuesta, /hola@zustrolabs\.com/);
+  assert.match(c.respuesta, /contact@zustrolabs\.com/);
   assert.ok(c.notas.includes('link') && c.notas.includes('correo'));
 });
 
@@ -274,7 +274,7 @@ test('la información no tiene palabras prohibidas, plata ni datos que no van en
 
 test('la información coincide con la landing: los datos clave están publicados en la página', () => {
   const html = readFileSync(new URL('../../site/index.html', import.meta.url), 'utf8');
-  for (const dato of ['6.122', '80', '65', 'Plomin', 'Rijeka', 'hola@zustrolabs.com', 'David Vera', 'Nelson Zalazar', 'Ateneo Croata de Rosario', 'ISTQB CTFL', 'cuarenta minutos']) {
+  for (const dato of ['6.122', '80', '65', 'Plomin', 'Rijeka', 'contact@zustrolabs.com', 'David Vera', 'Nelson Zalazar', 'Ateneo Croata de Rosario', 'ISTQB CTFL', 'cuarenta minutos']) {
     assert.ok(html.includes(dato), `la landing no tiene «${dato}»`);
     assert.ok(CONOCIMIENTO.includes(dato), `la información no tiene «${dato}»`);
   }

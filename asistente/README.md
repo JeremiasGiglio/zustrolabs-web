@@ -5,7 +5,7 @@ Worker `zustrolabs-asistente`, en `POST https://zustrolabs.com/api/chat` (y `www
 ```
 navegador ──POST JSON──▶ zustrolabs.com/api/chat (este Worker) ──▶ API de Claude (Haiku)
      ▲                         │  controles: origen, límites, tamaño, esquema, texto limpio
-     └──── {respuesta, secciones, enlaces, escribirnos} ◀──┘   (si falla: aviso con hola@zustrolabs.com)
+     └──── {respuesta, secciones, enlaces, escribirnos} ◀──┘   (si falla: aviso con contact@zustrolabs.com)
 ```
 
 ## Qué sabe y qué no
@@ -24,7 +24,7 @@ navegador ──POST JSON──▶ zustrolabs.com/api/chat (este Worker) ──�
 | Sin límites | Si falta un binding no responde (falla cerrado); si el límite falla, 503 | 500 / 503 |
 | Tamaño | Cuerpo de 16 KB como máximo, 8 turnos, 500 caracteres por mensaje | 413 / 422 |
 | Salida | JSON con esquema, sin listas: una sección y un enlace como máximo, de una lista cerrada. Si la respuesta sale cortada, se reintenta una vez | 502 si no cumple |
-| Texto | Sin markdown ni links. Solo puede nombrar el correo `hola@zustrolabs.com`. Se saca toda oración con plata, teléfonos o palabras prohibidas (potpora del HZZ, en los 3 idiomas) | — |
+| Texto | Sin markdown ni links. Solo puede nombrar el correo `contact@zustrolabs.com`. Se saca toda oración con plata, teléfonos o palabras prohibidas (potpora del HZZ, en los 3 idiomas) | — |
 | Fuera de tema | Sin botones | — |
 | Instrucciones en el mensaje | Lo que escribe la persona es un dato, nunca una orden (regla del modelo y evals de inyección) | — |
 | Privacidad | No guarda la charla: el navegador la tiene en memoria y manda los últimos mensajes. Los logs solo llevan métricas (resultado, idioma, tokens, qué control actuó), nunca el texto ni la IP. `invocation_logs = false` | — |

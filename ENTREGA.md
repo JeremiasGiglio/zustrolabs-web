@@ -50,4 +50,4 @@ El proyecto de Pages es de subida directa y no está conectado a Git.
 - **Captura del Radar:** si el sitio del Radar cambia, `node scripts/captura-radar.mjs` la regenera, y hay que revisar los tres números (14 oportunidades, 3 situaciones, 5 tipos) en las tres páginas.
 
 ## Dónde preguntar
-Jeremías Giglio, por `hola@zustrolabs.com`.
+Jeremías Giglio, por `contact@zustrolabs.com`.
