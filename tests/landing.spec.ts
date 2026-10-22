@@ -456,6 +456,63 @@ test.describe('página 404', () => {
   });
 });
 
+// Páginas de privacidad, una por idioma: Meta pide su dirección para la app del WhatsApp del estudio.
+// Solo dicen lo que hace el código (worker/, asistente/, whatsapp/ y site.js); si eso cambia, se cambian las tres.
+const PRIVACIDAD = [
+  { lang: 'es', url: '/privacidad/', landing: '/', borrar: /\bBORRAR\b/, persona: /\bPERSONA\b/, link: 'Privacidad', prohibidas: PAGINAS[0].prohibidas },
+  { lang: 'en', url: '/en/privacy/', landing: '/en/', borrar: /\bDELETE\b/, persona: /\bPERSON\b/, link: 'Privacy', prohibidas: PAGINAS[1].prohibidas },
+  { lang: 'hr', url: '/hr/privatnost/', landing: '/hr/', borrar: /OBRIŠI/, persona: /\bOSOBA\b/, link: 'Privatnost', prohibidas: PAGINAS[2].prohibidas },
+] as const;
+
+for (const p of PRIVACIDAD) {
+  test.describe(`privacidad · ${p.url}`, () => {
+    test('carga, declara su idioma, tiene un solo h1 y el logo lleva a la landing de su idioma', async ({ page }) => {
+      const r = await page.goto(p.url);
+      expect(r!.status()).toBe(200);
+      await expect(page.locator('html')).toHaveAttribute('lang', p.lang);
+      await expect(page.locator('h1')).toHaveCount(1);
+      await expect(page.locator('header a.logo')).toHaveAttribute('href', p.landing);
+      const fill = await page.locator('[data-testid=logo] rect').first().evaluate((r) => getComputedStyle(r).fill);
+      expect([RED.light, RED.dark]).toContain(fill);
+      for (const q of PRIVACIDAD) await expect(page.locator(`link[rel=alternate][hreflang="${q.lang}"]`)).toHaveAttribute('href', `https://zustrolabs.com${q.url}`);
+    });
+
+    test('el pie de la landing de su idioma la enlaza', async ({ page }) => {
+      await page.goto(p.landing);
+      await expect(page.locator('footer a', { hasText: p.link })).toHaveAttribute('href', p.url);
+    });
+
+    test('nombra contact@, el comando para borrar, el de pedir una persona, los plazos y la fecha', async ({ page }) => {
+      await page.goto(p.url);
+      const texto = await page.locator('main').innerText();
+      expect(texto).toContain('contact@zustrolabs.com');
+      expect(texto).toMatch(p.borrar);
+      expect(texto).toMatch(p.persona);
+      expect(texto).toMatch(/\b90\b/);
+      expect(texto).toMatch(/\b30\b/);
+      expect(texto).toMatch(/2026/);
+      // solo el correo del estudio, nunca un teléfono
+      for (const c of texto.match(/[\w.+-]+@[\w.-]+\w/g) ?? []) expect(c).toBe('contact@zustrolabs.com');
+      expect(texto).not.toMatch(/\+?\d[\d\s().-]{8,}\d/);
+    });
+
+    test('sin precios ni figuras de empresa (potpora HZZ)', async ({ page }) => {
+      await page.goto(p.url);
+      const texto = await page.locator('body').innerText();
+      for (const re of [...p.prohibidas, ...COMUNES]) expect(texto, `aparece ${re}`).not.toMatch(re);
+    });
+
+    test('sin scroll horizontal a 360px y sin violaciones graves de axe', async ({ page }) => {
+      await page.setViewportSize({ width: 360, height: 800 });
+      await page.goto(p.url);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+      const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+      const graves = r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+      expect(graves.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+    });
+  });
+}
+
 // Las cabeceras las aplica Cloudflare Pages a partir de site/_headers: se revisa el archivo, no la respuesta local.
 test.describe('cabeceras de seguridad (site/_headers)', () => {
   test('la CSP y las cabeceras clave siguen en su lugar', async () => {

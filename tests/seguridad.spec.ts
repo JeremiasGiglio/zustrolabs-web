@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
-const PAGINAS = ['/', '/en/', '/hr/', '/expo/', '/pantalla/'];
+const PAGINAS = ['/', '/en/', '/hr/', '/expo/', '/pantalla/', '/privacidad/', '/en/privacy/', '/hr/privatnost/'];
 const ARCHIVO = (url: string) => `site${url}index.html`;
 const LANDINGS = ['/', '/en/', '/hr/'];
 
