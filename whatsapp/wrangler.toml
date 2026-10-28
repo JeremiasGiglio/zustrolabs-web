@@ -23,9 +23,9 @@ MODELO = "claude-haiku-5-5"
 # ACCESS_AUD = "…"
 # Instagram (ZL-111), tampoco secretos: el id de la cuenta profesional @zustrolabs y el de la página de Facebook
 # «Zustro Labs» a la que está vinculada (desde ahí se responde). Cómo sacarlos: README, «Instagram».
-# IG_ID = "…"
-# IG_PAGE_ID = "…"
-# Mientras falten, cada webhook responde 503 y el panel también: nada queda abierto.
+IG_ID = "17841450374677970"
+IG_PAGE_ID = "1373065455897047"
+# Mientras falte lo de WhatsApp, ese webhook responde 503, y el panel también: nada queda abierto.
 
 # Cron diario: revisa que la página de Facebook siga suscripta a los avisos de mensajes de Instagram y, si no,
 # la vuelve a suscribir (src/instagram.js, revisarSuscripcion). Hora UTC.
