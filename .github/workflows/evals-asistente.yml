@@ -17,6 +17,6 @@ jobs:
       - run: node asistente/evals/correr.mjs
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: evals-asistente, path: asistente/evals/ultimo-resultado.json, if-no-files-found: ignore, retention-days: 30 }
