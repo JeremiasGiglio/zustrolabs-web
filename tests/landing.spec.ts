@@ -491,6 +491,7 @@ for (const p of PRIVACIDAD) {
       expect(texto).toMatch(/\b90\b/);
       expect(texto).toMatch(/\b30\b/);
       expect(texto).toMatch(/2026/);
+      expect(texto).toContain('Instagram'); // ZL-111: los mensajes directos pasan por el mismo asistente
       // solo el correo del estudio, nunca un teléfono
       for (const c of texto.match(/[\w.+-]+@[\w.-]+\w/g) ?? []) expect(c).toBe('contact@zustrolabs.com');
       expect(texto).not.toMatch(/\+?\d[\d\s().-]{8,}\d/);
