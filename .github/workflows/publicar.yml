@@ -1,0 +1,113 @@
+name: Publicar
+
+# ZL-59: unir un PR publica. En main, después de que pase «CI», sube `site/` a Cloudflare Pages (zustrolabs.com) y publica
+# los tres Workers (worker/ = formulario, asistente/ = chat de la página, whatsapp/ = WhatsApp e Instagram + panel).
+# En cada PR del repo, sube una vista previa de la landing y deja el link en un comentario.
+# Necesita dos secretos del repo, que carga Jeremías: CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID. Sin ellos, avisa y no falla.
+# Los secretos de cada Worker (claves de IA, tokens de Meta, correos) no pasan por acá: se cargan una vez en Cloudflare
+# y `wrangler deploy` los conserva.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write # solo para el comentario con la vista previa
+
+concurrency:
+  group: publicar-${{ github.event.workflow_run.head_branch || github.head_ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    # En main solo si la CI pasó; a mano, siempre; en los PR, la vista previa.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PRODUCCION: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: ¿Están los secretos?
+        id: secretos
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::Faltan CLOUDFLARE_API_TOKEN o CLOUDFLARE_ACCOUNT_ID en los secretos del repo: no se publica nada (ZL-59)."
+            echo "listos=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "listos=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Instalar wrangler
+        if: steps.secretos.outputs.listos == 'true'
+        working-directory: whatsapp
+        run: npm ci
+
+      # ── La landing ──
+      - name: Subir la landing a Cloudflare Pages
+        if: steps.secretos.outputs.listos == 'true'
+        id: pages
+        working-directory: whatsapp
+        run: |
+          if [ "$PRODUCCION" = "true" ]; then rama=main; else rama="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"; fi
+          salida=$(npx wrangler pages deploy ../site --project-name zustrolabs-web --branch "$rama" \
+            --commit-hash "${{ github.event.workflow_run.head_sha || github.sha }}" --commit-dirty=true 2>&1 | tee /dev/stderr)
+          url=$(echo "$salida" | grep -oE 'https://[a-z0-9.-]+\.pages\.dev' | tail -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Comentar la vista previa en el PR
+        if: steps.secretos.outputs.listos == 'true' && github.event_name == 'pull_request' && steps.pages.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.pages.outputs.url }}
+        run: |
+          cuerpo="Vista previa de la landing: $URL (se actualiza con cada push a esta rama)."
+          # Un solo comentario por PR: si ya existe, se edita.
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/comments" --jq '.[] | select(.body | startswith("Vista previa de la landing")) | .id' | head -1)
+          if [ -n "$id" ]; then gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$cuerpo" >/dev/null
+          else gh pr comment "${{ github.event.pull_request.number }}" --body "$cuerpo"; fi
+
+      # ── Los Workers (solo en producción) ──
+      - name: Publicar el Worker del formulario (zustrolabs-contacto)
+        if: steps.secretos.outputs.listos == 'true' && env.PRODUCCION == 'true'
+        working-directory: worker
+        run: npm ci && npx wrangler deploy
+      - name: Publicar el Worker del asistente (zustrolabs-asistente)
+        if: steps.secretos.outputs.listos == 'true' && env.PRODUCCION == 'true'
+        working-directory: asistente
+        run: npm ci && npx wrangler deploy
+      - name: Publicar el Worker de WhatsApp e Instagram (zustrolabs-whatsapp)
+        if: steps.secretos.outputs.listos == 'true' && env.PRODUCCION == 'true'
+        working-directory: whatsapp
+        run: npx wrangler deploy
+
+      # ── Comprobar que quedó en línea ──
+      - name: Probar zustrolabs.com
+        if: steps.secretos.outputs.listos == 'true' && env.PRODUCCION == 'true'
+        run: |
+          esperar() { # esperar <url> <código esperado…>: la versión nueva tarda unos segundos en llegar a todos lados
+            for i in $(seq 1 20); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "$@" || true)
+              for ok in $ESPERADOS; do [ "$code" = "$ok" ] && return 0; done
+              sleep 10
+            done
+            echo "::error::$1 respondió $code"; return 1
+          }
+          ESPERADOS="200" esperar https://zustrolabs.com/privacidad/
+          curl -s https://zustrolabs.com/privacidad/ | grep -q Instagram || { echo "::error::la privacidad publicada no es la nueva"; exit 1; }
+          ESPERADOS="404" esperar https://zustrolabs.com/no-existe-$RANDOM/
+          # Los webhooks nunca aceptan un pedido sin firma: 401 (configurados) o 503 (sin configurar), jamás 404 ni 200.
+          ESPERADOS="401 503" esperar -X POST -d '{}' https://zustrolabs.com/api/whatsapp
+          ESPERADOS="401 503" esperar -X POST -d '{}' https://zustrolabs.com/api/instagram
+          # El formulario y el chat solo aceptan pedidos desde la página: sin Origin, 403.
+          ESPERADOS="403" esperar -X POST -H 'content-type: application/json' -d '{}' https://zustrolabs.com/api/contacto
+          ESPERADOS="403" esperar -X POST -H 'content-type: application/json' -d '{}' https://zustrolabs.com/api/chat
+          echo "Todo en línea."
