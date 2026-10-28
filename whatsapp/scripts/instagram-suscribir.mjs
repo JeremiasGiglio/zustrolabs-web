@@ -4,6 +4,7 @@
 // en el chat):
 //
 //   IG_TOKEN='…' node scripts/instagram-suscribir.mjs
+// (si el token no lista páginas, agregá IG_PAGE_ID='<id de la página>' delante)
 //
 // Qué hace:
 // 1. Mira qué páginas ve el token y cuál tiene vinculada la cuenta @zustrolabs → imprime IG_ID e IG_PAGE_ID.
@@ -35,7 +36,12 @@ async function llamar(ruta, token = TOKEN) {
 // 1. Páginas que ve el token y la que tiene vinculada la cuenta de Instagram
 const yo = await llamar('me?fields=id,name');
 const paginas = (await llamar('me/accounts?fields=id,name,instagram_business_account{id,username}')).data ?? [];
-const pagina = paginas.find((p) => p.instagram_business_account?.username === USUARIO);
+let pagina = paginas.find((p) => p.instagram_business_account?.username === USUARIO);
+// Si el token no lista páginas (falta pages_show_list), se prueba directo con el id de la página, si se pasó.
+if (!pagina && process.env.IG_PAGE_ID) {
+  const p = await llamar(`${process.env.IG_PAGE_ID}?fields=id,name,instagram_business_account{id,username}`).catch(() => null);
+  if (p?.instagram_business_account?.username === USUARIO) pagina = p;
+}
 if (!pagina) {
   console.error(`Ninguna página que vea este token tiene vinculada la cuenta @${USUARIO}.`);
   console.error('Páginas vistas:', paginas.map((p) => `${p.name} (${p.id})`).join(', ') || 'ninguna');
