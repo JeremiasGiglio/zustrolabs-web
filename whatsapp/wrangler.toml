@@ -9,9 +9,11 @@ preview_urls = false
 
 # Los webhooks van por rutas de zustrolabs.com (el resto lo sigue sirviendo Cloudflare Pages);
 # el panel, por un subdominio propio que crea Wrangler. No tocar `atencion` (es el panel del Radar).
+# El `*` final es necesario: sin él, Cloudflare no manda al Worker la verificación de Meta, que llega con `?hub.mode=…`,
+# y la responde Pages con su 404.
 routes = [
-  { pattern = "zustrolabs.com/api/whatsapp", zone_name = "zustrolabs.com" },
-  { pattern = "zustrolabs.com/api/instagram", zone_name = "zustrolabs.com" },
+  { pattern = "zustrolabs.com/api/whatsapp*", zone_name = "zustrolabs.com" },
+  { pattern = "zustrolabs.com/api/instagram*", zone_name = "zustrolabs.com" },
   { pattern = "equipo.zustrolabs.com", custom_domain = true },
 ]
 
