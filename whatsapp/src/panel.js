@@ -2,6 +2,7 @@
 // Adaptado del panel del Radar Croacia (radar-croacia/worker/src/atencion.mjs, ZL-65), separado de él.
 // Cuando alguien escribe PERSONA, el asistente deja de contestar en esa charla y se guardan sus mensajes (solo
 // esos, 30 días) para que alguien del equipo los lea y responda desde acá. Las charlas con el asistente no se guardan.
+// Atiende los dos canales: WhatsApp (la charla se identifica con el número) e Instagram (`ig:<id>`, ZL-111).
 //
 // Seguridad:
 // - Cloudflare Access delante del subdominio (login con los correos autorizados).
@@ -11,11 +12,14 @@
 
 import { textos } from './textos.js';
 
-export const VENTANA_MS = 24 * 3600_000; // Meta: solo se puede responder dentro de las 24 h del último mensaje.
+export const VENTANA_MS = 24 * 3600_000; // Meta: solo se puede responder dentro de las 24 h del último mensaje (los dos canales).
 export const MAX_RESPUESTA = 1000;
 /** Aviso a la persona cuando la charla vuelve al asistente, en su idioma. */
 export const textoDevuelta = (idioma) => textos(idioma).devuelta;
-const NUM_RE = /^\d{6,16}$/;
+/** Un número de WhatsApp o `ig:` más el id de Instagram. */
+const NUM_RE = /^(?:ig:)?\d{6,20}$/;
+export const NOMBRE_CANAL = { wa: "WhatsApp", ig: "Instagram" };
+const canalDe = (num) => (String(num).startsWith("ig:") ? "ig" : "wa");
 // Saca caracteres de control (deja salto de línea y tabulación).
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
@@ -32,7 +36,8 @@ export const agregar = (charlas, num, mensaje, now = Date.now(), extra = {}) => 
 /** Mail corto, sin número ni texto (privacidad). Usa el binding send_email AVISO y el secreto AVISO_PARA. */
 export const PANEL_URL = "https://equipo.zustrolabs.com";
 
-export function mailAviso({ from, to, now = new Date() }) {
+export function mailAviso({ from, to, now = new Date(), canal = "wa" }) {
+  const nombre = NOMBRE_CANAL[canal] ?? NOMBRE_CANAL.wa;
   const id = `${now.getTime()}.${Math.random().toString(36).slice(2)}@zustrolabs.com`;
   return [
     `From: Zustro Labs <${from}>`,
@@ -44,10 +49,10 @@ export function mailAviso({ from, to, now = new Date() }) {
     "Content-Type: text/plain; charset=utf-8",
     "Content-Transfer-Encoding: 8bit",
     "",
-    "Alguien escribió PERSONA en el WhatsApp de Zustro Labs y está esperando respuesta.",
+    `Alguien escribió PERSONA en el ${nombre} de Zustro Labs y está esperando respuesta.`,
     "",
     `Respondé desde el panel: ${PANEL_URL}`,
-    "Tenés 24 horas desde su último mensaje (regla de WhatsApp).",
+    "Tenés 24 horas desde su último mensaje (regla de Meta).",
     "",
     "Por privacidad, este aviso no incluye el número ni lo que escribió.",
     "",
@@ -55,12 +60,12 @@ export function mailAviso({ from, to, now = new Date() }) {
 }
 
 /** Manda el aviso. EmailMessageImpl se inyecta en los tests (cloudflare:email solo existe en Workers). */
-export async function avisar(env, EmailMessageImpl, now = new Date()) {
+export async function avisar(env, EmailMessageImpl, now = new Date(), canal = "wa") {
   if (!env.AVISO?.send || !env.AVISO_PARA) return false;
   // El correo de zustrolabs.com lo maneja Zoho (ZL-107): el envío de Cloudflare sale del subdominio avisos.
   const from = env.AVISO_DESDE || "avisos@avisos.zustrolabs.com";
   const EmailMessage = EmailMessageImpl ?? (await import("cloudflare:email")).EmailMessage;
-  await env.AVISO.send(new EmailMessage(from, env.AVISO_PARA, mailAviso({ from, to: env.AVISO_PARA, now })));
+  await env.AVISO.send(new EmailMessage(from, env.AVISO_PARA, mailAviso({ from, to: env.AVISO_PARA, now, canal })));
   return true;
 }
 
@@ -161,12 +166,13 @@ export async function panel(request, env, deps = {}) {
   if (request.method === "GET" && path === "/api/charlas") {
     const lista = (await chats.list()).map((c) => ({
       ...c,
+      canal: canalDe(c.num),
       quedaMs: Math.max(0, (c.ultimoPersona || 0) + VENTANA_MS - now),
     }));
     return jsonResp({ charlas: lista, yo: email });
   }
 
-  const m = /^\/api\/charlas\/(\d+)(?:\/(responder|devolver))?$/.exec(path);
+  const m = /^\/api\/charlas\/((?:ig:)?\d+)(?:\/(responder|devolver))?$/.exec(path);
   if (!m || !NUM_RE.test(m[1])) return jsonResp({ error: "no existe" }, 404);
   const num = m[1];
   const accion = m[2];
@@ -174,7 +180,7 @@ export async function panel(request, env, deps = {}) {
   if (request.method === "GET" && !accion) {
     const chat = await chats.get(num);
     if (!chat) return jsonResp({ error: "no existe" }, 404);
-    return jsonResp({ ...chat, quedaMs: Math.max(0, (chat.ultimoPersona || 0) + VENTANA_MS - now) });
+    return jsonResp({ ...chat, canal: canalDe(num), quedaMs: Math.max(0, (chat.ultimoPersona || 0) + VENTANA_MS - now) });
   }
 
   if (request.method !== "POST" || !accion) return jsonResp({ error: "método no permitido" }, 405);
@@ -199,7 +205,7 @@ export async function panel(request, env, deps = {}) {
     if (!texto) return jsonResp({ error: "el mensaje está vacío" }, 400);
     if (texto.length > MAX_RESPUESTA) return jsonResp({ error: `hasta ${MAX_RESPUESTA} caracteres` }, 400);
     if (!enVentana)
-      return jsonResp({ error: "pasaron más de 24 h desde su último mensaje: WhatsApp no deja responder" }, 409);
+      return jsonResp({ error: `pasaron más de 24 h desde su último mensaje: ${NOMBRE_CANAL[canalDe(num)]} no deja responder` }, 409);
     try {
       await deps.send(env, {
         messaging_product: "whatsapp",
@@ -211,7 +217,7 @@ export async function panel(request, env, deps = {}) {
     } catch (e) {
       // Solo el código de Meta: el texto del error podría traer datos.
       console.log(JSON.stringify({ canal: "panel", ok: false, error: String(e?.code ?? e?.name ?? "Error").slice(0, 40) }));
-      return jsonResp({ error: "WhatsApp no aceptó el mensaje. Probá de nuevo en un rato." }, 502);
+      return jsonResp({ error: `${NOMBRE_CANAL[canalDe(num)]} no aceptó el mensaje. Probá de nuevo en un rato.` }, 502);
     }
     // El mensaje ya salió: si guardarlo falla, se avisa sin error, para que nadie lo reenvíe dos veces.
     try {
@@ -220,7 +226,7 @@ export async function panel(request, env, deps = {}) {
       const st = (await store?.get(num)) ?? {};
       await store?.put(num, { ...st, humanoHasta: now + VENTANA_MS });
       console.log(JSON.stringify({ canal: "panel", que: "responder" }));
-      return jsonResp({ ok: true, chat: { ...actualizada, quedaMs: Math.max(0, (actualizada.ultimoPersona || 0) + VENTANA_MS - now) } });
+      return jsonResp({ ok: true, chat: { ...actualizada, canal: canalDe(num), quedaMs: Math.max(0, (actualizada.ultimoPersona || 0) + VENTANA_MS - now) } });
     } catch (e) {
       console.log(JSON.stringify({ canal: "panel", que: "responder", guardado: false, error: String(e?.name ?? "Error").slice(0, 40) }));
       return jsonResp({ ok: true, guardado: false, aviso: "Se mandó, pero no se pudo guardar en la charla. No lo reenvíes." });
@@ -247,7 +253,7 @@ export async function panel(request, env, deps = {}) {
   console.log(JSON.stringify({ canal: "panel", que: "devolver" }));
   return jsonResp({
     ok: true,
-    chat: { ...actualizada, quedaMs: Math.max(0, (actualizada.ultimoPersona || 0) + VENTANA_MS - now) },
+    chat: { ...actualizada, canal: canalDe(num), quedaMs: Math.max(0, (actualizada.ultimoPersona || 0) + VENTANA_MS - now) },
   });
 }
 
@@ -268,7 +274,7 @@ export const HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8">
     <ol id="mensajes" aria-live="polite"></ol>
     <form id="form"><label for="texto">Tu respuesta</label>
       <textarea id="texto" maxlength="1000" rows="3" required></textarea>
-      <div class="acciones"><button type="submit" id="enviar">Enviar por WhatsApp</button>
+      <div class="acciones"><button type="submit" id="enviar">Enviar</button>
       <button type="button" id="devolver" class="sec">Devolver al asistente</button></div>
       <p id="estado" role="status"></p>
     </form>
@@ -298,18 +304,20 @@ export const APP_JS = `(function(){
 var $=function(id){return document.getElementById(id)};
 var actual=null;
 function hora(t){return new Date(t).toLocaleString("es-AR",{dateStyle:"short",timeStyle:"short"})}
-function queda(ms,c){if(c&&c.abierta===false&&ms>0)return "La atiende el asistente. Si hace falta, todavía podés escribirle durante "+Math.floor(ms/3600000)+" h "+Math.floor(ms%3600000/60000)+" min.";if(ms<=0)return "Pasaron más de 24 h: WhatsApp ya no deja responder.";var h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return "Podés responder durante "+h+" h "+m+" min más."}
+var CANAL={wa:"WhatsApp",ig:"Instagram"};function canal(c){return CANAL[c&&c.canal]||CANAL.wa}
+function quien(c){if(c.canal==="ig")return "Instagram · "+(c.nombre?"@"+c.nombre:"id "+String(c.num).slice(3));return "+"+c.num}
+function queda(ms,c){if(c&&c.abierta===false&&ms>0)return "La atiende el asistente. Si hace falta, todavía podés escribirle durante "+Math.floor(ms/3600000)+" h "+Math.floor(ms%3600000/60000)+" min.";if(ms<=0)return "Pasaron más de 24 h: "+canal(c)+" ya no deja responder.";var h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return "Podés responder durante "+h+" h "+m+" min más."}
 function api(path,opts){opts=opts||{};opts.headers=Object.assign({"content-type":"application/json"},opts.headers||{});opts.credentials="same-origin";
   return fetch(path,opts).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||("error "+r.status));return d})})}
 function lista(){api("/api/charlas").then(function(d){
   $("yo").textContent=d.yo||"";var ul=$("charlas");ul.textContent="";$("vacio").hidden=d.charlas.length>0;
   d.charlas.forEach(function(c){var li=document.createElement("li");li.className="charla";var b=document.createElement("button");b.type="button";
-    var n=document.createElement("strong");n.textContent="+"+c.num;var e=document.createElement("span");
+    var n=document.createElement("strong");n.textContent=quien(c);var e=document.createElement("span");
     e.className=c.abierta?"abierta":"cerrada";e.textContent=(c.abierta?" · esperando":" · devuelta al asistente")+" · "+String(c.idioma||"es").toUpperCase();
     var t=document.createElement("span");t.className="hora";t.textContent="Último mensaje: "+hora(c.ultimo);
     b.appendChild(n);b.appendChild(e);b.appendChild(t);b.addEventListener("click",function(){abrir(c.num)});li.appendChild(b);ul.appendChild(li)})
 }).catch(function(e){$("vacio").hidden=false;$("vacio").textContent=e.message})}
-function pintar(c){actual=c.num;$("lista").hidden=true;$("charla").hidden=false;$("titulo").textContent="+"+c.num+" · "+String(c.idioma||"es").toUpperCase()+(c.idioma&&c.idioma!=="es"?" (respondé en ese idioma)":"");$("ventana").textContent=queda(c.quedaMs,c);
+function pintar(c){actual=c.num;$("lista").hidden=true;$("charla").hidden=false;$("titulo").textContent=quien(c)+" · "+String(c.idioma||"es").toUpperCase()+(c.idioma&&c.idioma!=="es"?" (respondé en ese idioma)":"");$("ventana").textContent=queda(c.quedaMs,c);$("enviar").textContent="Enviar por "+canal(c);
   var ol=$("mensajes");ol.textContent="";c.mensajes.forEach(function(m){var li=document.createElement("li");li.className=m.de;
     var s=document.createElement("span");s.className="hora";var q=m.de==="equipo"?"Equipo":m.de==="persona"?"Persona":"";s.textContent=(q?q+" · ":"")+hora(m.t);
     li.appendChild(document.createTextNode(m.texto));li.appendChild(s);ol.appendChild(li)});

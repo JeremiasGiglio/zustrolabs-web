@@ -12,7 +12,7 @@
 import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../asistente/src/asistente.js';
 import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { agregar } from './panel.js';
-import { CANAL_WHATSAPP, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, SALUDO_IDIOMA, textos } from './textos.js';
+import { CANAL_WHATSAPP, eligeIdioma, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
@@ -31,11 +31,11 @@ function iguales(a, b) {
   return diff === 0;
 }
 
-/** GET de verificación de Meta: devuelve el challenge si el token coincide. */
-export function verificarSuscripcion(url, env) {
+/** GET de verificación de Meta: devuelve el challenge si el token coincide (`clave`: qué secreto se compara). */
+export function verificarSuscripcion(url, env, clave = 'WHATSAPP_VERIFY_TOKEN') {
   const p = url.searchParams;
-  if (!env.WHATSAPP_VERIFY_TOKEN) return { status: 503, body: 'sin configurar' };
-  if (p.get('hub.mode') === 'subscribe' && iguales(p.get('hub.verify_token') ?? '', env.WHATSAPP_VERIFY_TOKEN)) {
+  if (!env[clave]) return { status: 503, body: 'sin configurar' };
+  if (p.get('hub.mode') === 'subscribe' && iguales(p.get('hub.verify_token') ?? '', env[clave])) {
     // Solo un challenge con forma de challenge: nada de reflejar texto arbitrario.
     const ch = p.get('hub.challenge') ?? '';
     return /^[A-Za-z0-9_-]{1,128}$/.test(ch) ? { status: 200, body: ch } : { status: 400, body: 'challenge inválido' };
@@ -203,6 +203,9 @@ const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mand�
  */
 export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok' }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
+  // El nombre de un idioma como mensaje entero vale como el botón (en Instagram no hay botones).
+  const elegido = ev.kind === 'text' ? eligeIdioma(ev.text) : null;
+  if (elegido) ev = { ...ev, kind: 'idioma', idioma: elegido };
   const estado = (memoria && (await memoria.get(ev.from))) || null;
   const guardar = (s) => memoria?.put(ev.from, s);
   const cmd = ev.kind === 'text' ? comando(ev.text) : null;
@@ -277,16 +280,17 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
 }
 
 /**
- * Pregunta al modelo con el prompt del asistente de la página + la nota de canal, y pasa la salida por los
- * mismos controles fijos (controlar). llamar(cuerpo) se reemplaza en los tests.
+ * Pregunta al modelo con el prompt del asistente de la página + la nota de canal (`canal`: WhatsApp por defecto,
+ * Instagram en instagram.js), y pasa la salida por los mismos controles fijos (controlar). llamar(cuerpo) se
+ * reemplaza en los tests.
  */
 export const preguntador =
   // Espera más corta que en la página: el trabajo corre después de responderle a Meta y tiene tiempo limitado.
-  (env, { llamar = (cuerpo) => llamarClaude(cuerpo, { apiKey: env.ANTHROPIC_API_KEY, esperaMs: 12_000, pausaMs: 800 }) } = {}) =>
+  (env, { llamar = (cuerpo) => llamarClaude(cuerpo, { apiKey: env.ANTHROPIC_API_KEY, esperaMs: 12_000, pausaMs: 800 }), canal = CANAL_WHATSAPP } = {}) =>
   async (texto, idioma = 'es') => {
     const cuerpo = armarPedidoApi(
       { mensajes: [{ role: 'user', content: texto }], idioma },
-      { modelo: env.MODELO || MODELO, canal: CANAL_WHATSAPP.replace('{idioma}', NOMBRE_IDIOMA[idiomaDe(idioma)]) },
+      { modelo: env.MODELO || MODELO, canal: canal.replace('{idioma}', NOMBRE_IDIOMA[idiomaDe(idioma)]) },
     );
     // Si la respuesta salió cortada se prueba una vez más (igual que en la página).
     const r = await llamar(cuerpo).catch((e) => (e?.message === 'cortada' ? llamar(cuerpo) : Promise.reject(e)));

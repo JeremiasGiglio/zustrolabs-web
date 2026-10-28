@@ -4,6 +4,7 @@
 // - no gasta la cuota gratis de escrituras de KV, que es de toda la cuenta y la usa el bot del Radar.
 // Qué guarda, con vencimiento (una alarma diaria borra lo vencido y cada lectura lo ignora):
 // - wa:<número>    → {idioma, humanoHasta}: 90 días desde el último cambio. Nunca el texto.
+//                    (Instagram usa el mismo lugar con `ig:<id>` en vez del número: wa:ig:<id>, chat:ig:<id>.)
 // - id:<wamid>     → para no responder dos veces un reintento de Meta: 1 hora.
 // - uso:<número>:<día> → cuántas respuestas de la IA tuvo ese número ese día: 2 días.
 // - chat:<número>  → la charla con atención humana (solo después de PERSONA): 30 días desde el último mensaje.
@@ -91,7 +92,7 @@ export function crearAtencion(storage) {
       const out = [];
       for (const [, c] of await s.list({ prefix: 'chat:' })) {
         if (!vigente(c, now)) continue;
-        out.push({ num: c.num, ultimo: c.ultimo, ultimoPersona: c.ultimoPersona, abierta: c.abierta, idioma: c.idioma });
+        out.push({ num: c.num, ultimo: c.ultimo, ultimoPersona: c.ultimoPersona, abierta: c.abierta, idioma: c.idioma, nombre: c.nombre });
       }
       return out.sort((a, b) => b.ultimo - a.ultimo).slice(0, MAX_CHARLAS);
     },

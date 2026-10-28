@@ -1,9 +1,10 @@
-# WhatsApp de Zustro Labs
+# WhatsApp e Instagram de Zustro Labs
 
-Worker `zustrolabs-whatsapp`: un número propio del estudio con el mismo asistente que «Preguntale a Zustro» y un panel para que alguien del equipo responda.
+Worker `zustrolabs-whatsapp`: un número propio del estudio y los mensajes directos de @zustrolabs, con el mismo asistente que «Preguntale a Zustro» y un panel para que alguien del equipo responda.
 
-- **Webhook:** `https://zustrolabs.com/api/whatsapp`, para la Cloud API de Meta.
-- **Panel:** `https://equipo.zustrolabs.com`, detrás de Cloudflare Access.
+- **Webhook de WhatsApp:** `https://zustrolabs.com/api/whatsapp`, para la Cloud API de Meta.
+- **Webhook de Instagram:** `https://zustrolabs.com/api/instagram`, para los mensajes directos (ZL-111; ver «Instagram» más abajo).
+- **Panel:** `https://equipo.zustrolabs.com`, detrás de Cloudflare Access. Muestra las charlas de los dos canales.
 - **Cerebro:** `asistente/src/asistente.js` + `asistente/src/conocimiento.js`, con los mismos controles fijos: sin plata, sin palabras prohibidas, sin links ni correos ajenos, sin teléfonos. Solo se suma una nota de canal (`src/textos.js`).
 - **Separado del Radar Croacia:** otra app de Meta, otro número, otra memoria y la clave de IA del estudio, nunca la del Radar. El código del panel y del webhook está adaptado del Radar (`radar-croacia/worker/src/`).
 
@@ -18,12 +19,15 @@ Worker `zustrolabs-whatsapp`: un número propio del estudio con el mismo asisten
 | **IDIOMA** / JEZIK / LANGUAGE | Vuelve a mostrar los botones de idioma. |
 | Audio, foto o archivo | Pide que lo escriba. |
 
+Por Instagram pasa lo mismo, con dos diferencias: no hay botones (el idioma se elige escribiendo «Español», «Hrvatski» o «English»; si escribe otra cosa, sigue en castellano) y las respuestas salen en trozos de hasta 1000 caracteres, porque Instagram no acepta más por mensaje.
+
 **Qué se guarda**
 Todo va en un solo Durable Object, `Atencion` (`src/atencion.js`), con almacenamiento SQLite, que entra en el plan gratis. Una alarma diaria borra lo vencido.
 - `{idioma, humanoHasta}` por número, durante 90 días. Nunca el texto.
 - El id de cada mensaje, durante 1 h, para no contestar dos veces un reintento de Meta.
 - Cuántas respuestas de la IA tuvo cada número en el día, durante 2 días.
-- Solo las charlas con PERSONA, durante 30 días desde el último mensaje.
+- Solo las charlas con PERSONA, durante 30 días desde el último mensaje. En Instagram, además, el nombre de usuario de quien escribió PERSONA (para que el equipo sepa a quién responde).
+- Las personas de Instagram se guardan como `ig:<id>`, así no se mezclan con los números de WhatsApp.
 
 Por qué un Durable Object y no KV:
 - atiende de a un pedido por vez, así dos mensajes que llegan juntos no se pisan en el panel;
@@ -34,9 +38,9 @@ Por qué un Durable Object y no KV:
 - Los registros automáticos de cada pedido están apagados, porque la ruta del panel lleva el número.
 
 **Límites**
-- 20 mensajes por minuto por número. Pasado eso, silencio.
-- 30 respuestas de la IA por minuto en total. Pasado eso, el asistente avisa que hay muchas consultas y sugiere PERSONA. No corta la atención humana ni BORRAR.
-- 40 respuestas de la IA por número y por día (`TOPE_DIARIO`). Pasado eso, sugiere PERSONA.
+- 20 mensajes por minuto por número o cuenta de Instagram. Pasado eso, silencio.
+- 30 respuestas de la IA por minuto en total, entre los dos canales. Pasado eso, el asistente avisa que hay muchas consultas y sugiere PERSONA. No corta la atención humana ni BORRAR.
+- 40 respuestas de la IA por persona y por día (`TOPE_DIARIO`). Pasado eso, sugiere PERSONA.
 - Sin los límites configurados, no contesta.
 
 **Controles de más para WhatsApp**
@@ -111,8 +115,34 @@ La memoria no necesita ningún paso: el Durable Object se crea solo al publicar.
 - En Observability del Worker buscá `"que":"persona"`. `avisoError: "sin_config"` quiere decir que falta `AVISO_PARA`.
 - Otro nombre de error casi siempre significa que el destino no está verificado en Email Routing.
 
+## Instagram
+
+Los mensajes directos de **@zustrolabs** entran por `https://zustrolabs.com/api/instagram` y se responden desde la página de Facebook «Zustro Labs» a la que está vinculada la cuenta (app de Meta **Zustro Labs**, `4678708989064685`, variante «Instagram API con inicio de sesión de Facebook»). Código en `src/instagram.js`; el resto (asistente, comandos, memoria, panel) es el mismo de WhatsApp.
+
+Lo que hay que hacer una vez (Jeremías; secretos nunca en el chat, en el repo ni en Jira):
+
+1. **Página de privacidad publicada:** `https://zustrolabs.com/privacidad/` tiene que estar en línea (Pages) y cargada en la app → App settings → Basic → Privacy Policy URL.
+2. **Permisos del token:** en Business settings → Users → System users → `zustro-redes`, con la app Zustro Labs, la página Zustro Labs y la cuenta de Instagram zustrolabs asignadas, generá un token **sin vencimiento** con `instagram_basic`, `instagram_manage_messages`, `pages_messaging`, `pages_manage_metadata` y `pages_show_list`.
+3. **Ids y suscripción de la página**, desde `whatsapp/`:
+   ```
+   IG_TOKEN='el token' node scripts/instagram-suscribir.mjs
+   ```
+   Imprime `IG_ID` e `IG_PAGE_ID` (van en `wrangler.toml`, en un PR), suscribe la página a los avisos de mensajes y, si el token que pasaste es de usuario, muestra el **token de página** que necesita el Worker.
+4. **Secretos:** `npx wrangler secret put` para `IG_TOKEN` (el de página del paso 3), `IG_APP_SECRET` (App settings → Basic → App secret de la app Zustro Labs, no el de la de WhatsApp) e `IG_VERIFY_TOKEN` (una frase larga que inventes).
+5. **Publicar:** `npx wrangler deploy` (crea la ruta `/api/instagram` y el cron).
+6. **Webhook en Meta:** en la app → Webhooks → elegí **Instagram** → Callback URL `https://zustrolabs.com/api/instagram`, Verify token el de `IG_VERIFY_TOKEN`, «Verify and save», y suscribí el campo **messages**.
+7. **La cuenta:** en la app de Instagram → Configuración → Mensajes y respuestas a historias → Herramientas conectadas → **Permitir el acceso a los mensajes** (si no, Meta no manda nada).
+8. **Live:** App settings → Basic → cambiar el modo a **Live**. Mientras esté en desarrollo, solo llegan los mensajes de la gente con rol en la app.
+9. **Prueba:** desde otra cuenta de Instagram, escribí a @zustrolabs: tiene que llegar el saludo con los idiomas. Después, PERSONA → la charla aparece en el panel marcada «Instagram» con el usuario.
+
+Cosas que conviene saber:
+- La ventana para responder es de **24 h** desde el último mensaje de la persona, como en WhatsApp. Meta deja 7 días con la etiqueta de agente humano, pero pide una revisión de la app: queda para más adelante.
+- Un cron diario (`[triggers]` en `wrangler.toml`) revisa que la página siga suscripta a los avisos y la vuelve a suscribir si hace falta. En Observability se ve como `"que":"suscripcion"`.
+- Instagram no manda botones, así que el saludo y los comandos van en texto.
+- No se bajan las fotos ni los audios: solo se lee texto.
+
 ## Costos
-- **WhatsApp:** responder dentro de las 24 h de que la persona escribió es gratis.
+- **WhatsApp e Instagram:** responder dentro de las 24 h de que la persona escribió es gratis.
 - **Cloudflare:** Workers, Durable Objects (SQLite) y Access en planes gratis. No usa KV.
 - **IA:** cada respuesta va con la clave propia del canal, que tiene su límite mensual. Los topes de 30 por minuto y 40 por número y por día frenan los picos.
 
