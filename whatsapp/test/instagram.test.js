@@ -297,7 +297,7 @@ test('nota de Instagram: sin palabras prohibidas, pide respuestas cortas y sin d
 
 test('wrangler.toml: la ruta de Instagram, los ids comentados (no secretos) y el cron diario', () => {
   const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
-  assert.match(toml, /pattern = "zustrolabs\.com\/api\/instagram"/);
+  assert.match(toml, /pattern = "zustrolabs\.com\/api\/instagram\*"/, "con * al final: si no, la verificación de Meta (?hub.mode=…) cae en Pages");
   assert.match(toml, /^\[triggers\]\ncrons = \["\d+ \d+ \* \* \*"\]$/m);
   assert.doesNotMatch(toml, /^(IG_TOKEN|IG_APP_SECRET|IG_VERIFY_TOKEN)\s*=/m, 'los secretos no van en el repo');
 });

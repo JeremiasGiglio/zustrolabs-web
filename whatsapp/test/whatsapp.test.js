@@ -478,7 +478,7 @@ test('textos fijos: sin palabras prohibidas, el único correo es contact@ y nomb
 test('wrangler.toml: rutas propias, sin tocar los subdominios de otros proyectos, y sin registros automáticos', () => {
   const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   assert.match(toml, /^name = "zustrolabs-whatsapp"$/m);
-  assert.match(toml, /pattern = "zustrolabs\.com\/api\/whatsapp"/);
+  assert.match(toml, /pattern = "zustrolabs\.com\/api\/whatsapp\*"/, "con * al final: si no, la verificación de Meta (?hub.mode=…) cae en Pages");
   assert.match(toml, /pattern = "equipo\.zustrolabs\.com", custom_domain = true/);
   const patrones = [...toml.matchAll(/pattern = "([^"]+)"/g)].map((m) => m[1]);
   assert.ok(patrones.every((p) => !/^(croata|api|atencion|radar|avisos|www)\./.test(p) && !p.includes('jgcup')), patrones.join(', '));
