@@ -70,9 +70,39 @@ export const TEXTOS = {
 
 export const textos = (idioma) => TEXTOS[idiomaDe(idioma)];
 
+/** En canales sin botones (Instagram) el idioma se elige escribiendo su nombre. */
+export const SALUDO_IDIOMA_TEXTO = SALUDO_IDIOMA.replace(
+  '\n\nPrivacidad:',
+  '\n\nEscribí: Español · Hrvatski · English\n\nPrivacidad:',
+);
+
+/** Nombre de idioma escrito como mensaje entero → 'es' | 'hr' | 'en' | null. */
+export function eligeIdioma(texto) {
+  const t = String(texto ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[¡!¿?.,;:]/g, '')
+    .trim();
+  if (/^(espanol|castellano|spanish|spanjolski)$/.test(t)) return 'es';
+  if (/^(hrvatski|croata|croatian)$/.test(t)) return 'hr';
+  if (/^(english|ingles|engleski)$/.test(t)) return 'en';
+  return null;
+}
+
 /** Nota para el modelo: el canal es WhatsApp (se suma al prompt del asistente de la página). */
 export const CANAL_WHATSAPP = `Canal: WhatsApp de Zustro Labs (no la página). Cambia esto de las reglas de arriba:
 - Ya estás hablando por WhatsApp: nunca digas «escribinos por WhatsApp» ni menciones el formulario de Contacto ni botones de la página.
+- Cada mensaje llega solo, sin el historial de la charla: si falta contexto, pedilo en una oración.
+- Si la persona quiere hacer un proyecto, pregunta valores o plazos, o necesita a alguien del equipo, poné escribirnos = true: el sistema le explica cómo hablar con una persona.
+- El idioma es el del último mensaje de la persona; si no se puede saber, el que eligió: {idioma}.`;
+
+/** Nota para el modelo: el canal son los mensajes directos de Instagram (mismas reglas que WhatsApp, más cortas). */
+export const CANAL_INSTAGRAM = `Canal: mensajes directos de Instagram de Zustro Labs (no la página). Cambia esto de las reglas de arriba:
+- Ya estás hablando por Instagram: nunca digas «escribinos por WhatsApp» ni menciones el formulario de Contacto ni botones de la página.
+- Respondé corto: como mucho tres oraciones, sin listas ni títulos. Instagram corta los mensajes largos.
+- No escribas direcciones web: el sistema agrega el link que corresponda.
 - Cada mensaje llega solo, sin el historial de la charla: si falta contexto, pedilo en una oración.
 - Si la persona quiere hacer un proyecto, pregunta valores o plazos, o necesita a alguien del equipo, poné escribirnos = true: el sistema le explica cómo hablar con una persona.
 - El idioma es el del último mensaje de la persona; si no se puede saber, el que eligió: {idioma}.`;

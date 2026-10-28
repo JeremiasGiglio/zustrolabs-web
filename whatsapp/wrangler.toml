@@ -1,4 +1,4 @@
-# Worker del WhatsApp de Zustro Labs: asistente + panel de atención (ver whatsapp/README.md).
+# Worker del WhatsApp y el Instagram de Zustro Labs: asistente + panel de atención (ver whatsapp/README.md).
 # Se publica desde esta carpeta con `npm ci && npx wrangler deploy`. Nada secreto acá: los secretos se cargan
 # con `npx wrangler secret put` (lista en el README).
 name = "zustrolabs-whatsapp"
@@ -7,10 +7,11 @@ compatibility_date = "2026-09-15"
 workers_dev = false
 preview_urls = false
 
-# El webhook va por una ruta de zustrolabs.com (el resto lo sigue sirviendo Cloudflare Pages);
+# Los webhooks van por rutas de zustrolabs.com (el resto lo sigue sirviendo Cloudflare Pages);
 # el panel, por un subdominio propio que crea Wrangler. No tocar `atencion` (es el panel del Radar).
 routes = [
   { pattern = "zustrolabs.com/api/whatsapp", zone_name = "zustrolabs.com" },
+  { pattern = "zustrolabs.com/api/instagram", zone_name = "zustrolabs.com" },
   { pattern = "equipo.zustrolabs.com", custom_domain = true },
 ]
 
@@ -20,7 +21,16 @@ MODELO = "claude-haiku-5-5"
 # WHATSAPP_PHONE_NUMBER_ID = "…"
 # ACCESS_TEAM_DOMAIN = "floral-shape-d2bf.cloudflareaccess.com"
 # ACCESS_AUD = "…"
-# Mientras falten, el webhook responde 503 y el panel también: nada queda abierto.
+# Instagram (ZL-111), tampoco secretos: el id de la cuenta profesional @zustrolabs y el de la página de Facebook
+# «Zustro Labs» a la que está vinculada (desde ahí se responde). Cómo sacarlos: README, «Instagram».
+# IG_ID = "…"
+# IG_PAGE_ID = "…"
+# Mientras falten, cada webhook responde 503 y el panel también: nada queda abierto.
+
+# Cron diario: revisa que la página de Facebook siga suscripta a los avisos de mensajes de Instagram y, si no,
+# la vuelve a suscribir (src/instagram.js, revisarSuscripcion). Hora UTC.
+[triggers]
+crons = ["23 9 * * *"]
 
 # Memoria: un solo Durable Object con almacenamiento SQLite (entra en el plan gratis). Guarda {idioma, humanoHasta}
 # por número (90 días), las charlas con PERSONA (30 días) y contadores cortos; una alarma diaria borra lo vencido.
