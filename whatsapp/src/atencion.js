@@ -8,6 +8,7 @@
 // - id:<wamid>     → para no responder dos veces un reintento de Meta: 1 hora.
 // - uso:<número>:<día> → cuántas respuestas de la IA tuvo ese número ese día: 2 días.
 // - chat:<número>  → la charla con atención humana (solo después de PERSONA): 30 días desde el último mensaje.
+// - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence}: no vence (se renueva el token).
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
 export const DIA_MS = 24 * 3600_000;
@@ -87,6 +88,21 @@ export function crearAtencion(storage) {
     async borrarCharla(num) {
       await s.delete(`chat:${num}`);
     },
+
+    // ── Cuentas de Instagram conectadas ──
+    async cuentaIg(id) {
+      return (await s.get(`igc:${id}`)) ?? null;
+    },
+    async guardarCuentaIg(id, datos) {
+      const { username = '', token, tokenVence = 0 } = datos ?? {};
+      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence });
+    },
+    async borrarCuentaIg(id) {
+      await s.delete(`igc:${id}`);
+    },
+    async listaCuentasIg() {
+      return [...(await s.list({ prefix: 'igc:' })).values()];
+    },
     /** Lista para el panel: sin texto, solo las vigentes, la más reciente primero. */
     async lista(now) {
       const out = [];
@@ -127,7 +143,8 @@ export function almacenPrueba() {
 }
 
 /**
- * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar} y charlas {get, list, agregar, delete}.
+ * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar}, charlas {get, list, agregar, delete}
+ * y cuentas {get, put, delete, list} (Instagram).
  * `a` es la lógica directa (tests) o el stub RPC del Durable Object (producción); `reloj` da la hora.
  */
 export function adaptadores(a, reloj = () => Date.now()) {
@@ -144,5 +161,15 @@ export function adaptadores(a, reloj = () => Date.now()) {
     agregar: (n, mensajes, now, extra) => a.agregar(n, mensajes, now ?? reloj(), extra),
     delete: (n) => a.borrarCharla(n),
   };
-  return { memoria, charlas };
+  // Cuentas de Instagram conectadas: {id, username, token, vence} (vence = cuándo vence el token).
+  const cuentas = {
+    get: async (id) => {
+      const c = await a.cuentaIg(id);
+      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence } : null;
+    },
+    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence }),
+    delete: (id) => a.borrarCuentaIg(id),
+    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence })),
+  };
+  return { memoria, charlas, cuentas };
 }

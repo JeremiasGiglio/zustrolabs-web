@@ -16,8 +16,8 @@ export const VENTANA_MS = 24 * 3600_000; // Meta: solo se puede responder dentro
 export const MAX_RESPUESTA = 1000;
 /** Aviso a la persona cuando la charla vuelve al asistente, en su idioma. */
 export const textoDevuelta = (idioma) => textos(idioma).devuelta;
-/** Un número de WhatsApp o `ig:` más el id de Instagram. */
-const NUM_RE = /^(?:ig:)?\d{6,20}$/;
+/** Un número de WhatsApp, o `ig:<cuenta>.<quien>` (ids de Instagram). */
+const NUM_RE = /^(?:\d{6,16}|ig:\d{6,20}\.\d{6,20})$/;
 export const NOMBRE_CANAL = { wa: "WhatsApp", ig: "Instagram" };
 const canalDe = (num) => (String(num).startsWith("ig:") ? "ig" : "wa");
 // Saca caracteres de control (deja salto de línea y tabulación).
@@ -172,7 +172,7 @@ export async function panel(request, env, deps = {}) {
     return jsonResp({ charlas: lista, yo: email });
   }
 
-  const m = /^\/api\/charlas\/((?:ig:)?\d+)(?:\/(responder|devolver))?$/.exec(path);
+  const m = /^\/api\/charlas\/(ig:\d+\.\d+|\d+)(?:\/(responder|devolver))?$/.exec(path);
   if (!m || !NUM_RE.test(m[1])) return jsonResp({ error: "no existe" }, 404);
   const num = m[1];
   const accion = m[2];
@@ -305,7 +305,7 @@ var $=function(id){return document.getElementById(id)};
 var actual=null;
 function hora(t){return new Date(t).toLocaleString("es-AR",{dateStyle:"short",timeStyle:"short"})}
 var CANAL={wa:"WhatsApp",ig:"Instagram"};function canal(c){return CANAL[c&&c.canal]||CANAL.wa}
-function quien(c){if(c.canal==="ig")return "Instagram · "+(c.nombre?"@"+c.nombre:"id "+String(c.num).slice(3));return "+"+c.num}
+function quien(c){if(c.canal==="ig")return "Instagram · "+(c.nombre?"@"+c.nombre:"id "+String(c.num).split(".").pop());return "+"+c.num}
 function queda(ms,c){if(c&&c.abierta===false&&ms>0)return "La atiende el asistente. Si hace falta, todavía podés escribirle durante "+Math.floor(ms/3600000)+" h "+Math.floor(ms%3600000/60000)+" min.";if(ms<=0)return "Pasaron más de 24 h: "+canal(c)+" ya no deja responder.";var h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return "Podés responder durante "+h+" h "+m+" min más."}
 function api(path,opts){opts=opts||{};opts.headers=Object.assign({"content-type":"application/json"},opts.headers||{});opts.credentials="same-origin";
   return fetch(path,opts).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||("error "+r.status));return d})})}
