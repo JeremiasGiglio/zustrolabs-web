@@ -1,10 +1,11 @@
 // Worker «zustrolabs-whatsapp»: el WhatsApp y el Instagram de Zustro Labs.
 // - zustrolabs.com/api/whatsapp → webhook de la Cloud API de Meta (whatsapp.js).
-// - zustrolabs.com/api/instagram → webhook de los mensajes directos de Instagram (instagram.js).
+// - zustrolabs.com/api/instagram → webhook de los mensajes directos de Instagram (instagram.js);
+//   /api/instagram/conectar → link para que una cuenta (la del estudio o la de un cliente) se conecte con su Instagram.
 // - equipo.zustrolabs.com → panel de atención humana, detrás de Cloudflare Access (panel.js).
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores } from './atencion.js';
-import { enviarIg, esInstagram, leerWebhookIg, nombreDe, revisarSuscripcion } from './instagram.js';
+import { conectarCuenta, enviarIg, esInstagram, estadoValido, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, urlAutorizar } from './instagram.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
@@ -34,21 +35,60 @@ export const CANALES = {
     clave: 'ig',
     verify: 'IG_VERIFY_TOKEN',
     secreto: (env) => env.IG_APP_SECRET,
-    listo: (env) => Boolean(env.IG_APP_SECRET && env.IG_TOKEN && env.IG_ID && env.IG_PAGE_ID),
-    leer: (payload, env) => leerWebhookIg(payload, env.IG_ID),
-    enviar: enviarIg,
+    // Las cuentas se conectan solas (/api/instagram/conectar); solo hacen falta las claves de la app de Instagram.
+    listo: (env) => Boolean(env.IG_APP_SECRET && env.IG_APP_ID),
+    leer: (payload) => leerWebhookIg(payload),
+    enviar: (env, m, fetchImpl, cuentas) => enviarIg(env, m, fetchImpl, cuentas),
     nota: CANAL_INSTAGRAM,
   },
 };
 
-/** Manda por el canal que corresponde a quien escribe (`ig:<id>` es Instagram; un número, WhatsApp). */
-export const mandarA = (env, m, fetchImpl) => (esInstagram(m.to) ? enviarIg(env, m, fetchImpl) : enviar(env, m, fetchImpl));
+/** Manda por el canal que corresponde a quien escribe (`ig:…` es Instagram; un número, WhatsApp). */
+export const mandarA = (env, m, fetchImpl, cuentas = null) => (esInstagram(m.to) ? enviarIg(env, m, fetchImpl, cuentas) : enviar(env, m, fetchImpl));
 
-/** Memoria y charlas: el Durable Object ATENCION (una sola instancia), o lo que pasen los tests. */
+/** Memoria, charlas y cuentas de Instagram: el Durable Object ATENCION (una sola instancia), o lo que pasen los tests. */
 function almacen(env, deps) {
-  if (deps.memoria !== undefined || deps.charlas !== undefined) return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null };
-  if (!env.ATENCION) return { memoria: null, charlas: null };
+  if (deps.memoria !== undefined || deps.charlas !== undefined || deps.cuentas !== undefined) {
+    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null };
+  }
+  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null };
   return adaptadores(env.ATENCION.get(env.ATENCION.idFromName('zustrolabs')));
+}
+
+const html = (cuerpo, status = 200) => new Response(cuerpo, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...SEGURIDAD } });
+
+/**
+ * Conexión de una cuenta de Instagram (la del estudio o la de un cliente):
+ * - /api/instagram/conectar?clave=<IG_CONECTAR_CLAVE> → manda a Instagram a entrar y aceptar los permisos;
+ * - /api/instagram/conectar/vuelta → Instagram vuelve con el código: se guarda el token y se suscribe la cuenta.
+ * La clave del link evita que cualquiera conecte una cuenta; el `state` firmado evita vueltas falsas.
+ */
+async function conectar(request, env, deps) {
+  const fetchImpl = deps.fetch ?? fetch;
+  const now = deps.now ?? Date.now();
+  const url = new URL(request.url);
+  const origen = `https://${url.host}`;
+  if (!CANALES.ig.listo(env) || !env.IG_CONECTAR_CLAVE) return html(paginaConectado({ ok: false, error: 'sin configurar' }), 503);
+  if (url.pathname === '/api/instagram/conectar') {
+    if ((url.searchParams.get('clave') ?? '') !== env.IG_CONECTAR_CLAVE) return html(paginaConectado({ ok: false, error: 'link inválido' }), 403);
+    return Response.redirect(await urlAutorizar(env, origen, now), 302);
+  }
+  // Vuelta de Instagram.
+  const code = url.searchParams.get('code');
+  if (!code || !(await estadoValido(env.IG_APP_SECRET, url.searchParams.get('state'), now))) {
+    return html(paginaConectado({ ok: false, error: url.searchParams.get('error_reason') ? 'no aceptaste los permisos' : 'vuelta inválida' }), 400);
+  }
+  const { cuentas } = almacen(env, deps);
+  if (!cuentas) return html(paginaConectado({ ok: false, error: 'sin memoria' }), 503);
+  try {
+    const c = await conectarCuenta(env, { code, origen, now }, fetchImpl);
+    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence });
+    console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta }));
+    return html(paginaConectado({ ok: true, username: c.username, suscripta: c.suscripta }));
+  } catch (e) {
+    console.log(JSON.stringify({ canal: 'ig', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 40) }));
+    return html(paginaConectado({ ok: false, error: String(e?.message ?? 'error').slice(0, 40) }), 502);
+  }
 }
 
 /** Webhook: GET = verificación de Meta; POST = mensajes firmados. Responde 200 rápido y procesa aparte. */
@@ -89,16 +129,22 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
   const log = (o) => console.log(JSON.stringify({ canal: canal.clave, ...o }));
   const a = almacen(env, deps);
   const memoria = a.memoria;
+  const cuentas = a.cuentas;
   // Sin el login del panel nadie vería los pedidos de PERSONA: se deriva al correo y el asistente no se calla.
   const charlas = panelListo(env) ? a.charlas : null;
   const preguntar = deps.preguntar ?? preguntador(env, { canal: canal.nota });
   const aviso = deps.avisar ?? (() => avisar(env, undefined, undefined, canal.clave));
   const now = deps.now ?? Date.now();
-  const mandar = (m) => canal.enviar(env, m, fetchImpl);
+  const mandar = (m) => canal.enviar(env, m, fetchImpl, cuentas);
 
   for (const ev of eventos) {
     const t0 = Date.now();
     if (!ev.ts || now - ev.ts * 1000 > MAX_EDAD_MS) { log({ ok: true, que: 'viejo' }); continue; }
+    // Instagram: solo las cuentas conectadas (o la de IG_ID con IG_TOKEN); lo demás se registra y se ignora.
+    if (ev.cuenta && !(await cuentas?.get(ev.cuenta)) && !(env.IG_ID && String(env.IG_ID) === ev.cuenta && env.IG_TOKEN)) {
+      log({ ok: true, que: 'cuenta_desconocida' });
+      continue;
+    }
     try {
       // Sin límites no se responde: son el freno al abuso y al gasto en IA.
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
@@ -113,7 +159,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (r.avisar) {
         // En Instagram el panel muestra el nombre de usuario, si Meta lo da (nunca frena la atención si falla).
         if (charlas && esInstagram(ev.from)) {
-          const nombre = await nombreDe(env, ev.from, fetchImpl);
+          const nombre = await nombreDe(env, ev.from, fetchImpl, cuentas);
           if (nombre) await charlas.agregar(ev.from, [], now, { nombre }).catch(() => {});
         }
         avisado = await Promise.resolve(aviso()).catch((e) => {
@@ -139,18 +185,21 @@ export default {
     const url = new URL(request.url);
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
       const a = almacen(env, deps);
-      return panel(request, env, { fetch: fetchImpl, now: deps.now, store: a.memoria, chats: a.charlas, send: (e, m) => mandarA(e, m, fetchImpl) });
+      return panel(request, env, { fetch: fetchImpl, now: deps.now, store: a.memoria, chats: a.charlas, send: (e, m) => mandarA(e, m, fetchImpl, a.cuentas) });
     }
     if (url.pathname === '/api/whatsapp') return webhook(request, env, ctx, deps, CANALES.wa);
     if (url.pathname === '/api/instagram') return webhook(request, env, ctx, deps, CANALES.ig);
+    if (url.pathname === '/api/instagram/conectar' || url.pathname === '/api/instagram/conectar/vuelta') return conectar(request, env, deps);
     return json({ error: 'no existe' }, 404);
   },
 
-  /** Cron diario: la página de Facebook tiene que seguir suscripta a los avisos de Instagram; si no, se vuelve a suscribir. */
+  /** Cron diario: renueva los tokens de Instagram que están por vencer y comprueba que cada cuenta siga suscripta. */
   async scheduled(_evento, env, _ctx, deps = {}) {
     const fetchImpl = deps.fetch ?? fetch;
-    const r = await revisarSuscripcion(env, fetchImpl).catch((e) => ({ suscripta: false, arreglada: false, error: String(e?.name ?? 'Error').slice(0, 40) }));
-    console.log(JSON.stringify({ canal: 'ig', que: 'suscripcion', ...r }));
+    const { cuentas } = almacen(env, deps);
+    if (!cuentas) { console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', error: 'sin memoria' })); return []; }
+    const r = await mantenerCuentas(env, cuentas, fetchImpl, deps.now ?? Date.now()).catch((e) => [{ error: String(e?.name ?? 'Error').slice(0, 40) }]);
+    console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', cuentas: r }));
     return r;
   },
 };

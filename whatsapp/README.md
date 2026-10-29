@@ -3,7 +3,7 @@
 Worker `zustrolabs-whatsapp`: un número propio del estudio y los mensajes directos de @zustrolabs, con el mismo asistente que «Preguntale a Zustro» y un panel para que alguien del equipo responda.
 
 - **Webhook de WhatsApp:** `https://zustrolabs.com/api/whatsapp`, para la Cloud API de Meta.
-- **Webhook de Instagram:** `https://zustrolabs.com/api/instagram`, para los mensajes directos (ZL-111; ver «Instagram» más abajo).
+- **Webhook de Instagram:** `https://zustrolabs.com/api/instagram`, para los mensajes directos; las cuentas se conectan en `/api/instagram/conectar` (ZL-111; ver «Instagram» más abajo).
 - **Panel:** `https://equipo.zustrolabs.com`, detrás de Cloudflare Access. Muestra las charlas de los dos canales.
 - **Cerebro:** `asistente/src/asistente.js` + `asistente/src/conocimiento.js`, con los mismos controles fijos: sin plata, sin palabras prohibidas, sin links ni correos ajenos, sin teléfonos. Solo se suma una nota de canal (`src/textos.js`).
 - **Separado del Radar Croacia:** otra app de Meta, otro número, otra memoria y la clave de IA del estudio, nunca la del Radar. El código del panel y del webhook está adaptado del Radar (`radar-croacia/worker/src/`).
@@ -27,7 +27,8 @@ Todo va en un solo Durable Object, `Atencion` (`src/atencion.js`), con almacenam
 - El id de cada mensaje, durante 1 h, para no contestar dos veces un reintento de Meta.
 - Cuántas respuestas de la IA tuvo cada número en el día, durante 2 días.
 - Solo las charlas con PERSONA, durante 30 días desde el último mensaje. En Instagram, además, el nombre de usuario de quien escribió PERSONA (para que el equipo sepa a quién responde).
-- Las personas de Instagram se guardan como `ig:<id>`, así no se mezclan con los números de WhatsApp.
+- Las personas de Instagram se guardan como `ig:<cuenta>.<quien>`, así no se mezclan con los números de WhatsApp ni entre cuentas.
+- Las cuentas de Instagram conectadas (id, usuario y token), sin vencimiento: el token se renueva solo.
 
 Por qué un Durable Object y no KV:
 - atiende de a un pedido por vez, así dos mensajes que llegan juntos no se pisan en el panel;
@@ -117,29 +118,30 @@ La memoria no necesita ningún paso: el Durable Object se crea solo al publicar.
 
 ## Instagram
 
-Los mensajes directos de **@zustrolabs** entran por `https://zustrolabs.com/api/instagram` y se responden desde la página de Facebook «Zustro Labs» a la que está vinculada la cuenta (app de Meta **Zustro Labs**, `4678708989064685`, variante «Instagram API con inicio de sesión de Facebook»). Código en `src/instagram.js`; el resto (asistente, comandos, memoria, panel) es el mismo de WhatsApp.
+Los mensajes directos de **@zustrolabs** (y, cuando corresponda, los de la cuenta de un cliente) entran por `https://zustrolabs.com/api/instagram` y se responden con la **Instagram API con inicio de sesión de Instagram** (`graph.instagram.com`): sin página de Facebook, sin usuario del sistema, sin scripts. Cada cuenta se conecta sola entrando con su Instagram en un link; el Worker guarda su token en el Durable Object, lo renueva cada 60 días y la suscribe a los avisos. Código en `src/instagram.js`; el resto (asistente, comandos, memoria, panel) es el mismo de WhatsApp.
 
-Lo que hay que hacer una vez (Jeremías; secretos nunca en el chat, en el repo ni en Jira):
+### Puesta en marcha (una sola vez, Jeremías)
+Todo en la app de Meta **Zustro Labs** (`4678708989064685`) → Use cases → Customize → **API setup with Instagram login**. Secretos nunca en el chat, en el repo ni en Jira.
 
-1. **Página de privacidad publicada:** `https://zustrolabs.com/privacidad/` tiene que estar en línea (Pages) y cargada en la app → App settings → Basic → Privacy Policy URL.
-2. **Permisos del token:** en Business settings → Users → System users → `zustro-redes`, con la app Zustro Labs, la página Zustro Labs y la cuenta de Instagram zustrolabs asignadas, generá un token **sin vencimiento** con `instagram_basic`, `instagram_manage_messages`, `pages_messaging`, `pages_manage_metadata` y `pages_show_list`.
-3. **Ids y suscripción de la página**, desde `whatsapp/`:
-   ```
-   IG_TOKEN='el token' node scripts/instagram-suscribir.mjs
-   ```
-   Imprime `IG_ID` e `IG_PAGE_ID` (van en `wrangler.toml`, en un PR), suscribe la página a los avisos de mensajes y, si el token que pasaste es de usuario, muestra el **token de página** que necesita el Worker.
-4. **Secretos:** `npx wrangler secret put` para `IG_TOKEN` (el de página del paso 3), `IG_APP_SECRET` (App settings → Basic → App secret de la app Zustro Labs, no el de la de WhatsApp) e `IG_VERIFY_TOKEN` (una frase larga que inventes).
-5. **Publicar:** `npx wrangler deploy` (crea la ruta `/api/instagram` y el cron).
-6. **Webhook en Meta:** en la app → Webhooks → elegí **Instagram** → Callback URL `https://zustrolabs.com/api/instagram`, Verify token el de `IG_VERIFY_TOKEN`, «Verify and save», y suscribí el campo **messages**.
-7. **La cuenta:** en la app de Instagram → Configuración → Mensajes y respuestas a historias → Herramientas conectadas → **Permitir el acceso a los mensajes** (si no, Meta no manda nada).
-8. **Live:** App settings → Basic → cambiar el modo a **Live**. Mientras esté en desarrollo, solo llegan los mensajes de la gente con rol en la app.
-9. **Prueba:** desde otra cuenta de Instagram, escribí a @zustrolabs: tiene que llegar el saludo con los idiomas. Después, PERSONA → la charla aparece en el panel marcada «Instagram» con el usuario.
+1. **Claves de la app de Instagram.** En esa pestaña, paso «Generate access tokens» / «Set up Instagram business login», aparecen el **Instagram app ID** y el **Instagram app secret** (son otros que los de la app de Facebook). El id va en `wrangler.toml` como `IG_APP_ID` (PR); el secret, en Cloudflare como `IG_APP_SECRET` (reemplaza al de Facebook si estaba cargado).
+2. **Vuelta del login.** En «Business login settings» → OAuth redirect URIs, agregá `https://zustrolabs.com/api/instagram/conectar/vuelta`.
+3. **Webhooks**, en la misma pestaña (no en el producto Webhooks general): Callback URL `https://zustrolabs.com/api/instagram`, Verify token = el secreto `IG_VERIFY_TOKEN`, y suscribí el campo **messages**.
+4. **Secretos** en Cloudflare (Workers & Pages → `zustrolabs-whatsapp` → Settings → Variables and Secrets): `IG_APP_SECRET`, `IG_VERIFY_TOKEN`, `IG_CONECTAR_CLAVE` (una frase larga inventada: es la clave del link de conexión) y, si no estaban, `ANTHROPIC_API_KEY` y `AVISO_PARA`.
+5. **Privacidad y Live:** `https://zustrolabs.com/privacidad/` como Privacy Policy URL y la app en **Live** (ya está).
 
-Cosas que conviene saber:
-- La ventana para responder es de **24 h** desde el último mensaje de la persona, como en WhatsApp. Meta deja 7 días con la etiqueta de agente humano, pero pide una revisión de la app: queda para más adelante.
-- Un cron diario (`[triggers]` en `wrangler.toml`) revisa que la página siga suscripta a los avisos y la vuelve a suscribir si hace falta. En Observability se ve como `"que":"suscripcion"`.
-- Instagram no manda botones, así que el saludo y los comandos van en texto.
-- No se bajan las fotos ni los audios: solo se lee texto.
+### Conectar una cuenta (la del estudio o la de un cliente)
+1. La persona entra a Instagram en el navegador con la cuenta profesional que quiere conectar y, en esa cuenta, tiene activado Configuración → Mensajes → Herramientas conectadas → **Permitir acceso a los mensajes**.
+2. Abre `https://zustrolabs.com/api/instagram/conectar?clave=<IG_CONECTAR_CLAVE>` (el link se lo mandamos nosotros; sin la clave no hace nada).
+3. Instagram le pide confirmar los permisos (`instagram_business_basic`, `instagram_business_manage_messages`) → acepta → ve «Listo: la cuenta @… quedó conectada y suscripta».
+4. Desde ese momento el asistente responde en esa cuenta. Para desconectarla: la persona quita la app desde Instagram (Configuración → Apps y sitios web) o nosotros borramos la cuenta del Durable Object.
+
+### Cosas que conviene saber
+- **Acceso estándar vs avanzado.** Con el acceso estándar (el de toda app nueva) Meta deja atender las cuentas que el portafolio **posee o administra**: @zustrolabs. Para la cuenta de un cliente hace falta **acceso avanzado** a `instagram_business_manage_messages`: App Review y, casi siempre, verificación del negocio con CUIT. Está pendiente de decidir con qué CUIT.
+- La ventana para responder es de **24 h** desde el último mensaje de la persona, como en WhatsApp. Meta deja 7 días con la etiqueta de agente humano, pero pide revisión de la app: queda para más adelante.
+- Los tokens duran 60 días; el cron diario (`[triggers]`) los renueva cuando quedan menos de 15 y comprueba la suscripción de cada cuenta. En Observability se ve como `"que":"mantenimiento"`.
+- Cada aviso de Meta deja un registro `"que":"aviso"` (forma y cantidad, sin ids ni texto); una firma inválida, `"que":"firma"`; un mensaje para una cuenta no conectada, `"que":"cuenta_desconocida"`.
+- Instagram no manda botones, así que el saludo y los comandos van en texto. No se bajan las fotos ni los audios: solo se lee texto.
+- Las personas se guardan como `ig:<cuenta>.<quien>`: la misma persona escribiendo a dos cuentas son dos charlas distintas.
 
 ## Costos
 - **WhatsApp e Instagram:** responder dentro de las 24 h de que la persona escribió es gratis.
