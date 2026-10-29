@@ -160,27 +160,50 @@ async function hmac(secreto, texto) {
   return b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(texto)));
 }
 
-/** `state` firmado para el OAuth: vence a los 15 minutos; así nadie conecta una cuenta sin pasar por nuestro link. */
-export async function firmarEstado(secreto, now = Date.now()) {
+/**
+ * Apps de Instagram que atiende el Worker: la del estudio (variables IG_APP_ID / IG_APP_SECRET) y una por cliente,
+ * registradas en el Durable Object con el script scripts/instagram-cliente.ps1. Cada cliente usa su propia app de
+ * Meta: así el acceso estándar le alcanza para su cuenta y no hace falta la revisión de Meta.
+ */
+export const appDelEstudio = (env) => (env.IG_APP_ID && env.IG_APP_SECRET ? { id: String(env.IG_APP_ID), secreto: env.IG_APP_SECRET, nombre: 'Zustro Labs' } : null);
+
+export async function appDe(env, apps, id) {
+  const propia = appDelEstudio(env);
+  if (!id || (propia && String(id) === propia.id)) return propia;
+  return (await apps?.get?.(String(id))) ?? null;
+}
+
+/** Todos los secretos con los que puede venir firmado un aviso (la app del estudio y las de los clientes). */
+export async function secretosDe(env, apps) {
+  const propia = appDelEstudio(env);
+  const lista = await apps?.list?.().catch(() => []);
+  return [...(propia ? [propia.secreto] : []), ...(lista ?? []).map((a) => a.secreto)].filter(Boolean);
+}
+
+/** `state` firmado para el OAuth: lleva la app y vence a los 15 minutos; así nadie conecta una cuenta sin pasar por nuestro link. */
+export async function firmarEstado(secreto, now = Date.now(), app = '') {
   const hasta = String(now + 15 * 60_000);
-  return `${hasta}.${await hmac(secreto, hasta)}`;
+  const cuerpo = `${hasta}.${app}`;
+  return `${cuerpo}.${await hmac(secreto, cuerpo)}`;
 }
-export async function estadoValido(secreto, estado, now = Date.now()) {
-  const [hasta, firma] = String(estado ?? '').split('.');
-  if (!/^\d+$/.test(hasta ?? '') || Number(hasta) < now) return false;
-  return firma === (await hmac(secreto, hasta));
+/** Devuelve {app} si el state es válido; null si no. */
+export async function leerEstado(secreto, estado, now = Date.now()) {
+  const m = /^(\d+)\.(\d*)\.([A-Za-z0-9_-]+)$/.exec(String(estado ?? ''));
+  if (!m || Number(m[1]) < now) return null;
+  return m[3] === (await hmac(secreto, `${m[1]}.${m[2]}`)) ? { app: m[2] } : null;
 }
+export const estadoValido = async (secreto, estado, now) => Boolean(await leerEstado(secreto, estado, now));
 
 export const urlVuelta = (origen) => `${origen}/api/instagram/conectar/vuelta`;
 
-/** Adónde mandar a la persona para que entre con su Instagram y acepte los permisos. */
-export async function urlAutorizar(env, origen, now = Date.now()) {
+/** Adónde mandar a la persona para que entre con su Instagram y acepte los permisos (con la app que corresponda). */
+export async function urlAutorizar(env, origen, now = Date.now(), app = appDelEstudio(env)) {
   const u = new URL('https://www.instagram.com/oauth/authorize');
-  u.searchParams.set('client_id', env.IG_APP_ID);
+  u.searchParams.set('client_id', app.id);
   u.searchParams.set('redirect_uri', urlVuelta(origen));
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('scope', PERMISOS.join(','));
-  u.searchParams.set('state', await firmarEstado(env.IG_APP_SECRET, now));
+  u.searchParams.set('state', await firmarEstado(env.IG_APP_SECRET, now, app.id));
   u.searchParams.set('enable_fb_login', '0');
   u.searchParams.set('force_authentication', '1');
   return u.toString();
@@ -188,18 +211,18 @@ export async function urlAutorizar(env, origen, now = Date.now()) {
 
 /**
  * Vuelta del OAuth: cambia el código por un token largo (60 días), lee quién es la cuenta y la suscribe a los avisos.
- * Devuelve {id, username, token, vence}. Los errores llevan solo el paso que falló.
+ * Devuelve {id, username, token, vence, app}. Los errores llevan solo el paso que falló.
  */
-export async function conectarCuenta(env, { code, origen, now = Date.now() }, fetchImpl = fetch) {
+export async function conectarCuenta(env, { code, origen, now = Date.now(), app = appDelEstudio(env) }, fetchImpl = fetch) {
   const corto = await fetchImpl('https://api.instagram.com/oauth/access_token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: env.IG_APP_ID, client_secret: env.IG_APP_SECRET, grant_type: 'authorization_code', redirect_uri: urlVuelta(origen), code }),
+    body: new URLSearchParams({ client_id: app.id, client_secret: app.secreto, grant_type: 'authorization_code', redirect_uri: urlVuelta(origen), code }),
     signal: AbortSignal.timeout(10_000),
   });
   const c = await corto.json().catch(() => ({}));
   if (!corto.ok || !c.access_token) throw new Error(`oauth ${corto.status}`);
-  const largo = await fetchImpl(`${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(env.IG_APP_SECRET)}&access_token=${encodeURIComponent(c.access_token)}`, { signal: AbortSignal.timeout(10_000) });
+  const largo = await fetchImpl(`${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(app.secreto)}&access_token=${encodeURIComponent(c.access_token)}`, { signal: AbortSignal.timeout(10_000) });
   const l = await largo.json().catch(() => ({}));
   if (!largo.ok || !l.access_token) throw new Error(`token_largo ${largo.status}`);
   const token = l.access_token;
@@ -210,7 +233,7 @@ export async function conectarCuenta(env, { code, origen, now = Date.now() }, fe
   if (!yo.ok || !ID_RE.test(id)) throw new Error(`cuenta ${yo.status}`);
   const username = /^[\w.]{1,30}$/.test(String(y.username ?? '')) ? String(y.username) : '';
   const s = await suscribir(env, token, fetchImpl);
-  return { id, username, token, vence, suscripta: s.suscripta };
+  return { id, username, token, vence, app: app.id, suscripta: s.suscripta };
 }
 
 /** Suscribe la cuenta (su token) a los avisos de mensajes. Devuelve {suscripta, arreglada}. */

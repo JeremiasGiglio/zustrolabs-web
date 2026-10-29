@@ -9,8 +9,8 @@ import { _resetCerts, mailAviso, NOMBRE_CANAL } from '../src/panel.js';
 import { CANAL_INSTAGRAM, eligeIdioma, SALUDO_IDIOMA, SALUDO_IDIOMA_TEXTO, TEXTOS } from '../src/textos.js';
 import { atender, firmar, msgIdiomas, msgTexto, preguntador, verificarSuscripcion } from '../src/whatsapp.js';
 import {
-  armarFrom, conectarCuenta, convertir, enviarIg, estadoValido, firmarEstado, leerWebhookIg, mantenerCuentas, MAX_TROZO, nombreDe,
-  paginaConectado, partes, PERMISOS, renovarToken, suscribir, trozar, urlAutorizar,
+  armarFrom, conectarCuenta, convertir, enviarIg, estadoValido, firmarEstado, leerEstado, leerWebhookIg, mantenerCuentas, MAX_TROZO, nombreDe,
+  paginaConectado, partes, PERMISOS, renovarToken, secretosDe, suscribir, trozar, urlAutorizar,
 } from '../src/instagram.js';
 
 const CUENTA = '17841400000000001'; // @zustrolabs (ficticio)
@@ -20,7 +20,7 @@ const T0 = 1_792_000_000_000;
 const DIA = 24 * 3600_000;
 const limiteOk = { limit: async () => ({ success: true }) };
 const ENV = {
-  IG_APP_ID: '1000000000000001', IG_APP_SECRET: 'secreto-ig-prueba', IG_VERIFY_TOKEN: 'verificar-ig', IG_CONECTAR_CLAVE: 'clave-link-prueba',
+  IG_APP_ID: '1000000000000001', IG_APP_SECRET: 'secreto-ig-prueba', IG_VERIFY_TOKEN: 'verificar-ig', IG_CONECTAR_CLAVE: 'clave-link-prueba', IG_ADMIN_CLAVE: 'clave-admin-prueba',
   WHATSAPP_APP_SECRET: 'secreto-wa', WHATSAPP_TOKEN: 'token-wa', WHATSAPP_PHONE_NUMBER_ID: '100000000000001',
   LIMITE: limiteOk, LIMITE_GLOBAL: limiteOk,
   ACCESS_TEAM_DOMAIN: 'equipo-de-prueba.cloudflareaccess.com', ACCESS_AUD: 'aud-de-prueba', PANEL_EMAILS: 'yo@example.com',
@@ -36,7 +36,16 @@ function nuevo(reloj = () => T0) {
 /** Memoria con la cuenta @zustrolabs ya conectada. */
 async function conCuenta(reloj) {
   const n = nuevo(reloj);
-  await n.cuentas.put(CUENTA, { username: 'zustrolabs', token: 'tok-cuenta', vence: T0 + 60 * DIA });
+  await n.cuentas.put(CUENTA, { username: 'zustrolabs', token: 'tok-cuenta', vence: T0 + 60 * DIA, app: ENV.IG_APP_ID });
+  return n;
+}
+/** Una app de un cliente registrada y su cuenta conectada. */
+const APP_CLIENTE = { id: '2000000000000002', secreto: 'secreto-del-cliente-prueba', nombre: 'Chocolatería de prueba' };
+const CUENTA_CLIENTE = '17841400000000002';
+async function conCliente() {
+  const n = await conCuenta();
+  await n.apps.put(APP_CLIENTE.id, { secreto: APP_CLIENTE.secreto, nombre: APP_CLIENTE.nombre });
+  await n.cuentas.put(CUENTA_CLIENTE, { username: 'chocolateria.prueba', token: 'tok-cliente', vence: T0 + 60 * DIA, app: APP_CLIENTE.id });
   return n;
 }
 
@@ -215,7 +224,7 @@ function metaOauth({ suscripta = false } = {}) {
 test('conectarCuenta: cambia el código por un token largo, lee la cuenta y la suscribe a los mensajes', async () => {
   const { pedidos, fetchImpl } = metaOauth();
   const c = await conectarCuenta(ENV, { code: 'codigo-prueba', origen: 'https://zustrolabs.com', now: T0 }, fetchImpl);
-  assert.deepEqual(c, { id: CUENTA, username: 'zustrolabs', token: 'token-largo', vence: T0 + 5_183_944_000, suscripta: true });
+  assert.deepEqual(c, { id: CUENTA, username: 'zustrolabs', token: 'token-largo', vence: T0 + 5_183_944_000, app: ENV.IG_APP_ID, suscripta: true });
   const corto = pedidos[0];
   assert.equal(corto.method, 'POST');
   const form = Object.fromEntries(new URLSearchParams(String(corto.body)));
@@ -240,7 +249,7 @@ test('worker: el link de conexión exige la clave y manda a Instagram; la vuelta
   assert.match(cuerpo, /Listo/);
   assert.match(cuerpo, /@zustrolabs/);
   assert.doesNotMatch(cuerpo, /token-/, 'la página no muestra tokens');
-  assert.deepEqual(await cuentas.get(CUENTA), { id: CUENTA, username: 'zustrolabs', token: 'token-largo', vence: T0 + 5_183_944_000 });
+  assert.deepEqual(await cuentas.get(CUENTA), { id: CUENTA, username: 'zustrolabs', token: 'token-largo', vence: T0 + 5_183_944_000, app: ENV.IG_APP_ID });
   // Una vuelta con state inventado o sin configurar no guarda nada.
   assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/conectar/vuelta?code=x&state=1.falso'), ENV, {}, d)).status, 400);
   assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/conectar?clave=x'), { ...ENV, IG_CONECTAR_CLAVE: '' }, {}, d)).status, 503);
@@ -287,7 +296,7 @@ async function deps(o = {}) {
   return {
     enviados,
     fetch: async (url, opts) => (enviados.push({ url, body: JSON.parse(opts?.body ?? 'null') }), Response.json({ username: 'alguien.de.prueba' })),
-    memoria: n.memoria, charlas: n.charlas, cuentas: n.cuentas,
+    memoria: n.memoria, charlas: n.charlas, cuentas: n.cuentas, apps: n.apps,
     preguntar: async () => controlada(),
     avisar: async () => true,
     now: T0,
@@ -396,6 +405,66 @@ test('worker: el panel responde por Instagram a una charla ig:… y marca el can
   assert.doesNotMatch(m.split('\r\n\r\n')[1], /\d{6,}/, 'el cuerpo no lleva ids');
 });
 
+// ——— Apps de clientes ———
+
+test('apps de clientes: el aviso firmado con el secreto del cliente entra y se responde con el token de su cuenta', async () => {
+  const n = await conCliente();
+  const enviados = [];
+  const d = { fetch: async (url, opts) => (enviados.push({ url, auth: opts?.headers?.authorization, body: JSON.parse(opts?.body ?? 'null') }), Response.json({})), ...n, preguntar: async () => controlada(), avisar: async () => true, now: T0 };
+  assert.deepEqual(await secretosDe(ENV, n.apps), [ENV.IG_APP_SECRET, APP_CLIENTE.secreto]);
+  const cuerpo = JSON.stringify(aviso([texto('hola')], { destino: CUENTA_CLIENTE }));
+  const req = (firma) => new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'X-Hub-Signature-256': firma }, body: cuerpo });
+  assert.equal((await worker.fetch(req(await firmar(cuerpo, APP_CLIENTE.secreto)), ENV, {}, d)).status, 200);
+  const r = enviados.find((e) => e.url.endsWith('/me/messages'));
+  assert.equal(r.auth, 'Bearer tok-cliente', 'responde con el token de la cuenta del cliente');
+  assert.equal(r.body.message.text, SALUDO_IDIOMA_TEXTO);
+  assert.equal((await worker.fetch(req(await firmar(cuerpo, 'otro-secreto-cualquiera')), ENV, {}, d)).status, 401);
+});
+
+test('apps de clientes: el link con app=<id> manda a Instagram con la app del cliente y la vuelta guarda la cuenta con esa app', async () => {
+  const n = await conCliente();
+  const { pedidos, fetchImpl } = metaOauth();
+  const d = { fetch: fetchImpl, ...n, now: T0 };
+  const r = await worker.fetch(new Request(`https://zustrolabs.com/api/instagram/conectar?clave=clave-link-prueba&app=${APP_CLIENTE.id}`), ENV, {}, d);
+  assert.equal(r.status, 302);
+  const ida = new URL(r.headers.get('location'));
+  assert.equal(ida.searchParams.get('client_id'), APP_CLIENTE.id);
+  assert.deepEqual(await leerEstado(ENV.IG_APP_SECRET, ida.searchParams.get('state'), T0), { app: APP_CLIENTE.id });
+  const vuelta = await worker.fetch(new Request(`https://zustrolabs.com/api/instagram/conectar/vuelta?code=codigo-prueba&state=${ida.searchParams.get('state')}`), ENV, {}, d);
+  assert.equal(vuelta.status, 200);
+  const form = Object.fromEntries(new URLSearchParams(String(pedidos[0].body)));
+  assert.equal(form.client_id, APP_CLIENTE.id);
+  assert.equal(form.client_secret, APP_CLIENTE.secreto);
+  assert.equal((await n.cuentas.get(CUENTA)).app, APP_CLIENTE.id, 'la cuenta queda atada a la app con la que se conectó');
+  assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/conectar?clave=clave-link-prueba&app=999999999'), ENV, {}, d)).status, 404);
+});
+
+test('administración: estado sin secretos, alta y baja de apps, baja de cuentas; sin la clave no entra', async () => {
+  const n = await conCliente();
+  const d = { ...n, now: T0 };
+  const pedir = (ruta, init = {}) => worker.fetch(new Request(`https://zustrolabs.com/api/instagram/admin${ruta}`, { ...init, headers: { authorization: 'Bearer clave-admin-prueba', 'content-type': 'application/json', ...(init.headers ?? {}) } }), ENV, {}, d);
+  assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/admin/estado'), ENV, {}, d)).status, 401);
+  assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/admin/estado'), { ...ENV, IG_ADMIN_CLAVE: '' }, {}, d)).status, 503);
+  const estado = await (await pedir('/estado')).json();
+  assert.equal(estado.configurado.app_estudio, true);
+  assert.deepEqual(estado.apps.map((a) => a.id), [APP_CLIENTE.id]);
+  assert.deepEqual(estado.cuentas.map((c) => [c.username, c.app, c.tokenVenceEnDias]), [['zustrolabs', ENV.IG_APP_ID, 60], ['chocolateria.prueba', APP_CLIENTE.id, 60]]);
+  const texto = JSON.stringify(estado);
+  assert.ok(!texto.includes('tok-') && !texto.includes('secreto'), 'nunca devuelve tokens ni secretos');
+  const alta = await (await pedir('/apps', { method: 'POST', body: JSON.stringify({ id: '3000000000000003', secreto: 'secreto-nuevo-de-prueba', nombre: 'Otro cliente' }) })).json();
+  assert.equal(alta.ok, true);
+  assert.match(alta.conectar, /conectar\?clave=<IG_CONECTAR_CLAVE>&app=3000000000000003$/);
+  assert.equal((await n.apps.get('3000000000000003')).nombre, 'Otro cliente');
+  for (const malo of [{ id: 'abc', secreto: 'secreto-nuevo-de-prueba', nombre: 'x' }, { id: '3000000000000004', secreto: 'corto', nombre: 'x' }, { id: ENV.IG_APP_ID, secreto: 'secreto-nuevo-de-prueba', nombre: 'x' }]) {
+    assert.equal((await pedir('/apps', { method: 'POST', body: JSON.stringify(malo) })).status, 400, JSON.stringify(malo));
+  }
+  const baja = await (await pedir(`/apps/${APP_CLIENTE.id}`, { method: 'DELETE' })).json();
+  assert.deepEqual(baja, { ok: true, cuentasDesconectadas: 1 });
+  assert.equal(await n.cuentas.get(CUENTA_CLIENTE), null);
+  assert.equal((await pedir(`/cuentas/${CUENTA}`, { method: 'DELETE' })).status, 200);
+  assert.equal(await n.cuentas.get(CUENTA), null);
+});
+
 // ——— Reglas del estudio ———
 
 test('nota de Instagram: sin palabras prohibidas, pide respuestas cortas y sin direcciones web', () => {
@@ -409,7 +478,7 @@ test('wrangler.toml: la ruta de Instagram con *, el id de la app comentado (no s
   const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   assert.match(toml, /pattern = "zustrolabs\.com\/api\/instagram\*"/, 'con * al final: si no, la verificación de Meta (?hub.mode=…) cae en Pages');
   assert.match(toml, /^\[triggers\]\ncrons = \["\d+ \d+ \* \* \*"\]$/m);
-  assert.doesNotMatch(toml, /^(IG_TOKEN|IG_APP_SECRET|IG_VERIFY_TOKEN|IG_CONECTAR_CLAVE)\s*=/m, 'los secretos no van en el repo');
+  assert.doesNotMatch(toml, /^(IG_TOKEN|IG_APP_SECRET|IG_VERIFY_TOKEN|IG_CONECTAR_CLAVE|IG_ADMIN_CLAVE)\s*=/m, 'los secretos no van en el repo');
 });
 
 test('la página de conexión no lleva palabras prohibidas ni otros correos', () => {
