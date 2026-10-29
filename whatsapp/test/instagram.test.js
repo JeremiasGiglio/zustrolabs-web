@@ -55,6 +55,19 @@ test('leerWebhookIg: texto, adjuntos, ecos, borrados y otra cuenta; los tiempos 
   assert.deepEqual(leerWebhookIg(aviso([{ message: { mid: 'x', text: 'y' } }], { destino: '17841400000000002' }), IG_ID), [], 'otra cuenta');
   assert.deepEqual(leerWebhookIg(aviso([{ message: { mid: 'x', text: 'y' } }]), ''), [], 'sin IG_ID no procesa nada');
   assert.deepEqual(leerWebhookIg({ object: 'whatsapp_business_account' }, IG_ID), []);
+  // La forma del panel de prueba de Meta: entry[].changes[] con field «messages».
+  const porCambios = leerWebhookIg({ object: 'instagram', entry: [{ id: IG_ID, time: T0, changes: [{ field: 'messages', value: { sender: { id: QUIEN }, recipient: { id: IG_ID }, timestamp: String(T0), message: { mid: 'c1', text: 'Hola' } } }] }] }, IG_ID);
+  assert.deepEqual(porCambios.map((e) => [e.kind, e.id, e.from]), [['text', 'c1', FROM]]);
+});
+
+test('worker: cada aviso firmado deja un registro con la forma y la cantidad, sin ids ni texto; la firma mala también', async () => {
+  const d = deps();
+  const logs = await conLogs(() => ig([texto('un texto privado')], ENV, d));
+  const aviso = logs.map((l) => JSON.parse(l)).find((l) => l.que === 'aviso');
+  assert.deepEqual(aviso, { canal: 'ig', que: 'aviso', objeto: 'instagram', entradas: 1, forma: 'messaging', eventos: 1 });
+  assert.ok(!logs.join('\n').includes(QUIEN) && !logs.join('\n').includes('privado'));
+  const logs2 = await conLogs(() => ig([texto('x')], ENV, deps(), { firma: 'sha256=' + '0'.repeat(64) }));
+  assert.ok(logs2.some((l) => JSON.parse(l).que === 'firma'));
 });
 
 test('verificación de Meta para Instagram: usa IG_VERIFY_TOKEN, no el de WhatsApp', () => {

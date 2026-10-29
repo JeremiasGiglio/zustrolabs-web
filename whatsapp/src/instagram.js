@@ -29,7 +29,10 @@ export function leerWebhookIg(payload, igId) {
   if (payload?.object !== 'instagram' || !igId) return [];
   const out = [];
   for (const entry of payload.entry ?? []) {
-    for (const m of entry.messaging ?? []) {
+    // Meta manda los mensajes en entry[].messaging[]; el panel de prueba (y alguna versión) los manda como
+    // entry[].changes[] con field «messages» y la misma forma adentro de value. Se leen las dos.
+    const cambios = (entry.changes ?? []).filter((c) => c.field === 'messages' && c.value?.sender).map((c) => c.value);
+    for (const m of [...(entry.messaging ?? []), ...cambios]) {
       const msg = m.message;
       if (!msg || msg.is_echo || msg.is_deleted) continue;
       if (String(m.recipient?.id ?? '') !== String(igId)) continue;
