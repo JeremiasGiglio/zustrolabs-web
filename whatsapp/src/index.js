@@ -63,14 +63,23 @@ async function webhook(request, env, ctx, deps, canal) {
   if (Number(request.headers.get('content-length') ?? 0) > MAX_CUERPO) return json({ error: 'demasiado grande' }, 413);
   const crudo = await request.text();
   if (crudo.length > MAX_CUERPO) return json({ error: 'demasiado grande' }, 413);
-  if (!(await firmaValida(crudo, request.headers.get('X-Hub-Signature-256'), canal.secreto(env)))) return json({ error: 'firma inválida' }, 401);
+  if (!(await firmaValida(crudo, request.headers.get('X-Hub-Signature-256'), canal.secreto(env)))) {
+    console.log(JSON.stringify({ canal: canal.clave, ok: false, que: 'firma' }));
+    return json({ error: 'firma inválida' }, 401);
+  }
   let payload;
   try {
     payload = JSON.parse(crudo);
   } catch {
     return json({ error: 'pedido inválido' }, 400);
   }
-  const trabajo = procesar(canal.leer(payload, env), env, fetchImpl, deps, canal);
+  const eventos = canal.leer(payload, env);
+  // Cuántos avisos llegaron y cuántos sirven (sin ids ni texto): para saber si Meta manda algo y con qué forma.
+  console.log(JSON.stringify({
+    canal: canal.clave, que: 'aviso', objeto: String(payload?.object ?? '').slice(0, 40), entradas: (payload?.entry ?? []).length,
+    forma: (payload?.entry ?? []).map((e) => (e.messaging ? 'messaging' : e.changes ? 'changes' : 'otra')).join(','), eventos: eventos.length,
+  }));
+  const trabajo = procesar(eventos, env, fetchImpl, deps, canal);
   if (ctx?.waitUntil) ctx.waitUntil(trabajo);
   else await trabajo;
   return json({ ok: true }, 200);
