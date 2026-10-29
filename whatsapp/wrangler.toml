@@ -25,7 +25,7 @@ MODELO = "claude-haiku-5-5"
 # ACCESS_AUD = "…"
 # Instagram (ZL-111): el id de la app de Instagram (no es secreto; está en la app de Meta → «API setup with
 # Instagram login»). Las cuentas se conectan solas por /api/instagram/conectar y quedan en el Durable Object.
-# IG_APP_ID = "…"
+IG_APP_ID = "1834275711078065"
 # Mientras falte lo de WhatsApp, ese webhook responde 503, y el panel también: nada queda abierto.
 
 # Cron diario: renueva los tokens de Instagram que están por vencer (duran 60 días) y comprueba que cada cuenta
