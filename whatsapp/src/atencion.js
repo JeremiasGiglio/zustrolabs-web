@@ -8,7 +8,8 @@
 // - id:<wamid>     → para no responder dos veces un reintento de Meta: 1 hora.
 // - uso:<número>:<día> → cuántas respuestas de la IA tuvo ese número ese día: 2 días.
 // - chat:<número>  → la charla con atención humana (solo después de PERSONA): 30 días desde el último mensaje.
-// - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence}: no vence (se renueva el token).
+// - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence, app}: no vence (se renueva el token).
+// - igapp:<id>     → app de Instagram de un cliente {id, secreto, nombre, creado}: no vence.
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
 export const DIA_MS = 24 * 3600_000;
@@ -94,14 +95,30 @@ export function crearAtencion(storage) {
       return (await s.get(`igc:${id}`)) ?? null;
     },
     async guardarCuentaIg(id, datos) {
-      const { username = '', token, tokenVence = 0 } = datos ?? {};
-      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence });
+      const { username = '', token, tokenVence = 0, app = '' } = datos ?? {};
+      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app) });
     },
     async borrarCuentaIg(id) {
       await s.delete(`igc:${id}`);
     },
     async listaCuentasIg() {
       return [...(await s.list({ prefix: 'igc:' })).values()];
+    },
+
+    // ── Apps de Instagram de clientes ──
+    async appIg(id) {
+      return (await s.get(`igapp:${id}`)) ?? null;
+    },
+    async guardarAppIg(id, datos, now) {
+      const { secreto, nombre = '' } = datos ?? {};
+      const antes = await s.get(`igapp:${id}`);
+      await s.put(`igapp:${id}`, { id: String(id), secreto, nombre: String(nombre).slice(0, 80), creado: antes?.creado ?? now });
+    },
+    async borrarAppIg(id) {
+      await s.delete(`igapp:${id}`);
+    },
+    async listaAppsIg() {
+      return [...(await s.list({ prefix: 'igapp:' })).values()];
     },
     /** Lista para el panel: sin texto, solo las vigentes, la más reciente primero. */
     async lista(now) {
@@ -143,8 +160,8 @@ export function almacenPrueba() {
 }
 
 /**
- * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar}, charlas {get, list, agregar, delete}
- * y cuentas {get, put, delete, list} (Instagram).
+ * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar}, charlas {get, list, agregar, delete},
+ * cuentas {get, put, delete, list} (Instagram) y apps {get, put, delete, list} (apps de Instagram de clientes).
  * `a` es la lógica directa (tests) o el stub RPC del Durable Object (producción); `reloj` da la hora.
  */
 export function adaptadores(a, reloj = () => Date.now()) {
@@ -165,11 +182,18 @@ export function adaptadores(a, reloj = () => Date.now()) {
   const cuentas = {
     get: async (id) => {
       const c = await a.cuentaIg(id);
-      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence } : null;
+      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' } : null;
     },
-    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence }),
+    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app }),
     delete: (id) => a.borrarCuentaIg(id),
-    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence })),
+    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' })),
   };
-  return { memoria, charlas, cuentas };
+  // Apps de Instagram de clientes: {id, secreto, nombre, creado}.
+  const apps = {
+    get: (id) => a.appIg(id),
+    put: (id, d) => a.guardarAppIg(id, d, reloj()),
+    delete: (id) => a.borrarAppIg(id),
+    list: () => a.listaAppsIg(),
+  };
+  return { memoria, charlas, cuentas, apps };
 }

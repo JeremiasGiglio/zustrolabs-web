@@ -126,8 +126,11 @@ Todo en la app de Meta **Zustro Labs** (`4678708989064685`) → Use cases → Cu
 1. **Claves de la app de Instagram.** En esa pestaña, paso «Generate access tokens» / «Set up Instagram business login», aparecen el **Instagram app ID** y el **Instagram app secret** (son otros que los de la app de Facebook). El id va en `wrangler.toml` como `IG_APP_ID` (PR); el secret, en Cloudflare como `IG_APP_SECRET` (reemplaza al de Facebook si estaba cargado).
 2. **Vuelta del login.** En «Business login settings» → OAuth redirect URIs, agregá `https://zustrolabs.com/api/instagram/conectar/vuelta`.
 3. **Webhooks**, en la misma pestaña (no en el producto Webhooks general): Callback URL `https://zustrolabs.com/api/instagram`, Verify token = el secreto `IG_VERIFY_TOKEN`, y suscribí el campo **messages**.
-4. **Secretos** en Cloudflare (Workers & Pages → `zustrolabs-whatsapp` → Settings → Variables and Secrets): `IG_APP_SECRET`, `IG_VERIFY_TOKEN`, `IG_CONECTAR_CLAVE` (una frase larga inventada: es la clave del link de conexión) y, si no estaban, `ANTHROPIC_API_KEY` y `AVISO_PARA`.
+4. **Secretos** en Cloudflare (Workers & Pages → `zustrolabs-whatsapp` → Settings → Variables and Secrets): `IG_APP_SECRET`, `IG_VERIFY_TOKEN`, `IG_CONECTAR_CLAVE` (una frase larga inventada: es la clave del link de conexión), `IG_ADMIN_CLAVE` (otra frase: la usa el script de clientes) y, si no estaban, `ANTHROPIC_API_KEY` y `AVISO_PARA`.
 5. **Privacidad y Live:** `https://zustrolabs.com/privacidad/` como Privacy Policy URL y la app en **Live** (ya está).
+
+### Para un cliente
+Guía completa y script paso a paso para Windows: [`INSTAGRAM_CLIENTES.md`](INSTAGRAM_CLIENTES.md) y `scripts/instagram-cliente.ps1`. Cada cliente usa su propia app de Meta (acceso estándar, sin revisión); el Worker la registra con `POST /api/instagram/admin/apps` (secreto `IG_ADMIN_CLAVE`) y el link de conexión lleva `&app=<id>`.
 
 ### Conectar una cuenta (la del estudio o la de un cliente)
 1. La persona entra a Instagram en el navegador con la cuenta profesional que quiere conectar y, en esa cuenta, tiene activado Configuración → Mensajes → Herramientas conectadas → **Permitir acceso a los mensajes**.

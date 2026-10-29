@@ -5,7 +5,7 @@
 // - equipo.zustrolabs.com → panel de atención humana, detrás de Cloudflare Access (panel.js).
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores } from './atencion.js';
-import { conectarCuenta, enviarIg, esInstagram, estadoValido, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, urlAutorizar } from './instagram.js';
+import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
@@ -36,6 +36,7 @@ export const CANALES = {
     verify: 'IG_VERIFY_TOKEN',
     secreto: (env) => env.IG_APP_SECRET,
     // Las cuentas se conectan solas (/api/instagram/conectar); solo hacen falta las claves de la app de Instagram.
+    // IG_APP_SECRET también firma el `state` del OAuth de las apps de los clientes.
     listo: (env) => Boolean(env.IG_APP_SECRET && env.IG_APP_ID),
     leer: (payload) => leerWebhookIg(payload),
     enviar: (env, m, fetchImpl, cuentas) => enviarIg(env, m, fetchImpl, cuentas),
@@ -49,9 +50,9 @@ export const mandarA = (env, m, fetchImpl, cuentas = null) => (esInstagram(m.to)
 /** Memoria, charlas y cuentas de Instagram: el Durable Object ATENCION (una sola instancia), o lo que pasen los tests. */
 function almacen(env, deps) {
   if (deps.memoria !== undefined || deps.charlas !== undefined || deps.cuentas !== undefined) {
-    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null };
+    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null };
   }
-  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null };
+  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null };
   return adaptadores(env.ATENCION.get(env.ATENCION.idFromName('zustrolabs')));
 }
 
@@ -69,21 +70,27 @@ async function conectar(request, env, deps) {
   const url = new URL(request.url);
   const origen = `https://${url.host}`;
   if (!CANALES.ig.listo(env) || !env.IG_CONECTAR_CLAVE) return html(paginaConectado({ ok: false, error: 'sin configurar' }), 503);
+  const { cuentas, apps } = almacen(env, deps);
   if (url.pathname === '/api/instagram/conectar') {
     if ((url.searchParams.get('clave') ?? '') !== env.IG_CONECTAR_CLAVE) return html(paginaConectado({ ok: false, error: 'link inválido' }), 403);
-    return Response.redirect(await urlAutorizar(env, origen, now), 302);
+    // `app`: la app de Instagram del cliente (registrada con el script); sin `app`, la del estudio.
+    const app = await appDe(env, apps, url.searchParams.get('app') ?? '');
+    if (!app) return html(paginaConectado({ ok: false, error: 'app desconocida' }), 404);
+    return Response.redirect(await urlAutorizar(env, origen, now, app), 302);
   }
   // Vuelta de Instagram.
   const code = url.searchParams.get('code');
-  if (!code || !(await estadoValido(env.IG_APP_SECRET, url.searchParams.get('state'), now))) {
+  const estado = await leerEstado(env.IG_APP_SECRET, url.searchParams.get('state'), now);
+  if (!code || !estado) {
     return html(paginaConectado({ ok: false, error: url.searchParams.get('error_reason') ? 'no aceptaste los permisos' : 'vuelta inválida' }), 400);
   }
-  const { cuentas } = almacen(env, deps);
   if (!cuentas) return html(paginaConectado({ ok: false, error: 'sin memoria' }), 503);
+  const app = await appDe(env, apps, estado.app);
+  if (!app) return html(paginaConectado({ ok: false, error: 'app desconocida' }), 404);
   try {
-    const c = await conectarCuenta(env, { code, origen, now }, fetchImpl);
-    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence });
-    console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta }));
+    const c = await conectarCuenta(env, { code, origen, now, app }, fetchImpl);
+    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence, app: c.app });
+    console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta, propia: app.id === String(env.IG_APP_ID) }));
     return html(paginaConectado({ ok: true, username: c.username, suscripta: c.suscripta }));
   } catch (e) {
     console.log(JSON.stringify({ canal: 'ig', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 40) }));
@@ -103,7 +110,12 @@ async function webhook(request, env, ctx, deps, canal) {
   if (Number(request.headers.get('content-length') ?? 0) > MAX_CUERPO) return json({ error: 'demasiado grande' }, 413);
   const crudo = await request.text();
   if (crudo.length > MAX_CUERPO) return json({ error: 'demasiado grande' }, 413);
-  if (!(await firmaValida(crudo, request.headers.get('X-Hub-Signature-256'), canal.secreto(env)))) {
+  // Instagram: el aviso puede venir firmado por la app del estudio o por la de un cliente.
+  const secretos = canal.clave === 'ig' ? await secretosDe(env, almacen(env, deps).apps) : [canal.secreto(env)];
+  const firma = request.headers.get('X-Hub-Signature-256');
+  let firmada = false;
+  for (const sec of secretos) if (await firmaValida(crudo, firma, sec)) { firmada = true; break; }
+  if (!firmada) {
     console.log(JSON.stringify({ canal: canal.clave, ok: false, que: 'firma' }));
     return json({ error: 'firma inválida' }, 401);
   }
@@ -179,6 +191,63 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
   }
 }
 
+/**
+ * Administración de Instagram para el script scripts/instagram-cliente.ps1 (Bearer IG_ADMIN_CLAVE):
+ * - GET  /api/instagram/admin/estado  → qué está configurado, apps y cuentas (sin secretos ni tokens);
+ * - POST /api/instagram/admin/apps    → registra la app de Instagram de un cliente {id, secreto, nombre};
+ * - DELETE /api/instagram/admin/apps/<id> → la quita (y las cuentas conectadas con ella);
+ * - DELETE /api/instagram/admin/cuentas/<id> → desconecta una cuenta.
+ */
+async function admin(request, env, deps) {
+  const url = new URL(request.url);
+  if (!env.IG_ADMIN_CLAVE) return json({ error: 'sin configurar' }, 503);
+  const auth = request.headers.get('authorization') ?? '';
+  if (auth !== `Bearer ${env.IG_ADMIN_CLAVE}`) return json({ error: 'sin acceso' }, 401);
+  const { cuentas, apps } = almacen(env, deps);
+  if (!cuentas || !apps) return json({ error: 'sin memoria' }, 503);
+  const now = deps.now ?? Date.now();
+  const ruta = url.pathname.replace('/api/instagram/admin', '');
+
+  if (request.method === 'GET' && ruta === '/estado') {
+    const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, creado: a.creado }));
+    const listaCuentas = (await cuentas.list()).map((c) => ({ id: c.id, username: c.username, app: c.app || String(env.IG_APP_ID ?? ''), tokenVenceEnDias: Math.floor((c.vence - now) / 86_400_000) }));
+    return json({
+      ok: true,
+      configurado: { app_estudio: Boolean(env.IG_APP_ID && env.IG_APP_SECRET), verify: Boolean(env.IG_VERIFY_TOKEN), link: Boolean(env.IG_CONECTAR_CLAVE), ia: Boolean(env.ANTHROPIC_API_KEY), aviso: Boolean(env.AVISO_PARA), panel: panelListo(env) },
+      app_estudio: env.IG_APP_ID ? String(env.IG_APP_ID) : null,
+      apps: listaApps,
+      cuentas: listaCuentas,
+    }, 200);
+  }
+  if (request.method === 'POST' && ruta === '/apps') {
+    let b;
+    try { b = await request.json(); } catch { return json({ error: 'pedido inválido' }, 400); }
+    const id = String(b?.id ?? '').trim();
+    const secreto = String(b?.secreto ?? '').trim();
+    const nombre = String(b?.nombre ?? '').trim();
+    if (!/^\d{6,20}$/.test(id)) return json({ error: 'id inválido (solo dígitos)' }, 400);
+    if (secreto.length < 16) return json({ error: 'secreto muy corto' }, 400);
+    if (!nombre) return json({ error: 'falta el nombre del cliente' }, 400);
+    if (String(env.IG_APP_ID ?? '') === id) return json({ error: 'esa es la app del estudio' }, 400);
+    await apps.put(id, { secreto, nombre });
+    console.log(JSON.stringify({ canal: 'ig', que: 'app_registrada' }));
+    return json({ ok: true, id, nombre, conectar: `https://${url.host}/api/instagram/conectar?clave=<IG_CONECTAR_CLAVE>&app=${id}` }, 200);
+  }
+  let m = /^\/apps\/(\d+)$/.exec(ruta);
+  if (request.method === 'DELETE' && m) {
+    await apps.delete(m[1]);
+    let borradas = 0;
+    for (const c of await cuentas.list()) if (c.app === m[1]) { await cuentas.delete(c.id); borradas++; }
+    return json({ ok: true, cuentasDesconectadas: borradas }, 200);
+  }
+  m = /^\/cuentas\/(\d+)$/.exec(ruta);
+  if (request.method === 'DELETE' && m) {
+    await cuentas.delete(m[1]);
+    return json({ ok: true }, 200);
+  }
+  return json({ error: 'no existe' }, 404);
+}
+
 export default {
   async fetch(request, env, ctx, deps = {}) {
     const fetchImpl = deps.fetch ?? fetch;
@@ -190,6 +259,7 @@ export default {
     if (url.pathname === '/api/whatsapp') return webhook(request, env, ctx, deps, CANALES.wa);
     if (url.pathname === '/api/instagram') return webhook(request, env, ctx, deps, CANALES.ig);
     if (url.pathname === '/api/instagram/conectar' || url.pathname === '/api/instagram/conectar/vuelta') return conectar(request, env, deps);
+    if (url.pathname.startsWith('/api/instagram/admin/')) return admin(request, env, deps);
     return json({ error: 'no existe' }, 404);
   },
 

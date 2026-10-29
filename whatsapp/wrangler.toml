@@ -23,8 +23,9 @@ MODELO = "claude-haiku-5-5"
 # WHATSAPP_PHONE_NUMBER_ID = "…"
 # ACCESS_TEAM_DOMAIN = "floral-shape-d2bf.cloudflareaccess.com"
 # ACCESS_AUD = "…"
-# Instagram (ZL-111): el id de la app de Instagram (no es secreto; está en la app de Meta → «API setup with
-# Instagram login»). Las cuentas se conectan solas por /api/instagram/conectar y quedan en el Durable Object.
+# Instagram (ZL-111): el id de la app de Instagram del estudio (no es secreto; está en la app de Meta → «API setup
+# with Instagram login»). Las cuentas se conectan solas por /api/instagram/conectar y quedan en el Durable Object;
+# las apps de los clientes se registran con scripts/instagram-cliente.ps1 (secreto IG_ADMIN_CLAVE).
 IG_APP_ID = "1834275711078065"
 # Mientras falte lo de WhatsApp, ese webhook responde 503, y el panel también: nada queda abierto.
 
