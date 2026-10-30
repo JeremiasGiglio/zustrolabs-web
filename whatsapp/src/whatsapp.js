@@ -12,7 +12,7 @@
 import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../asistente/src/asistente.js';
 import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { agregar } from './panel.js';
-import { CANAL_WHATSAPP, eligeIdioma, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, numeroSolo, opcion, SALUDO_IDIOMA, textos } from './textos.js';
+import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
@@ -254,7 +254,8 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     const nuevo = idiomaDe(ev.idioma);
     await guardar({ ...estado, idioma: nuevo, humanoHasta: 0 });
     // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
-    return { send: [msgTexto(ev.from, textos(nuevo).bienvenida), msgTexto(ev.from, textos(nuevo).menu)], metrica: 'idioma', idioma: nuevo };
+    const N = textos(nuevo);
+    return { send: [msgTexto(ev.from, `${N.bienvenida}\n\n${N.quienes}`), msgTexto(ev.from, N.menu)], metrica: 'idioma', idioma: nuevo };
   }
 
   if (cmd === 'idioma') {
@@ -264,6 +265,24 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   }
   if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu)], metrica: 'menu' };
   if (ev.kind === 'otro') return { send: [msgTexto(ev.from, T.soloTexto)], metrica: 'otro' };
+
+  // Quien no nos conoce tiene que ver qué ofrecemos desde el primer mensaje: un saludo o «¿qué hacen?» reciben la
+  // presentación y el menú, sin gastar IA (también si ya eligió idioma antes y vuelve a escribir otro día).
+  const saludo = ev.kind === 'text' ? esSaludo(ev.text) : null;
+  const queHacen = ev.kind === 'text' && !saludo ? pideQueHacen(ev.text) : null;
+  if ((saludo || queHacen) && estado?.idioma) {
+    const P = textos(estado.idioma);
+    const primero = saludo ? `${P.hola}\n\n${P.quienes}` : P.quienes;
+    return { send: [msgTexto(ev.from, primero), msgTexto(ev.from, P.menu)], metrica: saludo ? 'saludo' : 'presentacion' };
+  }
+  // Todavía no eligió idioma: si saluda otra vez se le vuelve a preguntar; si pregunta qué hacemos, se toma el idioma
+  // de la pregunta.
+  if (saludo && esperaIdioma) return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
+  if (queHacen && esperaIdioma) {
+    await guardar({ ...estado, idioma: queHacen, humanoHasta: 0 });
+    const P = textos(queHacen);
+    return { send: [msgTexto(ev.from, P.quienes), msgTexto(ev.from, P.menu)], metrica: 'presentacion', idioma: queHacen };
+  }
 
   // Un número del menú: respuesta fija, sin gastar IA.
   if (num && estado?.idioma && opcion(idioma, num)) return { send: [msgTexto(ev.from, opcion(idioma, num))], metrica: 'opcion', opcion: num };

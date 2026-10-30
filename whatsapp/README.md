@@ -13,6 +13,7 @@ Worker `zustrolabs-whatsapp`: un número propio del estudio y los mensajes direc
 | La persona escribe | Pasa esto |
 |---|---|
 | Lo primero que escriba | Saludo con emojis y tres botones de idioma (Español, Hrvatski, English). Al elegir: «¿Cómo estás?», quiénes somos y un menú de cinco cosas que puede lograr con el estudio (ZL-115). Tono de captación: sin aviso de privacidad ni lista de comandos en la charla; la política sigue en la página y en la app de Meta, y BORRAR sigue andando. |
+| Un saludo («hola», «buenas», «hola, ¿cómo te va?») o «¿qué hacen?», «¿qué me ofrecés?», «info» | Presentación y menú, sin gastar IA, también si eligió idioma otro día. Si todavía no eligió idioma y saluda, se le repregunta; si pregunta qué hacemos, se toma el idioma de la pregunta. «Hablo en inglés», «prefiero castellano» o «na hrvatskom» cambian el idioma. |
 | **1** a **5** (después del menú) | La explicación fija de esa opción, con lo que gana su negocio, una pregunta sobre su negocio y cómo pedir una persona. No gasta IA. |
 | **MENÚ** / IZBORNIK / MENU | Vuelve a mostrar el menú. |
 | Cualquier pregunta | Responde el asistente con lo publicado en la página, en tono cálido y con emojis: pregunta por el negocio, recomienda la solución que sirve y cierra con una pregunta. Si quiere avanzar, pregunta valores o algo que no sabe, le sugiere escribir PERSONA. |

@@ -26,7 +26,7 @@ const ENV = {
   ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, PANEL_EMAILS: 'yo@example.com',
 };
 const controlada = (o = {}) => ({ respuesta: 'Hacemos sitios, apps y agentes de IA.', secciones: [], enlaces: [], escribirnos: false, fuera_de_tema: false, notas: [], ...o });
-const ev = (o = {}) => ({ id: 'wamid.' + Math.random(), from: NUM, ts: T0 / 1000, kind: 'text', text: 'hola', ...o });
+const ev = (o = {}) => ({ id: 'wamid.' + Math.random(), from: NUM, ts: T0 / 1000, kind: 'text', text: '¿Hacen sitios web?', ...o });
 
 beforeEach(() => _resetCerts());
 
@@ -107,10 +107,10 @@ test('primer contacto: botones de idioma en los tres idiomas; al elegir, bienven
   assert.ok(r1.send[0].interactive.action.buttons.every((b) => b.reply.title.length <= 20));
   assert.equal(llamadas.length, 0, 'el primer mensaje no gasta IA');
   const r2 = await atender(ev({ kind: 'idioma', idioma: 'hr' }), { memoria, preguntar, now: T0 });
-  assert.equal(r2.send[0].text.body, TEXTOS.hr.bienvenida);
+  assert.equal(r2.send[0].text.body, `${TEXTOS.hr.bienvenida}\n\n${TEXTOS.hr.quienes}`);
   assert.equal((await memoria.get(NUM)).idioma, 'hr');
-  await atender(ev({ text: 'Što radite?' }), { memoria, preguntar, now: T0 });
-  assert.deepEqual(llamadas, [{ texto: 'Što radite?', idioma: 'hr' }]);
+  await atender(ev({ text: 'Imate li web stranice?' }), { memoria, preguntar, now: T0 });
+  assert.deepEqual(llamadas, [{ texto: 'Imate li web stranice?', idioma: 'hr' }]);
 });
 
 test('la memoria no guarda texto: solo idioma y humanoHasta (y su vencimiento)', async () => {
@@ -147,7 +147,7 @@ test('PERSONA con panel: confirma, abre la charla, pide aviso y el asistente se 
   assert.equal(llamadas.length, 0);
   assert.equal((await charlas.get(NUM)).mensajes.at(-1).texto, 'I have a shop');
   // Pasadas las 24 h sin mensajes, vuelve el asistente.
-  const r3 = await atender(ev({ text: 'Hello?' }), { memoria, charlas, preguntar, now: T0 + 1000 + 25 * 3600_000 });
+  const r3 = await atender(ev({ text: 'Do you build apps?' }), { memoria, charlas, preguntar, now: T0 + 1000 + 25 * 3600_000 });
   assert.equal(r3.metrica, 'ia');
 });
 
@@ -218,7 +218,7 @@ test('memoria: las charlas vencen a los 30 días (también en la lista del panel
 test('BORRAR también borra el contador diario', async () => {
   const { memoria, almacen } = nuevo();
   await memoria.put(NUM, { idioma: 'es', humanoHasta: 0 });
-  await atender(ev({ text: '¿Qué hacen?' }), { memoria, preguntar: async () => controlada(), now: T0 });
+  await atender(ev({ text: '¿Hacen apps?' }), { memoria, preguntar: async () => controlada(), now: T0 });
   assert.ok([...almacen._data.keys()].some((k) => k.startsWith(`uso:${NUM}:`)));
   await atender(ev({ text: 'borrar todo' }), { memoria, preguntar: async () => controlada(), now: T0 });
   assert.deepEqual([...almacen._data.keys()].filter((k) => k.includes(NUM)), []);
@@ -239,7 +239,7 @@ test('el tope global solo frena la IA: no corta la atención humana ni BORRAR', 
   const { memoria, charlas } = nuevo();
   const cupo = async () => 'global';
   await memoria.put(NUM, { idioma: 'hr', humanoHasta: 0 });
-  const r1 = await atender(ev({ text: 'Što radite?' }), { memoria, charlas, preguntar: async () => controlada(), now: T0, cupo });
+  const r1 = await atender(ev({ text: 'Imate li web stranice?' }), { memoria, charlas, preguntar: async () => controlada(), now: T0, cupo });
   assert.equal(r1.send[0].text.body, TEXTOS.hr.limite);
   await atender(ev({ text: 'OSOBA' }), { memoria, charlas, preguntar: async () => controlada(), now: T0, cupo });
   const r2 = await atender(ev({ text: 'Imam trgovinu' }), { memoria, charlas, preguntar: async () => controlada(), now: T0 + 1, cupo });
@@ -362,9 +362,9 @@ async function conLogs(fn) {
 
 test('worker: firma inválida → 401 y no contesta; sin configurar → 503', async () => {
   const d = deps();
-  assert.equal((await wa('hola', ENV, d, { firma: 'sha256=' + '0'.repeat(64) })).status, 401);
+  assert.equal((await wa('¿Hacen sitios web?', ENV, d, { firma: 'sha256=' + '0'.repeat(64) })).status, 401);
   assert.equal(d.enviados.length, 0);
-  assert.equal((await wa('hola', { ...ENV, WHATSAPP_TOKEN: '' }, d)).status, 503);
+  assert.equal((await wa('¿Hacen sitios web?', { ...ENV, WHATSAPP_TOKEN: '' }, d)).status, 503);
   assert.equal((await worker.fetch(new Request('https://zustrolabs.com/otra'), ENV, {}, d)).status, 404);
 });
 
@@ -403,14 +403,14 @@ test('worker: sin el login del panel, PERSONA deriva a contact@', async () => {
 
 test('worker: límites — sin ellos no contesta; pasado el del número, silencio; pasado el global, avisa', async () => {
   const d1 = deps();
-  await wa('hola', { ...ENV, LIMITE: undefined }, d1);
+  await wa('¿Hacen sitios web?', { ...ENV, LIMITE: undefined }, d1);
   assert.equal(d1.enviados.length, 0);
   const d2 = deps();
-  await wa('hola', { ...ENV, LIMITE: limiteNo }, d2);
+  await wa('¿Hacen sitios web?', { ...ENV, LIMITE: limiteNo }, d2);
   assert.equal(d2.enviados.length, 0);
   const d3 = deps();
   await d3.memoria.put(NUM, { idioma: 'hr', humanoHasta: 0 });
-  await wa('bok', { ...ENV, LIMITE_GLOBAL: limiteNo }, d3);
+  await wa('Imate li web stranice?', { ...ENV, LIMITE_GLOBAL: limiteNo }, d3);
   assert.equal(d3.enviados[0].text.body, TEXTOS.hr.limite);
 });
 
@@ -424,7 +424,7 @@ test('worker: si el modelo falla, avisa en el idioma de la charla y el registro 
 
 test('worker: mensajes de más de 1 h se ignoran', async () => {
   const d = deps({ now: T0 + 2 * 3600_000 });
-  await wa('hola', ENV, d);
+  await wa('¿Hacen sitios web?', ENV, d);
   assert.equal(d.enviados.length, 0);
 });
 
@@ -500,7 +500,7 @@ test('flujo: saludo → 1/2/3 eligen idioma → ¿cómo estás? + menú → un n
   await atender(ev({ text: 'Holaa' }), { memoria, preguntar, now: T0 });
   const r = await atender(ev({ text: '3' }), { memoria, preguntar, now: T0 });
   assert.equal(r.metrica, 'idioma');
-  assert.deepEqual(r.send.map((m) => m.text.body), [TEXTOS.en.bienvenida, TEXTOS.en.menu]);
+  assert.deepEqual(r.send.map((m) => m.text.body), [`${TEXTOS.en.bienvenida}\n\n${TEXTOS.en.quienes}`, TEXTOS.en.menu]);
   const o = await atender(ev({ text: '1️⃣' }), { memoria, preguntar, now: T0 });
   assert.equal(o.metrica, 'opcion');
   assert.equal(o.send[0].text.body, opcion('en', 1));
@@ -531,4 +531,38 @@ test('wrangler.toml: rutas propias, sin tocar los subdominios de otros proyectos
   assert.match(toml, /namespace_id = "1072"/);
   assert.doesNotMatch(toml, /namespace_id = "10(01|68|69|70|71)"/, 'no comparte límites con otros Workers');
   assert.doesNotMatch(toml, /^(ANTHROPIC_API_KEY|WHATSAPP_TOKEN|WHATSAPP_APP_SECRET|AVISO_PARA|PANEL_EMAILS)\s*=/m, 'los secretos no van en el repo');
+});
+
+test('la charla de las capturas (30/10): quien ya eligió idioma otro día y saluda, ve presentación y menú; «hablo en inglés» cambia el idioma; «¿qué hacen?» y «¿qué me ofrecés?» muestran el menú', async () => {
+  const memoria = memoriaPrueba();
+  const { llamadas, preguntar } = preguntas();
+  await memoria.put(NUM, { idioma: 'es', humanoHasta: 0 }); // eligió castellano ayer
+  const hola = await atender(ev({ text: 'Hola, como te va?' }), { memoria, preguntar, now: T0 });
+  assert.equal(hola.metrica, 'saludo');
+  assert.deepEqual(hola.send.map((m) => m.text.body), [`${TEXTOS.es.hola}\n\n${TEXTOS.es.quienes}`, TEXTOS.es.menu]);
+  const ingles = await atender(ev({ text: 'Hablo en inglés' }), { memoria, preguntar, now: T0 });
+  assert.equal(ingles.metrica, 'idioma');
+  assert.equal(ingles.send[1].text.body, TEXTOS.en.menu);
+  assert.equal((await memoria.get(NUM)).idioma, 'en');
+  await memoria.put(NUM, { idioma: 'es', humanoHasta: 0 });
+  for (const t of ['Que es lo que hacen?', 'Que me ofreces?', '¿A qué se dedican?', 'info']) {
+    const r = await atender(ev({ text: t }), { memoria, preguntar, now: T0 });
+    assert.equal(r.metrica, 'presentacion', t);
+    assert.deepEqual(r.send.map((m) => m.text.body), [TEXTOS.es.quienes, TEXTOS.es.menu], t);
+  }
+  assert.equal(llamadas.length, 0, 'nada de esto gasta IA');
+  // Lo que trae contenido sí va al asistente.
+  for (const t of ['hola quiero una web para mi panadería', '¿cuánto sale una web?']) await atender(ev({ text: t }), { memoria, preguntar, now: T0 });
+  assert.equal(llamadas.length, 2);
+});
+
+test('primer contacto: si pregunta qué hacemos sin elegir idioma, se toma el idioma de la pregunta; si vuelve a saludar, se repregunta el idioma', async () => {
+  const memoria = memoriaPrueba();
+  const { preguntar } = preguntas();
+  assert.equal((await atender(ev({ text: 'Hola' }), { memoria, preguntar, now: T0 })).metrica, 'pide_idioma');
+  assert.equal((await atender(ev({ text: 'Holaaa' }), { memoria, preguntar, now: T0 })).metrica, 'pide_idioma');
+  const r = await atender(ev({ text: 'What do you do?' }), { memoria, preguntar, now: T0 });
+  assert.equal(r.metrica, 'presentacion');
+  assert.deepEqual(r.send.map((m) => m.text.body), [TEXTOS.en.quienes, TEXTOS.en.menu]);
+  assert.equal((await memoria.get(NUM)).idioma, 'en');
 });

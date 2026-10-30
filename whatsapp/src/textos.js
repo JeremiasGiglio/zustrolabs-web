@@ -29,8 +29,9 @@ const PERSONA_AL_FINAL = {
 
 export const TEXTOS = {
   es: {
-    bienvenida:
-      '¡Genial! 🙌 ¿Cómo estás? Espero que muy bien 😊\n\n' +
+    bienvenida: '¡Genial! 🙌 ¿Cómo estás? Espero que muy bien 😊',
+    hola: '¡Hola! 👋 ¿Cómo estás? Espero que muy bien 😊',
+    quienes:
       'Soy el asistente de Zustro Labs 🟥⬜ Somos un estudio que crea webs, apps y agentes de inteligencia artificial para que tu negocio atienda mejor y vos ganes tiempo ⏱️ Y probamos todo antes de entregarlo ✅',
     menu:
       '¿Qué te gustaría lograr? 👇\n\n' +
@@ -53,8 +54,9 @@ export const TEXTOS = {
     tope: 'Por hoy ya charlamos un montón 😅 Mañana seguimos, o escribí PERSONA y te atiende alguien del equipo.',
   },
   hr: {
-    bienvenida:
-      'Super! 🙌 Kako ste? Nadam se dobro 😊\n\n' +
+    bienvenida: 'Super! 🙌 Kako ste? Nadam se dobro 😊',
+    hola: 'Pozdrav! 👋 Kako ste? Nadam se dobro 😊',
+    quienes:
       'Ja sam asistent Zustro Labsa 🟥⬜ Mi smo studio koji izrađuje web stranice, aplikacije i agente umjetne inteligencije kako bi vaš posao bolje služio klijentima, a vi uštedjeli vrijeme ⏱️ I sve testiramo prije isporuke ✅',
     menu:
       'Što biste željeli postići? 👇\n\n' +
@@ -77,8 +79,9 @@ export const TEXTOS = {
     tope: 'Danas smo puno razgovarali 😅 Nastavljamo sutra, ili napišite OSOBA i javit će vam se netko iz tima.',
   },
   en: {
-    bienvenida:
-      'Great! 🙌 How are you? Hope you’re doing well 😊\n\n' +
+    bienvenida: 'Great! 🙌 How are you? Hope you’re doing well 😊',
+    hola: 'Hi! 👋 How are you? Hope you’re doing well 😊',
+    quienes:
       'I’m the Zustro Labs assistant 🟥⬜ We’re a studio that builds websites, apps and AI agents so your business serves people better and you save time ⏱️ And we test everything before delivery ✅',
     menu:
       'What would you like to achieve? 👇\n\n' +
@@ -206,9 +209,60 @@ export function eligeIdioma(texto) {
     .replace(/[¡!¿?.,;:]/g, '')
     .replace(/\p{Extended_Pictographic}|\p{Regional_Indicator}|[️⃣]/gu, '')
     .trim();
-  if (/^(espanol|castellano|spanish|spanjolski)$/.test(t)) return 'es';
-  if (/^(hrvatski|croata|croatian)$/.test(t)) return 'hr';
-  if (/^(english|ingles|engleski)$/.test(t)) return 'en';
+  // El nombre solo o una frase corta para elegirlo: «hablo en inglés», «prefiero castellano», «in English please».
+  const frase = t
+    .replace(/^(?:(?:yo |mejor |si |ok |dale )?(?:hablo|habla|prefiero|preferiria|quiero(?: hablar)?|podemos hablar|hablemos|seguimos|sigamos|escribime|respondeme)\s+|(?:i )?(?:speak|prefer|want(?: to speak)?|can we (?:speak|talk)|let'?s (?:speak|talk)|please (?:speak|talk))\s+|(?:govorim|zelim|mozemo|molim)\s+)?(?:en |in |na |po )?/, '')
+    .replace(/\s+(?:por favor|porfa|please|pls|molim|molim vas|gracias|thanks)$/, '')
+    .replace(/\s+(?:language|idioma|jezik)$/, '')
+    .trim();
+  if (/^(espanol|castellano|spanish|spanjolski|spanjolskom)$/.test(frase)) return 'es';
+  if (/^(hrvatski|hrvatskom|croata|croatian)$/.test(frase)) return 'hr';
+  if (/^(english|ingles|engleski|engleskom)$/.test(frase)) return 'en';
+  return null;
+}
+
+// Para reconocer mensajes enteros sin gastar IA: se pasa a minúsculas sin acentos, signos ni emojis,
+// y se juntan las letras repetidas («holaaa» → «hola»).
+const plano = (texto) =>
+  String(texto ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\p{Extended_Pictographic}|\p{Regional_Indicator}|[\uFE0F\u20E3]/gu, ' ')
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+    .replace(/(\p{L})\1+/gu, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// Saludo: el mensaje tiene solo palabras de saludo («hola», «hola cómo te va», «buenas tardes», «hi there»).
+// «hola quiero una web» no es un saludo solo: eso lo responde el asistente.
+const SALUDO_ES = /^(?:hola|ola|buenas|buen|buenos|dia|dias|tardes|noches|que|tal|como|estas|esta|estan|te|va|andas|anda|todo|bien|gente|che|hey|holis|saludos|y|vos|ustedes)$/;
+const SALUDO_HR = /^(?:bok|pozdrav|dobar|dan|dobro|jutro|dobra|vecer|kako|ste|si|ide|hej|zdravo|bog)$/;
+const SALUDO_EN = /^(?:hi|helo|hey|there|god|morning|afternon|evening|how|are|you|doing|is|it|going|what's|up|yo|greetings)$/;
+const NUCLEO = { es: /^(?:hola|ola|buenas|buenos|buen|holis|saludos|tal)$/, hr: /^(?:bok|pozdrav|dobar|dobro|dobra|zdravo|hej|bog)$/, en: /^(?:hi|helo|hey|greetings|god)$/ };
+
+/** Si el mensaje entero es un saludo, el idioma del saludo ('es' | 'hr' | 'en'); si no, null. */
+export function esSaludo(texto) {
+  const palabras = plano(texto).split(' ').filter(Boolean);
+  if (!palabras.length || palabras.length > 8) return null;
+  for (const [i, re] of [['es', SALUDO_ES], ['hr', SALUDO_HR], ['en', SALUDO_EN]]) {
+    if (palabras.every((w) => re.test(w)) && palabras.some((w) => NUCLEO[i].test(w))) return i;
+  }
+  return null;
+}
+
+// «¿Qué hacen?», «¿qué me ofrecés?», «info», «servicios»: la persona no nos conoce y quiere saber qué ofrecemos.
+const QUE_HACEN = [
+  ['es', /^(?:(?:hola |buenas |y |entonces |bueno |che )*(?:(?:que|q|en que) (?:es lo que |cosas |tipo de cosas |servicios )?(?:hacen|haces|hace zustro(?: labs)?|es zustro(?: labs)?|ofrecen|ofreces|me ofreces|me ofrecen|me pueden ofrecer|me podes ofrecer|me podes ayudar|me pueden ayudar|venden|trabajan|son|ofrece zustro(?: labs)?)|a que se dedican|a que te dedicas|que servicios (?:tienen|ofrecen|hay|dan)|servicios|info|informacion|mas info|mas informacion|quiero (?:mas )?info(?:rmacion)?|quisiera (?:mas )?informacion|me pasas info|me pasan info|opciones|que opciones hay|quienes son|quien sos|quien sos vos)(?: ustedes| vos)?)$/],
+  ['hr', /^(?:(?:bok |pozdrav )*(?:sto|cime) (?:radite|nudite|se bavite|mi mozete ponuditi|je zustro(?: labs)?)|usluge|koje usluge nudite|informacije|vise informacija|tko ste|tko ste vi)$/],
+  ['en', /^(?:(?:hi |helo |hey |so )*(?:what (?:do you (?:do|ofer|sel)|can you do(?: for me)?|is zustro(?: labs)?|are your services|services do you ofer)|services|info|more info|information|who are you))$/],
+];
+
+/** Si el mensaje entero pregunta qué hacemos u ofrecemos, el idioma de la pregunta; si no, null. */
+export function pideQueHacen(texto) {
+  const t = plano(texto);
+  for (const [i, re] of QUE_HACEN) if (re.test(t)) return i;
   return null;
 }
 
@@ -217,6 +271,7 @@ const CAPTAR = `- Tu objetivo: que la persona descubra lo que el estudio puede h
 - Tono cálido y cercano, como alguien del estudio que atiende con ganas. Usá uno o dos emojis por respuesta (😊 🙌 💬 🌐 📊 ✅) y terminá con una pregunta corta para seguir la charla.
 - Saludos, agradecimientos, «¿cómo estás?» o «bien, ¿y vos?» no son fuera de tema: respondé con calidez en una oración y preguntá qué necesita su negocio.
 - Si la persona quiere avanzar, pregunta valores o plazos, o pide hablar con alguien, poné escribirnos = true: el sistema le explica cómo hablar con una persona del equipo. Vos nunca des valores.
+- Si la persona pregunta qué hacen o qué ofrecen, nombrá las cuatro soluciones en una oración y decile que escriba MENÚ (IZBORNIK en croata, MENU en inglés) para ver las opciones.
 - No hables de privacidad, datos ni comandos salvo que la persona pregunte.`;
 
 /** Nota para el modelo: el canal es WhatsApp (se suma al prompt del asistente de la página). */
