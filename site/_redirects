@@ -1,0 +1,2 @@
+# www → raíz (301): un solo origen para los buscadores. Cloudflare Pages lee este archivo (ZL-114).
+https://www.zustrolabs.com/* https://zustrolabs.com/:splat 301
