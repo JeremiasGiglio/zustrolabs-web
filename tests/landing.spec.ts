@@ -540,3 +540,62 @@ test.describe('links en vivo @red', () => {
     });
   }
 });
+
+// Buscadores (ZL-114): mapa del sitio, robots.txt, www → raíz y los datos de la organización.
+test.describe('buscadores (ZL-114)', () => {
+  const PUBLICAS = ['/', '/hr/', '/en/', '/privacidad/', '/hr/privatnost/', '/en/privacy/'];
+
+  test('robots.txt deja pasar a todos y apunta al mapa del sitio', async ({ request }) => {
+    const r = await request.get('/robots.txt');
+    expect(r.status()).toBe(200);
+    const t = await r.text();
+    expect(t).toMatch(/^User-agent: \*\nAllow: \/\n/);
+    expect(t).toContain('Sitemap: https://zustrolabs.com/sitemap.xml');
+    expect(t).not.toMatch(/Disallow: \/$/m);
+  });
+
+  test('sitemap.xml lista exactamente las páginas públicas, con sus idiomas, y nada de expo ni pantalla', async ({ request, page }) => {
+    const r = await request.get('/sitemap.xml');
+    expect(r.status()).toBe(200);
+    expect(r.headers()['content-type']).toMatch(/xml/);
+    const xml = await r.text();
+    const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    expect(locs.sort()).toEqual(PUBLICAS.map((u) => `https://zustrolabs.com${u}`).sort());
+    for (const l of locs) expect(l).not.toMatch(/expo|pantalla|404/);
+    // cada entrada trae sus alternativas de idioma (es, hr, en) y la portada además x-default
+    const entradas = xml.split('<url>').slice(1);
+    for (const e of entradas) for (const l of ['es', 'hr', 'en']) expect(e, l).toContain(`hreflang="${l}"`);
+    expect(entradas.filter((e) => e.includes('hreflang="x-default"'))).toHaveLength(3);
+    // y la canónica de cada página coincide con su <loc>
+    for (const u of PUBLICAS) {
+      await page.goto(u);
+      await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href', `https://zustrolabs.com${u}`);
+    }
+  });
+
+  test('www redirige a la raíz y expo/pantalla siguen fuera de los buscadores', async () => {
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync('site/_redirects', 'utf8')).toMatch(/^https:\/\/www\.zustrolabs\.com\/\* https:\/\/zustrolabs\.com\/:splat 301$/m);
+    const h = readFileSync('site/_headers', 'utf8');
+    for (const ruta of ['/expo/*', '/pantalla/*']) expect(h).toContain(`${ruta}\n  X-Robots-Tag: noindex`);
+  });
+
+  for (const p of PAGINAS) {
+    test(`${p.lang}: datos de la organización (JSON-LD) honestos y sin palabras prohibidas`, async ({ page }) => {
+      await page.goto(p.url);
+      const ld = JSON.parse(await page.locator('script[type="application/ld+json"]').innerText());
+      expect(ld['@type']).toBe('Organization');
+      expect(ld.name).toBe('Zustro Labs');
+      expect(ld.url).toBe(`https://zustrolabs.com${p.url}`);
+      expect(ld.email).toBe('contact@zustrolabs.com');
+      expect(ld.founder?.name).toBe('Jeremías Giglio');
+      expect(ld.address?.addressLocality).toBe('Rosario');
+      expect(ld).not.toHaveProperty('telephone');
+      expect(ld).not.toHaveProperty('aggregateRating');
+      expect(ld).not.toHaveProperty('review');
+      expect(ld).not.toHaveProperty('priceRange');
+      const texto = JSON.stringify(ld);
+      for (const re of [...p.prohibidas, ...COMUNES]) expect(texto, `aparece ${re}`).not.toMatch(re);
+    });
+  }
+});

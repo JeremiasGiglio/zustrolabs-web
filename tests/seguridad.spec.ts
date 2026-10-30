@@ -179,7 +179,7 @@ test.describe('en el navegador', () => {
       const s = connect(4173, '127.0.0.1', () => s.write(`GET ${ruta} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`));
       let r = ''; s.on('data', (d) => (r += d)); s.on('end', () => ok(r)); s.on('error', mal);
     });
-    for (const ruta of ['/../package.json', '/..%2fpackage.json', '/%2e%2e/%2e%2e/etc/passwd', '/..\\package.json', '/_headers', '/../worker/wrangler.toml', '/assets/../../REGLAS.md']) {
+    for (const ruta of ['/../package.json', '/..%2fpackage.json', '/%2e%2e/%2e%2e/etc/passwd', '/..\\package.json', '/_headers', '/_redirects', '/../worker/wrangler.toml', '/assets/../../REGLAS.md']) {
       const r = await crudo(ruta);
       expect(r.split('\r\n')[0], ruta).toBe('HTTP/1.1 404 Not Found');
       expect(r, ruta).not.toMatch(/"devDependencies"|root:|ZL-68|Reglas inquebrantables/);

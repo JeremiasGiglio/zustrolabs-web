@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../site/', import.meta.url));
 const port = Number(process.env.PORT || 4173);
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.vtt': 'text/vtt', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8' };
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.vtt': 'text/vtt', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml; charset=utf-8' };
 
 /** Lee site/_headers: bloques «ruta» seguidos de líneas «  Nombre: valor». */
 function leerHeaders(texto) {
@@ -46,7 +46,7 @@ http.createServer(async (req, res) => {
     if (!file0.startsWith(root) && file0 + sep !== root) throw new Error('fuera de site/');
     let file = file0;
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
-    if (file.endsWith(`${sep}_headers`)) throw new Error('no se sirve');
+    if (file.endsWith(`${sep}_headers`) || file.endsWith(`${sep}_redirects`)) throw new Error('no se sirve');
     const body = await readFile(file);
     res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream', ...cabecerasPara(ruta) });
     res.end(body);

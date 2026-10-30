@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mapa del sitio para los buscadores (ZL-114). Solo las páginas públicas: expo/ y pantalla/ llevan noindex en _headers. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://zustrolabs.com/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://zustrolabs.com/"/>
+    <xhtml:link rel="alternate" hreflang="hr" href="https://zustrolabs.com/hr/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://zustrolabs.com/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://zustrolabs.com/"/>
+  </url>
+  <url>
+    <loc>https://zustrolabs.com/hr/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://zustrolabs.com/"/>
+    <xhtml:link rel="alternate" hreflang="hr" href="https://zustrolabs.com/hr/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://zustrolabs.com/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://zustrolabs.com/"/>
+  </url>
+  <url>
+    <loc>https://zustrolabs.com/en/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://zustrolabs.com/"/>
+    <xhtml:link rel="alternate" hreflang="hr" href="https://zustrolabs.com/hr/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://zustrolabs.com/en/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://zustrolabs.com/"/>
+  </url>
+  <url>
+    <loc>https://zustrolabs.com/privacidad/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://zustrolabs.com/privacidad/"/>
+    <xhtml:link rel="alternate" hreflang="hr" href="https://zustrolabs.com/hr/privatnost/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://zustrolabs.com/en/privacy/"/>
+  </url>
+  <url>
+    <loc>https://zustrolabs.com/hr/privatnost/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://zustrolabs.com/privacidad/"/>
+    <xhtml:link rel="alternate" hreflang="hr" href="https://zustrolabs.com/hr/privatnost/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://zustrolabs.com/en/privacy/"/>
+  </url>
+  <url>
+    <loc>https://zustrolabs.com/en/privacy/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <priority>0.3</priority>
+    <xhtml:link rel="alternate" hreflang="es" href="https://zustrolabs.com/privacidad/"/>
+    <xhtml:link rel="alternate" hreflang="hr" href="https://zustrolabs.com/hr/privatnost/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://zustrolabs.com/en/privacy/"/>
+  </url>
+</urlset>
