@@ -12,7 +12,7 @@
 import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../asistente/src/asistente.js';
 import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { agregar } from './panel.js';
-import { CANAL_WHATSAPP, eligeIdioma, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, SALUDO_IDIOMA, textos } from './textos.js';
+import { CANAL_WHATSAPP, eligeIdioma, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, numeroSolo, opcion, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
@@ -97,8 +97,9 @@ export function comando(texto) {
     .replace(/\s+/g, ' ')
     .trim();
   if (/^(borrar|borra|borrar todo|olvidame|borrar mis datos|eliminar mis datos|obrisi|obrisi sve|izbrisi|izbrisi sve|obrisi me|zaboravi me|delete|delete all|delete my data|forget me)$/.test(t)) return 'borrar';
-  if (/^(persona|humano|hablar con (una )?persona|alguien del equipo|operador|osoba|covjek|razgovor s osobom|operater|person|human|talk to a person|someone on the team|operator)$/.test(t)) return 'persona';
+  if (/^(persona|humano|hablar con (una )?persona|hablar con alguien|quiero hablar con alguien|alguien del equipo|operador|asesor|un asesor|osoba|covjek|razgovor s osobom|operater|savjetnik|person|human|talk to a person|talk to someone|someone on the team|operator|advisor)$/.test(t)) return 'persona';
   if (/^(idioma|cambiar idioma|jezik|promijeni jezik|language|change language)$/.test(t)) return 'idioma';
+  if (/^(menu|opciones|ver opciones|izbornik|opcije|options)$/.test(t)) return 'menu';
   return null;
 }
 
@@ -203,10 +204,13 @@ const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mand�
  */
 export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok' }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
-  // El nombre de un idioma como mensaje entero vale como el botón (en Instagram no hay botones).
-  const elegido = ev.kind === 'text' ? eligeIdioma(ev.text) : null;
-  if (elegido) ev = { ...ev, kind: 'idioma', idioma: elegido };
   const estado = (memoria && (await memoria.get(ev.from))) || null;
+  // El nombre o la bandera de un idioma como mensaje entero vale como el botón (en Instagram no hay botones);
+  // mientras se espera el idioma (ya saludamos y todavía no eligió), también 1, 2 o 3.
+  const num = ev.kind === 'text' ? numeroSolo(ev.text) : null;
+  const esperaIdioma = !!estado && !estado.idioma;
+  const elegido = ev.kind === 'text' ? eligeIdioma(ev.text) ?? (esperaIdioma ? IDIOMA_POR_NUMERO[num] ?? null : null) : null;
+  if (elegido) ev = { ...ev, kind: 'idioma', idioma: elegido };
   const guardar = (s) => memoria?.put(ev.from, s);
   const cmd = ev.kind === 'text' ? comando(ev.text) : null;
   const idioma = idiomaDe(estado?.idioma);
@@ -249,13 +253,22 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if (ev.kind === 'idioma') {
     const nuevo = idiomaDe(ev.idioma);
     await guardar({ ...estado, idioma: nuevo, humanoHasta: 0 });
-    return { send: [msgTexto(ev.from, textos(nuevo).bienvenida)], metrica: 'idioma', idioma: nuevo };
+    // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
+    return { send: [msgTexto(ev.from, textos(nuevo).bienvenida), msgTexto(ev.from, textos(nuevo).menu)], metrica: 'idioma', idioma: nuevo };
   }
 
-  if (cmd === 'idioma') return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
+  if (cmd === 'idioma') {
+    // Mientras elige, los números 1 a 3 son idiomas (no opciones del menú).
+    if (estado) await guardar({ humanoHasta: estado.humanoHasta ?? 0 });
+    return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
+  }
+  if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu)], metrica: 'menu' };
   if (ev.kind === 'otro') return { send: [msgTexto(ev.from, T.soloTexto)], metrica: 'otro' };
 
-  // Primer contacto (con memoria): botones de idioma. Si escribe igual sin tocarlos, sigue en castellano.
+  // Un número del menú: respuesta fija, sin gastar IA.
+  if (num && estado?.idioma && opcion(idioma, num)) return { send: [msgTexto(ev.from, opcion(idioma, num))], metrica: 'opcion', opcion: num };
+
+  // Primer contacto (con memoria): botones de idioma. Si escribe otra cosa sin elegir, sigue en castellano.
   if (memoria && !estado) {
     await guardar({ humanoHasta: 0 });
     return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import worker, { panelListo } from '../src/index.js';
 import { _resetCerts, avisar, HTML, mailAviso, PANEL_URL, textoDevuelta } from '../src/panel.js';
 import { adaptadores, almacenPrueba, crearAtencion, RETENCION_CHARLA_MS } from '../src/atencion.js';
-import { TEXTOS, SALUDO_IDIOMA, IDIOMAS } from '../src/textos.js';
+import { TEXTOS, SALUDO_IDIOMA, IDIOMAS, opcion, CANAL_WHATSAPP } from '../src/textos.js';
 import {
   atender, comando, filtroWhatsApp, firmar, firmaValida, formatear, leerWebhook, msgIdiomas, preguntador, TOPE_DIARIO,
   varianteArgentina, verificarSuscripcion, enviar,
@@ -469,10 +469,55 @@ test('textos fijos: sin palabras prohibidas, el único correo es contact@ y nomb
       for (const c of t.match(/[\w.+-]+@[\w.-]+\w/g) ?? []) assert.equal(c, 'contact@zustrolabs.com', `${i}.${k}`);
     }
   }
-  assert.match(TEXTOS.es.bienvenida, /PERSONA/);
-  assert.match(TEXTOS.hr.bienvenida, /OSOBA/);
-  assert.match(TEXTOS.en.bienvenida, /PERSON\b/);
-  for (const [i, palabra] of [['es', 'BORRAR'], ['hr', 'OBRIŠI'], ['en', 'DELETE']]) assert.equal(comando(TEXTOS[i].bienvenida.match(new RegExp(palabra))[0]), 'borrar', i);
+  for (const [i, palabra] of [['es', 'PERSONA'], ['hr', 'OSOBA'], ['en', 'PERSON']]) {
+    assert.equal(comando(TEXTOS[i].derivar.match(new RegExp(`\\b${palabra}\\b`))[0]), 'persona', i);
+    for (const n of [1, 2, 3, 4, 5]) {
+      const t = opcion(i, n);
+      assert.doesNotMatch(t, prohibidas, `${i}.opcion${n}`);
+      assert.match(t, new RegExp(`\\b${palabra}\\b`), `${i}.opcion${n}: al final, cómo hablar con una persona`);
+      assert.ok(new TextEncoder().encode(t).length <= 1000, `${i}.opcion${n}: entra en un mensaje de Instagram`);
+    }
+  }
+});
+
+test('tono de captación: saludo con emojis, ¿cómo estás?, menú de cinco opciones y nada de privacidad ni comandos en el saludo', () => {
+  assert.match(SALUDO_IDIOMA, /👋/);
+  assert.doesNotMatch(SALUDO_IDIOMA, /privacidad|BORRAR|OBRIŠI|DELETE/i);
+  for (const [i, como] of [['es', /¿Cómo estás\?/], ['hr', /Kako ste\?/], ['en', /How are you\?/]]) {
+    assert.match(TEXTOS[i].bienvenida, como, i);
+    for (const n of ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']) assert.ok(TEXTOS[i].menu.includes(n), `${i}: ${n}`);
+    assert.doesNotMatch(TEXTOS[i].bienvenida + TEXTOS[i].menu, /privacidad|privatnost|privacy|90 d|BORRAR|OBRIŠI|DELETE/i, i);
+    assert.equal(opcion(i, 6), null);
+  }
+  assert.match(CANAL_WHATSAPP, /emojis/);
+  assert.match(CANAL_WHATSAPP, /no son fuera de tema/);
+  assert.match(CANAL_WHATSAPP, /nunca des valores/);
+});
+
+test('flujo: saludo → 1/2/3 eligen idioma → ¿cómo estás? + menú → un número da la opción sin gastar IA', async () => {
+  const memoria = memoriaPrueba();
+  const { llamadas, preguntar } = preguntas();
+  await atender(ev({ text: 'Holaa' }), { memoria, preguntar, now: T0 });
+  const r = await atender(ev({ text: '3' }), { memoria, preguntar, now: T0 });
+  assert.equal(r.metrica, 'idioma');
+  assert.deepEqual(r.send.map((m) => m.text.body), [TEXTOS.en.bienvenida, TEXTOS.en.menu]);
+  const o = await atender(ev({ text: '1️⃣' }), { memoria, preguntar, now: T0 });
+  assert.equal(o.metrica, 'opcion');
+  assert.equal(o.send[0].text.body, opcion('en', 1));
+  assert.equal((await atender(ev({ text: 'MENU' }), { memoria, preguntar, now: T0 })).send[0].text.body, TEXTOS.en.menu);
+  assert.equal(llamadas.length, 0, 'nada de esto gasta IA');
+  // Un número que no está en el menú va al asistente; después de IDIOMA, 2 vuelve a ser un idioma.
+  await atender(ev({ text: '7' }), { memoria, preguntar, now: T0 });
+  assert.equal(llamadas.length, 1);
+  assert.equal((await atender(ev({ text: 'idioma' }), { memoria, preguntar, now: T0 })).metrica, 'pide_idioma');
+  const h = await atender(ev({ text: '2' }), { memoria, preguntar, now: T0 });
+  assert.equal(h.metrica, 'idioma');
+  assert.equal((await memoria.get(NUM)).idioma, 'hr');
+});
+
+test('PERSONA también con «asesor», «operador» u «hablar con alguien»', () => {
+  for (const t of ['asesor', 'Operador', 'hablar con alguien', 'savjetnik', 'talk to someone']) assert.equal(comando(t), 'persona', t);
+  for (const t of ['menú', 'Opciones', 'izbornik', 'MENU']) assert.equal(comando(t), 'menu', t);
 });
 
 test('wrangler.toml: rutas propias, sin tocar los subdominios de otros proyectos, y sin registros automáticos', () => {

@@ -79,8 +79,9 @@ test('verificación de Meta para Instagram: usa IG_VERIFY_TOKEN, no el de WhatsA
 test('elegir idioma escribiendo su nombre (sin botones): los tres, con y sin acento; lo demás no', () => {
   for (const [t, i] of [['Español', 'es'], ['espanol', 'es'], ['castellano', 'es'], ['Hrvatski', 'hr'], ['croata', 'hr'], ['English', 'en'], ['inglés', 'en'], ['english!', 'en']]) assert.equal(eligeIdioma(t), i, t);
   for (const t of ['hola', 'quiero hablar en español', 'en', 'es', '']) assert.equal(eligeIdioma(t), null, t);
-  assert.match(SALUDO_IDIOMA_TEXTO, /Escribí: Español · Hrvatski · English/);
-  assert.ok(SALUDO_IDIOMA_TEXTO.startsWith(SALUDO_IDIOMA.split('\n\n')[0]));
+  for (const [t, i] of [['🇦🇷', 'es'], ['🇭🇷', 'hr'], ['🇬🇧', 'en'], ['🇭🇷 Hrvatski', 'hr']]) assert.equal(eligeIdioma(t), i, t);
+  assert.ok(SALUDO_IDIOMA_TEXTO.startsWith(SALUDO_IDIOMA));
+  assert.match(SALUDO_IDIOMA_TEXTO, /1️⃣ Español 🇦🇷\n2️⃣ Hrvatski 🇭🇷\n3️⃣ English 🇬🇧$/);
 });
 
 // ——— Lógica (la misma de WhatsApp, con ids de Instagram) ———
