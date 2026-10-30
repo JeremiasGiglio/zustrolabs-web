@@ -78,9 +78,11 @@ test('verificación de Meta para Instagram: usa IG_VERIFY_TOKEN, no el de WhatsA
 
 test('elegir idioma escribiendo su nombre (sin botones): los tres, con y sin acento; lo demás no', () => {
   for (const [t, i] of [['Español', 'es'], ['espanol', 'es'], ['castellano', 'es'], ['Hrvatski', 'hr'], ['croata', 'hr'], ['English', 'en'], ['inglés', 'en'], ['english!', 'en']]) assert.equal(eligeIdioma(t), i, t);
-  for (const t of ['hola', 'quiero hablar en español', 'en', 'es', '']) assert.equal(eligeIdioma(t), null, t);
-  assert.match(SALUDO_IDIOMA_TEXTO, /Escribí: Español · Hrvatski · English/);
-  assert.ok(SALUDO_IDIOMA_TEXTO.startsWith(SALUDO_IDIOMA.split('\n\n')[0]));
+  for (const t of ['hola', 'quiero hablar con alguien', 'en', 'es', 'hablo con mi socio', '']) assert.equal(eligeIdioma(t), null, t);
+  for (const [t, i] of [['Hablo en inglés', 'en'], ['in English please', 'en'], ['prefiero castellano', 'es'], ['quiero hablar en español', 'es'], ['na hrvatskom molim', 'hr']]) assert.equal(eligeIdioma(t), i, t);
+  for (const [t, i] of [['🇦🇷', 'es'], ['🇭🇷', 'hr'], ['🇬🇧', 'en'], ['🇭🇷 Hrvatski', 'hr']]) assert.equal(eligeIdioma(t), i, t);
+  assert.ok(SALUDO_IDIOMA_TEXTO.startsWith(SALUDO_IDIOMA));
+  assert.match(SALUDO_IDIOMA_TEXTO, /1️⃣ Español 🇦🇷\n2️⃣ Hrvatski 🇭🇷\n3️⃣ English 🇬🇧$/);
 });
 
 // ——— Lógica (la misma de WhatsApp, con ids de Instagram) ———
@@ -94,10 +96,10 @@ test('primer contacto por Instagram: saludo en texto; «Hrvatski» elige el idio
   assert.deepEqual(convertir(r1.send[0]), [{ recipient: { id: QUIEN }, message: { text: SALUDO_IDIOMA_TEXTO } }]);
   const r2 = await atender(ev({ text: 'Hrvatski' }), { memoria, preguntar, now: T0 });
   assert.equal(r2.metrica, 'idioma');
-  assert.equal(r2.send[0].text.body, TEXTOS.hr.bienvenida);
+  assert.equal(r2.send[0].text.body, `${TEXTOS.hr.bienvenida}\n\n${TEXTOS.hr.quienes}`);
   assert.equal((await memoria.get(FROM)).idioma, 'hr');
-  await atender(ev({ text: 'Što radite?' }), { memoria, preguntar, now: T0 });
-  assert.deepEqual(llamadas, [{ texto: 'Što radite?', idioma: 'hr' }]);
+  await atender(ev({ text: 'Imate li web stranice?' }), { memoria, preguntar, now: T0 });
+  assert.deepEqual(llamadas, [{ texto: 'Imate li web stranice?', idioma: 'hr' }]);
   // La memoria de Instagram no se mezcla con un número de WhatsApp ni con la misma persona en otra cuenta.
   assert.equal(await memoria.get(QUIEN), null);
   assert.equal(await memoria.get(armarFrom('17841400000000002', QUIEN)), null);
@@ -309,17 +311,17 @@ async function conLogs(fn) {
 
 test('worker: /api/instagram verifica con su propio secreto; firmado con el de WhatsApp → 401; sin las claves de la app → 503', async () => {
   const d = await deps();
-  assert.equal((await ig([texto('hola')], ENV, d, { firma: await firmar(JSON.stringify(aviso([texto('hola')])), ENV.WHATSAPP_APP_SECRET) })).status, 401);
+  assert.equal((await ig([texto('¿Hacen sitios web?')], ENV, d, { firma: await firmar(JSON.stringify(aviso([texto('¿Hacen sitios web?')])), ENV.WHATSAPP_APP_SECRET) })).status, 401);
   assert.equal(d.enviados.length, 0);
-  for (const falta of ['IG_APP_SECRET', 'IG_APP_ID']) assert.equal((await ig([texto('hola')], { ...ENV, [falta]: '' }, d)).status, 503, falta);
-  assert.equal((await ig([texto('hola')], ENV, d)).status, 200);
+  for (const falta of ['IG_APP_SECRET', 'IG_APP_ID']) assert.equal((await ig([texto('¿Hacen sitios web?')], { ...ENV, [falta]: '' }, d)).status, 503, falta);
+  assert.equal((await ig([texto('¿Hacen sitios web?')], ENV, d)).status, 200);
   assert.equal(d.enviados[0].body.message.text, SALUDO_IDIOMA_TEXTO, 'primer contacto: el saludo en texto');
   assert.ok(d.enviados[0].url.endsWith('/me/messages'));
 });
 
 test('worker: un mensaje para una cuenta no conectada se registra y no se responde', async () => {
   const d = await deps();
-  const logs = await conLogs(() => ig([texto('hola')], ENV, d, {}).then(() => ig([{ ...texto('hola'), recipient: { id: '17841400000000002' } }], ENV, d)));
+  const logs = await conLogs(() => ig([texto('¿Hacen sitios web?')], ENV, d, {}).then(() => ig([{ ...texto('¿Hacen sitios web?'), recipient: { id: '17841400000000002' } }], ENV, d)));
   assert.equal(d.enviados.length, 1, 'solo la cuenta conectada recibe respuesta');
   assert.ok(logs.some((l) => JSON.parse(l).que === 'cuenta_desconocida'));
 });
@@ -336,7 +338,7 @@ test('worker: cada aviso firmado deja un registro con la forma y la cantidad, si
 
 test('worker: un aviso de Instagram no entra por /api/whatsapp aunque esté bien firmado', async () => {
   const d = await deps();
-  const cuerpo = JSON.stringify(aviso([texto('hola')]));
+  const cuerpo = JSON.stringify(aviso([texto('¿Hacen sitios web?')]));
   const req = new Request('https://zustrolabs.com/api/whatsapp', { method: 'POST', headers: { 'X-Hub-Signature-256': await firmar(cuerpo, ENV.WHATSAPP_APP_SECRET) }, body: cuerpo });
   assert.equal((await worker.fetch(req, ENV, {}, d)).status, 200);
   assert.equal(d.enviados.length, 0);
@@ -379,7 +381,7 @@ test('worker: el límite por persona usa cuenta y remitente de Instagram y el to
   const limite = { limit: async ({ key }) => (claves.push(key), { success: true }) };
   const d = await deps();
   await d.memoria.put(FROM, { idioma: 'es', humanoHasta: 0 });
-  await ig([texto('¿Qué hacen?')], { ...ENV, LIMITE: limite, LIMITE_GLOBAL: limite }, d);
+  await ig([texto('¿Hacen apps?')], { ...ENV, LIMITE: limite, LIMITE_GLOBAL: limite }, d);
   assert.deepEqual(claves, [FROM, 'ia']);
 });
 

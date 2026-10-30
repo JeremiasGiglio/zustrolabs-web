@@ -12,14 +12,17 @@ Worker `zustrolabs-whatsapp`: un número propio del estudio y los mensajes direc
 
 | La persona escribe | Pasa esto |
 |---|---|
-| Lo primero que escriba | Tres botones de idioma (Español, Hrvatski, English), con el link a la privacidad y BORRAR. Al elegir, la bienvenida con los comandos y qué se guarda. |
-| Cualquier pregunta | Responde el asistente con lo publicado en la página. Si la persona quiere un proyecto o algo que el asistente no sabe, le sugiere escribir PERSONA. |
-| **PERSONA** / OSOBA / PERSON | El asistente se calla en esa charla y la charla aparece en el panel. Llega un aviso a `AVISO_PARA` sin número ni texto. Desde el panel se responde y, al terminar, se toca «Devolver al asistente». Si pasan 24 h sin mensajes, vuelve sola. |
+| Lo primero que escriba | Saludo con emojis y tres botones de idioma (Español, Hrvatski, English). Al elegir: «¿Cómo estás?», quiénes somos y un menú de cinco cosas que puede lograr con el estudio (ZL-115). Tono de captación: sin aviso de privacidad ni lista de comandos en la charla; la política sigue en la página y en la app de Meta, y BORRAR sigue andando. |
+| Un saludo («hola», «buenas», «hola, ¿cómo te va?») o «¿qué hacen?», «¿qué me ofrecés?», «info» | Presentación y menú, sin gastar IA, también si eligió idioma otro día. Si todavía no eligió idioma y saluda, se le repregunta; si pregunta qué hacemos, se toma el idioma de la pregunta. «Hablo en inglés», «prefiero castellano» o «na hrvatskom» cambian el idioma. |
+| **1** a **5** (después del menú) | La explicación fija de esa opción, con lo que gana su negocio, una pregunta sobre su negocio y cómo pedir una persona. No gasta IA. |
+| **MENÚ** / IZBORNIK / MENU | Vuelve a mostrar el menú. |
+| Cualquier pregunta | Responde el asistente con lo publicado en la página, en tono cálido y con emojis: pregunta por el negocio, recomienda la solución que sirve y cierra con una pregunta. Si quiere avanzar, pregunta valores o algo que no sabe, le sugiere escribir PERSONA. |
+| **PERSONA** / OSOBA / PERSON (también «asesor», «operador», «hablar con alguien») | El asistente se calla en esa charla y la charla aparece en el panel. Llega un aviso a `AVISO_PARA` sin número ni texto. Desde el panel se responde y, al terminar, se toca «Devolver al asistente». Si pasan 24 h sin mensajes, vuelve sola. |
 | **BORRAR** / OBRIŠI / DELETE | Borra la memoria y la charla del panel. |
-| **IDIOMA** / JEZIK / LANGUAGE | Vuelve a mostrar los botones de idioma. |
+| **IDIOMA** / JEZIK / LANGUAGE | Vuelve a mostrar los botones de idioma (mientras elige, 1, 2 y 3 son idiomas). |
 | Audio, foto o archivo | Pide que lo escriba. |
 
-Por Instagram pasa lo mismo, con dos diferencias: no hay botones (el idioma se elige escribiendo «Español», «Hrvatski» o «English»; si escribe otra cosa, sigue en castellano) y las respuestas salen en trozos de hasta 1000 caracteres, porque Instagram no acepta más por mensaje.
+Por Instagram pasa lo mismo, con dos diferencias: no hay botones (el idioma se elige con 1, 2 o 3, con su nombre o con la bandera; si escribe otra cosa, sigue en castellano) y las respuestas salen en trozos de hasta 1000 caracteres, porque Instagram no acepta más por mensaje.
 
 **Qué se guarda**
 Todo va en un solo Durable Object, `Atencion` (`src/atencion.js`), con almacenamiento SQLite, que entra en el plan gratis. Una alarma diaria borra lo vencido.
@@ -104,7 +107,7 @@ La memoria no necesita ningún paso: el Durable Object se crea solo al publicar.
 3. Suscribí la app a la cuenta de WhatsApp: en el Graph API Explorer, con el token del paso 2.3, `POST /{waba-id}/subscribed_apps`.
 
 ### 5. Prueba
-1. Desde otro celular, escribile al número: tienen que aparecer los botones de idioma.
+1. Desde otro celular, escribile al número: tienen que aparecer el saludo y los botones de idioma; al tocar uno, la bienvenida y el menú.
 2. Preguntá «¿qué hacen?»: responde el asistente.
 3. Escribí PERSONA:
    - llega el aviso a contact@;
