@@ -416,10 +416,17 @@ test('apps de clientes: el aviso firmado con el secreto del cliente entra y se r
   assert.deepEqual(await secretosDe(ENV, n.apps), [ENV.IG_APP_SECRET, APP_CLIENTE.secreto]);
   const cuerpo = JSON.stringify(aviso([texto('hola')], { destino: CUENTA_CLIENTE }));
   const req = (firma) => new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'X-Hub-Signature-256': firma }, body: cuerpo });
+  // Sin ficha del negocio, la cuenta de un cliente no responde (nunca como Zustro Labs).
   assert.equal((await worker.fetch(req(await firmar(cuerpo, APP_CLIENTE.secreto)), ENV, {}, d)).status, 200);
+  assert.equal(enviados.filter((e) => e.url.endsWith('/me/messages')).length, 0, 'sin ficha: silencio');
+  await n.fichas.put(CUENTA_CLIENTE, { texto: readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8'), activa: true });
+  const cuerpo2 = JSON.stringify(aviso([texto('hola')], { destino: CUENTA_CLIENTE }));
+  const req2 = new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'X-Hub-Signature-256': await firmar(cuerpo2, APP_CLIENTE.secreto) }, body: cuerpo2 });
+  assert.equal((await worker.fetch(req2, ENV, {}, d)).status, 200);
   const r = enviados.find((e) => e.url.endsWith('/me/messages'));
   assert.equal(r.auth, 'Bearer tok-cliente', 'responde con el token de la cuenta del cliente');
-  assert.equal(r.body.message.text, SALUDO_IDIOMA_TEXTO);
+  assert.match(r.body.message.text, /Panadería La Espiga/, 'con la ficha del negocio');
+  assert.doesNotMatch(r.body.message.text, /Zustro/);
   assert.equal((await worker.fetch(req(await firmar(cuerpo, 'otro-secreto-cualquiera')), ENV, {}, d)).status, 401);
 });
 

@@ -7,3 +7,6 @@ privado/
 .playwright/
 .wrangler/
 .dev.vars
+
+# Fichas de negocio de clientes reales (ZL-113): viven en la PC, nunca en el repo público.
+whatsapp/fichas/clientes/

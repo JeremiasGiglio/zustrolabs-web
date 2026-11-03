@@ -10,6 +10,7 @@
 // - chat:<número>  → la charla con atención humana (solo después de PERSONA): 30 días desde el último mensaje.
 // - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence, app}: no vence (se renueva el token).
 // - igapp:<id>     → app de Instagram de un cliente {id, secreto, nombre, creado}: no vence.
+// - igf:<cuenta>   → ficha del negocio de esa cuenta {texto, activa, actualizada} (ZL-113): no vence.
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
 export const DIA_MS = 24 * 3600_000;
@@ -120,6 +121,17 @@ export function crearAtencion(storage) {
     async listaAppsIg() {
       return [...(await s.list({ prefix: 'igapp:' })).values()];
     },
+    // ── Fichas de negocio (una por cuenta de Instagram de un cliente) ──
+    async fichaIg(cuenta) {
+      return (await s.get(`igf:${cuenta}`)) ?? null;
+    },
+    async guardarFichaIg(cuenta, datos, now) {
+      const { texto, activa = false } = datos ?? {};
+      await s.put(`igf:${cuenta}`, { texto: String(texto ?? ''), activa: activa === true, actualizada: now });
+    },
+    async borrarFichaIg(cuenta) {
+      await s.delete(`igf:${cuenta}`);
+    },
     /** Lista para el panel: sin texto, solo las vigentes, la más reciente primero. */
     async lista(now) {
       const out = [];
@@ -161,7 +173,8 @@ export function almacenPrueba() {
 
 /**
  * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar}, charlas {get, list, agregar, delete},
- * cuentas {get, put, delete, list} (Instagram) y apps {get, put, delete, list} (apps de Instagram de clientes).
+ * cuentas {get, put, delete, list} (Instagram), apps {get, put, delete, list} (apps de Instagram de clientes) y
+ * fichas {get, put, delete} (la ficha del negocio de cada cuenta de cliente).
  * `a` es la lógica directa (tests) o el stub RPC del Durable Object (producción); `reloj` da la hora.
  */
 export function adaptadores(a, reloj = () => Date.now()) {
@@ -195,5 +208,11 @@ export function adaptadores(a, reloj = () => Date.now()) {
     delete: (id) => a.borrarAppIg(id),
     list: () => a.listaAppsIg(),
   };
-  return { memoria, charlas, cuentas, apps };
+  // Fichas de negocio: {texto, activa, actualizada}.
+  const fichas = {
+    get: (cuenta) => a.fichaIg(cuenta),
+    put: (cuenta, d) => a.guardarFichaIg(cuenta, d, reloj()),
+    delete: (cuenta) => a.borrarFichaIg(cuenta),
+  };
+  return { memoria, charlas, cuentas, apps, fichas };
 }

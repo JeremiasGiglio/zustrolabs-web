@@ -4,8 +4,9 @@
 //   /api/instagram/conectar → link para que una cuenta (la del estudio o la de un cliente) se conecte con su Instagram.
 // - equipo.zustrolabs.com → panel de atención humana, detrás de Cloudflare Access (panel.js).
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
-import { adaptadores } from './atencion.js';
+import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
+import { parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
@@ -50,9 +51,9 @@ export const mandarA = (env, m, fetchImpl, cuentas = null) => (esInstagram(m.to)
 /** Memoria, charlas y cuentas de Instagram: el Durable Object ATENCION (una sola instancia), o lo que pasen los tests. */
 function almacen(env, deps) {
   if (deps.memoria !== undefined || deps.charlas !== undefined || deps.cuentas !== undefined) {
-    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null };
+    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null, fichas: deps.fichas ?? null };
   }
-  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null };
+  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null, fichas: null };
   return adaptadores(env.ATENCION.get(env.ATENCION.idFromName('zustrolabs')));
 }
 
@@ -153,9 +154,23 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
     const t0 = Date.now();
     if (!ev.ts || now - ev.ts * 1000 > MAX_EDAD_MS) { log({ ok: true, que: 'viejo' }); continue; }
     // Instagram: solo las cuentas conectadas (o la de IG_ID con IG_TOKEN); lo demás se registra y se ignora.
-    if (ev.cuenta && !(await cuentas?.get(ev.cuenta)) && !(env.IG_ID && String(env.IG_ID) === ev.cuenta && env.IG_TOKEN)) {
+    const cuenta = ev.cuenta ? await cuentas?.get(ev.cuenta) : null;
+    if (ev.cuenta && !cuenta && !(env.IG_ID && String(env.IG_ID) === ev.cuenta && env.IG_TOKEN)) {
       log({ ok: true, que: 'cuenta_desconocida' });
       continue;
+    }
+    // La cuenta de un cliente (conectada con su propia app) responde con SU ficha del negocio; sin ficha activa, no
+    // responde nada (nunca como Zustro Labs). Sin panel: el negocio contesta desde su app mientras el asistente se calla.
+    const negocio = esCliente(env, cuenta);
+    let perfil, preguntarEv = preguntar, charlasEv = charlas;
+    if (negocio) {
+      const f = await a.fichas?.get(ev.cuenta);
+      if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
+      const pf = parsearFicha(f.texto);
+      if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
+      perfil = perfilNegocio(pf.ficha);
+      preguntarEv = deps.preguntarNegocio ? deps.preguntarNegocio(pf.ficha) : preguntadorNegocio(env, pf.ficha);
+      charlasEv = null;
     }
     try {
       // Sin límites no se responde: son el freno al abuso y al gasto en IA.
@@ -164,7 +179,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!(await env.LIMITE.limit({ key: esInstagram(ev.from) ? ev.from : `wa:${ev.from}` })).success) { log({ ok: true, que: 'limite' }); continue; }
       // El de toda la cuenta (los dos canales juntos) se mira recién antes de gastar IA (no corta la atención humana ni BORRAR).
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas, preguntar, now, cupo });
+      const r = await atender(ev, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }) });
       for (const m of r.send) await mandar(m);
       // Aviso por correo (sin número ni texto). Si falla, la charla igual queda en el panel; el motivo va al registro.
       let avisado, avisoError;
@@ -181,15 +196,47 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
         if (avisado === false && !avisoError) avisoError = 'sin_config';
       }
       // Solo métricas: ni el número ni el texto.
-      log({ ok: true, ms: Date.now() - t0, que: r.metrica, idioma: r.idioma, fuera: r.fuera, notas: r.notas, uso: r.uso, handoff: r.handoff, avisado, avisoError });
+      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio, idioma: r.idioma, fuera: r.fuera, notas: r.notas, uso: r.uso, handoff: r.handoff, avisado, avisoError });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
       // El aviso de falla va en el idioma de la charla (si la memoria responde).
       const st = await Promise.resolve(memoria?.get(ev.from)).catch(() => null);
-      await mandar(msgTexto(ev.from, textos(st?.idioma).falla)).catch(() => {});
+      const falla = perfil ? perfil.textos().falla : textos(st?.idioma).falla;
+      await mandar(msgTexto(ev.from, falla)).catch(() => {});
     }
   }
 }
+
+/** La cuenta es de un cliente si se conectó con una app que no es la del estudio. */
+export const esCliente = (env, cuenta) => Boolean(cuenta?.app && cuenta.app !== String(env.IG_APP_ID ?? ''));
+
+/** Charla de prueba con una ficha, sin tocar la memoria real ni mandar nada a Instagram (para el script). */
+async function probarFicha(env, ficha, mensajes, deps) {
+  const memoria = adaptadores(crearAtencion(almacenPrueba())).memoria;
+  const perfil = perfilNegocio(ficha);
+  const preguntar = deps.preguntarNegocio ? deps.preguntarNegocio(ficha) : preguntadorNegocio(env, ficha);
+  const now = deps.now ?? Date.now();
+  const charla = [];
+  for (const [i, texto] of mensajes.entries()) {
+    const ev = { id: `prueba-${i}`, from: 'ig:0.0', ts: now / 1000, kind: 'text', text: texto };
+    try {
+      const r = await atender(ev, { memoria, charlas: null, preguntar, now: now + i, perfil });
+      charla.push({ mensaje: texto, respuestas: r.send.map((m) => m.text?.body ?? ''), que: r.metrica, notas: r.notas ?? [] });
+    } catch (e) {
+      charla.push({ mensaje: texto, respuestas: [perfil.textos().falla], que: 'error', notas: [String(e?.message ?? 'error').slice(0, 40)] });
+    }
+  }
+  return charla;
+}
+
+const leerFicha = async (request) => {
+  try {
+    const b = await request.json();
+    return { texto: String(b?.texto ?? ''), activa: b?.activa === true, mensajes: Array.isArray(b?.mensajes) ? b.mensajes : null };
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Administración de Instagram para el script scripts/instagram-cliente.ps1 (Bearer IG_ADMIN_CLAVE):
@@ -197,20 +244,33 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
  * - POST /api/instagram/admin/apps    → registra la app de Instagram de un cliente {id, secreto, nombre};
  * - DELETE /api/instagram/admin/apps/<id> → la quita (y las cuentas conectadas con ella);
  * - DELETE /api/instagram/admin/cuentas/<id> → desconecta una cuenta.
+ * Fichas del negocio (ZL-113):
+ * - POST /api/instagram/admin/ficha/revisar {texto} → errores, lo que falta completar y el menú (no guarda nada);
+ * - POST /api/instagram/admin/ficha/probar {texto, mensajes[]} → charla de prueba con esa ficha (no guarda ni manda);
+ * - GET|PUT|DELETE /api/instagram/admin/cuentas/<id>/ficha → ver, cargar {texto, activa} o borrar la ficha de una cuenta.
  */
 async function admin(request, env, deps) {
   const url = new URL(request.url);
   if (!env.IG_ADMIN_CLAVE) return json({ error: 'sin configurar' }, 503);
   const auth = request.headers.get('authorization') ?? '';
   if (auth !== `Bearer ${env.IG_ADMIN_CLAVE}`) return json({ error: 'sin acceso' }, 401);
-  const { cuentas, apps } = almacen(env, deps);
+  const { cuentas, apps, fichas } = almacen(env, deps);
   if (!cuentas || !apps) return json({ error: 'sin memoria' }, 503);
   const now = deps.now ?? Date.now();
   const ruta = url.pathname.replace('/api/instagram/admin', '');
 
   if (request.method === 'GET' && ruta === '/estado') {
     const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, creado: a.creado }));
-    const listaCuentas = (await cuentas.list()).map((c) => ({ id: c.id, username: c.username, app: c.app || String(env.IG_APP_ID ?? ''), tokenVenceEnDias: Math.floor((c.vence - now) / 86_400_000) }));
+    const listaCuentas = [];
+    for (const c of await cuentas.list()) {
+      const cli = esCliente(env, c);
+      const f = cli ? await fichas?.get(c.id) : null;
+      const pf = f?.texto ? parsearFicha(f.texto) : null;
+      listaCuentas.push({
+        id: c.id, username: c.username, app: c.app || String(env.IG_APP_ID ?? ''), tokenVenceEnDias: Math.floor((c.vence - now) / 86_400_000),
+        ficha: cli ? { tiene: Boolean(f?.texto), activa: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, pendientes: pf?.pendientes ?? [] } : 'estudio',
+      });
+    }
     return json({
       ok: true,
       configurado: { app_estudio: Boolean(env.IG_APP_ID && env.IG_APP_SECRET), verify: Boolean(env.IG_VERIFY_TOKEN), link: Boolean(env.IG_CONECTAR_CLAVE), ia: Boolean(env.ANTHROPIC_API_KEY), aviso: Boolean(env.AVISO_PARA), panel: panelListo(env) },
@@ -239,6 +299,39 @@ async function admin(request, env, deps) {
     let borradas = 0;
     for (const c of await cuentas.list()) if (c.app === m[1]) { await cuentas.delete(c.id); borradas++; }
     return json({ ok: true, cuentasDesconectadas: borradas }, 200);
+  }
+  if (request.method === 'POST' && (ruta === '/ficha/revisar' || ruta === '/ficha/probar')) {
+    const b = await leerFicha(request);
+    if (!b) return json({ error: 'pedido inválido' }, 400);
+    const pf = parsearFicha(b.texto);
+    if (ruta === '/ficha/revisar' || !pf.ok) return json({ ...resumenFicha(pf) }, pf.ok ? 200 : 400);
+    const mensajes = (b.mensajes ?? ['hola']).map((x) => String(x).slice(0, 500)).filter(Boolean).slice(0, 12);
+    return json({ ...resumenFicha(pf), charla: await probarFicha(env, pf.ficha, mensajes, deps) }, 200);
+  }
+  m = /^\/cuentas\/(\d+)\/ficha$/.exec(ruta);
+  if (m) {
+    if (!fichas) return json({ error: 'sin memoria' }, 503);
+    const c = await cuentas.get(m[1]);
+    if (!c) return json({ error: 'esa cuenta no está conectada: conectala primero' }, 404);
+    if (!esCliente(env, c)) return json({ error: 'es la cuenta del estudio: responde con lo de la landing, no con una ficha' }, 400);
+    if (request.method === 'GET') {
+      const f = await fichas.get(m[1]);
+      return f ? json({ ok: true, texto: f.texto, activa: f.activa, actualizada: f.actualizada, ...resumenFicha(parsearFicha(f.texto)) }, 200) : json({ error: 'sin ficha' }, 404);
+    }
+    if (request.method === 'DELETE') {
+      await fichas.delete(m[1]);
+      return json({ ok: true }, 200);
+    }
+    if (request.method === 'PUT') {
+      const b = await leerFicha(request);
+      if (!b) return json({ error: 'pedido inválido' }, 400);
+      const pf = parsearFicha(b.texto);
+      if (!pf.ok) return json(resumenFicha(pf), 400);
+      if (b.activa && pf.pendientes.length) return json({ ...resumenFicha(pf), error: 'faltan completar cosas: la ficha se guarda solo apagada' }, 400);
+      await fichas.put(m[1], { texto: b.texto, activa: b.activa });
+      console.log(JSON.stringify({ canal: 'ig', que: 'ficha', activa: b.activa }));
+      return json({ ...resumenFicha(pf), activa: b.activa, cuenta: c.username }, 200);
+    }
   }
   m = /^\/cuentas\/(\d+)$/.exec(ruta);
   if (request.method === 'DELETE' && m) {

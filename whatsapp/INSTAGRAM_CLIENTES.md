@@ -45,7 +45,31 @@ Con el cliente al lado o por pantalla compartida, entrado en Facebook con **su**
 El script arma el link `https://zustrolabs.com/api/instagram/conectar?clave=…&app=<id>` y lo deja en el portapapeles. El cliente lo abre en un navegador donde esté entrado en Instagram con la cuenta del negocio, acepta los dos permisos y ve «Listo». El script espera y muestra la cuenta conectada. El token dura 60 días; el Worker lo renueva solo (cron diario) y comprueba la suscripción.
 
 ### 5. Prueba
-Desde **otra** cuenta de Instagram, «hola» → saludo con idiomas → «Español» → una pregunta. Si no responde, los registros del Worker (Observability) dicen por qué; la tabla está en el script y abajo.
+Con la ficha activa (ver abajo), desde **otra** cuenta de Instagram: «hola» → saludo del negocio y su menú → un número → una pregunta. Si no responde, los registros del Worker (Observability) dicen por qué; la tabla está en el script y abajo.
+
+## 6. La ficha del negocio (lo que sabe y cómo habla)
+
+Cada cuenta de cliente responde con **su ficha**, no con lo de Zustro Labs. **Sin ficha activa, la cuenta no responde nada**: se puede conectar tranquilo antes de tener la ficha lista.
+
+1. Copiá `fichas/PLANTILLA.md` a `fichas/clientes/<negocio>.md`. Esa carpeta está en `.gitignore`: las fichas de clientes reales **nunca** se suben al repo público (quedan en tu PC; guardá una copia donde guardes las cosas del cliente).
+2. Completala con el cliente (unos 15 minutos). Lo que tiene:
+   - **Datos:** nombre, idioma, trato (vos, tú o usted), emojis sí o no, precios sí o no, horas de pausa después de PERSONA y cuándo responde una persona.
+   - **Saludo:** una o dos oraciones que van después de «¡Hola! 👋 Gracias por escribirnos».
+   - **Menú:** de 1 a 9 opciones; cada una con su respuesta fija (sin IA, siempre igual).
+   - **Lo que sabe el asistente:** productos, precios (si se pueden decir), horarios, dirección, envíos, pagos, links y teléfonos.
+   - **Preguntas frecuentes, Nunca y Pasar a una persona cuando.**
+   - Lo que dice **[COMPLETAR …]** hay que reemplazarlo: mientras quede alguno, la ficha se puede probar y guardar, pero no activar.
+3. `.\instagram-cliente.ps1 -Ficha ..\fichas\clientes\<negocio>.md`: revisa la ficha (te dice qué falta o qué está mal), te deja **chatear de prueba desde la terminal** como si fueras un cliente (no manda nada a Instagram), te pregunta en qué cuenta va y si la activás.
+4. Para cambiar algo (un precio, el horario de Navidad): editás el archivo y volvés a correr el mismo comando. Pisa la anterior.
+
+**Cómo conversa la cuenta del cliente:**
+- «hola» (o «¿qué venden?», «info») → saludo, presentación y menú, sin IA y sin preguntar el idioma (usa el de la ficha).
+- Un número → la respuesta fija de esa opción, más «para hablar con una persona, escribí PERSONA».
+- Una pregunta concreta en el primer mensaje → saludo, la respuesta y «escribí MENÚ para ver todas las opciones».
+- Lo demás → la IA, solo con lo que dice la ficha. Si quiere hacer un pedido, reclama o algo no está en la ficha, le dice cómo pedir una persona.
+- **PERSONA** (o «asesor», «hablar con alguien») → «ya le avisamos al equipo», y el asistente se calla las horas de pausa de la ficha. **El negocio contesta desde su propia app de Instagram** (los mensajes le llegan como siempre). No pasa por nuestro panel ni nos llega correo: las charlas de los clientes de un negocio no se guardan en lo del estudio.
+
+**Controles que no dependen de la IA:** se saca antes de mandar cualquier oración con un precio, un link, un teléfono o un correo que no estén escritos en la ficha; con «Precios: no», cualquier monto; y promociones o descuentos si la ficha no menciona ninguno. Si la IA no sabe, dice que no sabe y ofrece una persona. Si le preguntan si es una persona, dice que es el asistente virtual del negocio (Ley de IA, art. 50).
 
 ## Los errores que ya tuvimos (y que el script evita)
 
@@ -66,7 +90,8 @@ Desde **otra** cuenta de Instagram, «hola» → saludo con idiomas → «Españ
 ## Lo que todavía es manual, y lo que falta
 
 - Apretar los botones de Meta (crear app, permisos, redirect URL, webhook, Live): 10 minutos con el cliente al lado. Meta no deja hacerlo por API.
-- **El cerebro del cliente.** Hoy todas las cuentas conectadas responden con el asistente de Zustro Labs (lo que dice la landing). Para un cliente hace falta su propio conocimiento (productos, horarios, stock) y sus reglas: es el ticket siguiente (asistente por cuenta, con `conocimiento` propio y, en el caso de la chocolatería, el stock). Hasta entonces, conectar la cuenta de un cliente sirve para dejar todo listo y probar el canal.
+- **Stock en vivo.** La ficha es fija: si un producto se agota, hay que editarla y volver a cargarla. Leer el stock de una planilla es la etapa siguiente (chocolatería).
+- **Memoria de la charla.** Cada mensaje llega solo a la IA (no guardamos el texto): si la persona responde «sí» a una pregunta del asistente, puede pedir contexto.
 - Ventana de 24 h para responder (regla de Meta); después, el equipo responde desde el panel solo si la persona vuelve a escribir.
 - Solo texto: fotos y audios reciben «solo leo texto».
 

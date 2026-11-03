@@ -278,7 +278,8 @@ test.describe('repo público', () => {
     const malos = tracked.filter((f) => /(^|\/)(privado|convocatoria|\.wrangler)\/|(^|\/)\.dev\.vars$|(^|\/)\.env(\.|$)|\.(pem|key|p12)$/i.test(f));
     expect(malos).toEqual([]);
     const gi = readFileSync('.gitignore', 'utf8');
-    for (const p of ['node_modules/', '.wrangler/', '.dev.vars', 'privado/']) expect(gi).toContain(p);
+    for (const p of ['node_modules/', '.wrangler/', '.dev.vars', 'privado/', 'whatsapp/fichas/clientes/']) expect(gi).toContain(p);
+    expect(tracked.filter((f) => f.startsWith('whatsapp/fichas/clientes/'))).toEqual([]);
   });
 
   test('el Worker no tiene secretos en wrangler.toml y solo atiende /api/contacto', () => {

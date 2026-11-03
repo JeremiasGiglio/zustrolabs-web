@@ -1,4 +1,4 @@
-<#
+﻿<#
 Zustro Labs · Instagram de un cliente, paso a paso (Windows, PowerShell 5.1 o más nuevo).
 
 Conecta la cuenta de Instagram de un cliente al asistente del estudio usando la app de Meta DEL CLIENTE
@@ -7,13 +7,17 @@ Conecta la cuenta de Instagram de un cliente al asistente del estudio usando la 
   2. te va abriendo los enlaces de Meta en orden y te dice qué copiar en cada uno;
   3. registra la app del cliente en el Worker;
   4. comprueba que el webhook esté bien (misma frase de verificación);
-  5. arma el link de conexión y espera hasta ver la cuenta conectada.
+  5. arma el link de conexión y espera hasta ver la cuenta conectada;
+  6. carga la FICHA DEL NEGOCIO (fichas/PLANTILLA.md): la revisa, te deja chatear de prueba y la activa.
+     Sin ficha activa, la cuenta del cliente no responde nada (nunca como Zustro Labs).
 Lo que no puede hacer por vos: crear la app en Meta (es dentro de la cuenta del cliente) y apretar los botones del
 panel de Meta. Para eso te dice exactamente dónde y qué.
 
 Uso (clic derecho → «Ejecutar con PowerShell», o en una ventana de PowerShell):
   .\instagram-cliente.ps1
   .\instagram-cliente.ps1 -Nombre "Chocolatería X"
+  .\instagram-cliente.ps1 -Ficha ..\fichas\clientes\chocolateria-x.md     (solo cargar o actualizar la ficha)
+  .\instagram-cliente.ps1 -SoloEstado
 Secretos: pide la clave de administración y la del link por teclado (no se muestran ni se guardan). Si querés evitar
 teclearlas cada vez, podés ponerlas en las variables de entorno ZL_IG_ADMIN_CLAVE y ZL_IG_CONECTAR_CLAVE de tu
 usuario de Windows (nunca en un archivo del repo).
@@ -21,6 +25,8 @@ Guía completa: whatsapp/INSTAGRAM_CLIENTES.md
 #>
 param(
   [string]$Nombre = "",
+  [string]$Ficha = "",
+  [string]$Cuenta = "",
   [string]$Worker = "https://zustrolabs.com",
   [switch]$SoloEstado
 )
@@ -53,6 +59,86 @@ function Llamar($metodo, $ruta, $cuerpo = $null) {
   return Invoke-RestMethod @args
 }
 
+# ── La ficha del negocio (ZL-113): revisar → probar → cargar → activar ──
+function Mostrar-Revision($r) {
+  if ($r.errores -and $r.errores.Count) { foreach ($e in $r.errores) { Falla $e }; return $false }
+  Ok ("Ficha de «" + $r.nombre + "» · idioma " + $r.idioma + " · trato " + $r.trato + " · precios " + $(if ($r.precios) { "sí" } else { "no" }) + " · pausa " + $r.pausaHoras + " h")
+  Nota "Menú:"; foreach ($o in $r.menu) { Nota ("   " + $o) }
+  if ($r.pendientes -and $r.pendientes.Count) {
+    Write-Host ("  ! Falta completar ([COMPLETAR …]): " + ($r.pendientes -join " · ")) -ForegroundColor Yellow
+    Nota "  Se puede probar y guardar apagada, pero no activar hasta completarla."
+  }
+  return $true
+}
+function Mostrar-Respuestas($item) {
+  foreach ($t in $item.respuestas) { Write-Host ""; foreach ($l in ($t -split "`n")) { Write-Host ("    │ " + $l) -ForegroundColor White } }
+  if ($item.notas -and $item.notas.Count) { Nota ("(controles: " + ($item.notas -join ", ") + ": se sacó algo que no estaba en la ficha)") }
+}
+function Flujo-Ficha($ruta, $cuentaId) {
+  if (-not $ruta) {
+    $ruta = Read-Host "  Ruta del archivo de la ficha (p. ej. ..\fichas\clientes\mi-negocio.md; la plantilla está en ..\fichas\PLANTILLA.md)"
+  }
+  $ruta = $ruta.Trim('"').Trim()
+  if (-not (Test-Path $ruta)) { Falla "No encuentro $ruta"; exit 1 }
+  $texto = [IO.File]::ReadAllText((Resolve-Path $ruta).Path, [Text.Encoding]::UTF8)
+
+  Paso "F1" "Reviso la ficha"
+  try { $rev = Llamar POST "/ficha/revisar" @{ texto = $texto } } catch {
+    try { $rev = ($_.ErrorDetails.Message | ConvertFrom-Json) } catch { Falla "El Worker no respondió: $($_.Exception.Message)"; exit 1 }
+  }
+  if (-not (Mostrar-Revision $rev)) { Falla "Arreglá eso en el archivo y volvé a correr el script."; exit 1 }
+
+  Paso "F2" "Chat de prueba (no se manda nada a Instagram ni se guarda)"
+  Nota "Así saluda a alguien que escribe «hola»:"
+  $p = Llamar POST "/ficha/probar" @{ texto = $texto; mensajes = @("hola") }
+  Mostrar-Respuestas $p.charla[0]
+  Write-Host ""
+  Nota "Escribí como si fueras un cliente (un número del menú, una pregunta, PERSONA…). Enter vacío para terminar."
+  while ($true) {
+    $m = Read-Host "  Cliente"
+    if (-not $m) { break }
+    try {
+      $p = Llamar POST "/ficha/probar" @{ texto = $texto; mensajes = @("hola", $m) }
+      Mostrar-Respuestas $p.charla[1]
+    } catch { Falla "No pude probar: $($_.Exception.Message)" }
+  }
+
+  Paso "F3" "¿En qué cuenta la cargo?"
+  $e = Llamar GET "/estado"
+  $clientes = @($e.cuentas | Where-Object { $_.ficha -ne "estudio" })
+  if (-not $clientes.Count) { Falla "No hay cuentas de clientes conectadas. Conectá la cuenta primero (el script sin -Ficha)."; exit 1 }
+  $elegida = $null
+  if ($cuentaId) { $elegida = $clientes | Where-Object { $_.id -eq $cuentaId -or $_.username -eq $cuentaId.TrimStart('@') } | Select-Object -First 1 }
+  if (-not $elegida) {
+    for ($i = 0; $i -lt $clientes.Count; $i++) {
+      $f = $clientes[$i].ficha
+      $estadoFicha = if (-not $f.tiene) { "sin ficha" } elseif ($f.activa) { "ficha activa: " + $f.nombre } else { "ficha apagada: " + $f.nombre }
+      Nota ("[" + ($i + 1) + "] @" + $clientes[$i].username + "  (" + $estadoFicha + ")")
+    }
+    $n = 0; [void][int]::TryParse((Read-Host "  Número de la cuenta"), [ref]$n)
+    if ($n -lt 1 -or $n -gt $clientes.Count) { Falla "Número inválido."; exit 1 }
+    $elegida = $clientes[$n - 1]
+  }
+
+  Paso "F4" "Cargar"
+  $activar = $false
+  if ($rev.pendientes -and $rev.pendientes.Count) {
+    Nota "Como falta completar, se guarda APAGADA: @$($elegida.username) no va a responder hasta que la actives."
+  } else {
+    $resp = Read-Host "  ¿La dejo respondiendo a los clientes de @$($elegida.username) ahora? (s/n)"
+    $activar = ($resp -match '^[sS]')
+  }
+  try {
+    $r = Llamar PUT ("/cuentas/" + $elegida.id + "/ficha") @{ texto = $texto; activa = $activar }
+    if ($activar) { Ok "Ficha cargada y ACTIVA en @$($elegida.username)." } else { Ok "Ficha cargada APAGADA en @$($elegida.username) (no responde todavía)." }
+  } catch {
+    $msg = $_.Exception.Message; try { $msg = ($_.ErrorDetails.Message | ConvertFrom-Json).error } catch {}
+    Falla "El Worker no la aceptó: $msg"; exit 1
+  }
+  Nota "Para cambiar algo: editá el archivo y corré  .\instagram-cliente.ps1 -Ficha `"$ruta`"  (pisa la anterior)."
+  Nota "Prueba real: desde OTRA cuenta de Instagram, «hola» a @$($elegida.username): saludo del negocio y su menú."
+}
+
 Titulo "Zustro Labs · Instagram de un cliente"
 
 # ── 0. El Worker ──
@@ -70,8 +156,12 @@ if (-not ($c.app_estudio -and $c.verify -and $c.link -and $c.ia)) {
   exit 1
 }
 Nota ("Apps de clientes registradas: " + $estado.apps.Count + " · cuentas conectadas: " + $estado.cuentas.Count)
-foreach ($cu in $estado.cuentas) { Nota ("  @" + $cu.username + "  (app " + $cu.app + ", token vence en " + $cu.tokenVenceEnDias + " días)") }
+foreach ($cu in $estado.cuentas) {
+  $fi = if ($cu.ficha -eq "estudio") { "cuenta del estudio" } elseif (-not $cu.ficha.tiene) { "SIN ficha: no responde" } elseif ($cu.ficha.activa) { "ficha activa" } else { "ficha apagada: no responde" }
+  Nota ("  @" + $cu.username + "  (app " + $cu.app + ", token vence en " + $cu.tokenVenceEnDias + " días, " + $fi + ")")
+}
 if ($SoloEstado) { exit 0 }
+if ($Ficha) { Flujo-Ficha $Ficha $Cuenta; exit 0 }
 
 # ── 1. El cliente ──
 Paso 1 "Datos del cliente"
@@ -158,11 +248,20 @@ Write-Host ""
 if (-not $nueva) { Falla "Todavía no se conectó. Cuando lo haga, corré el script con -SoloEstado para verla."; exit 1 }
 Ok ("Conectada: @" + $nueva.username + " (token vence en " + $nueva.tokenVenceEnDias + " días; el Worker lo renueva solo).")
 
-# ── 5. Prueba ──
-Paso 5 "Prueba"
+# ── 5. La ficha del negocio ──
+Paso 5 "La ficha del negocio (lo que sabe y cómo habla el asistente de @$($nueva.username))"
+Nota "Hasta que tenga una ficha activa, la cuenta NO responde (nunca como Zustro Labs)."
+Nota "Si todavía no la completaste: copiá ..\fichas\PLANTILLA.md a ..\fichas\clientes\<negocio>.md, completala con el"
+Nota "cliente y volvé a correr  .\instagram-cliente.ps1 -Ficha ..\fichas\clientes\<negocio>.md"
+$hayFicha = Read-Host "  ¿Ya tenés la ficha completa? (s/n)"
+if ($hayFicha -match '^[sS]') { Flujo-Ficha "" $nueva.id }
+
+# ── 6. Prueba ──
+Paso 6 "Prueba"
 Nota "Desde OTRA cuenta de Instagram (no la del negocio), mandar «hola» a @$($nueva.username)."
-Nota "En segundos tiene que llegar el saludo con los idiomas. Después «Español» y una pregunta."
+Nota "Con la ficha activa tiene que llegar el saludo del negocio y su menú. Después un número y una pregunta."
 Nota "Si no responde: Cloudflare → Workers & Pages → zustrolabs-whatsapp → Observability. Buscá «que»:"
+Nota "  «sin_ficha» o «ficha_inactiva» = falta cargar o activar la ficha (-Ficha) ·"
 Nota "  «aviso» con eventos 0 = Meta mandó algo que no es un mensaje (eco, visto) · «cuenta_desconocida» = la cuenta"
 Nota "  no está conectada · «firma» = el secret cargado no es el de Instagram · nada = Meta no manda: revisar Live,"
 Nota "  «messages» suscripto y «Permitir acceso a los mensajes»."
