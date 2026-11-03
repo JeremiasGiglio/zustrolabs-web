@@ -7,7 +7,7 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
 import { parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
-import { appNegocios, NEGOCIOS_HOST } from './negocios.js';
+import { administrar, appNegocios, canalesDe, NEGOCIOS_HOST } from './negocios.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
@@ -184,6 +184,8 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
       perfil = perfilNegocio(pf.ficha);
       const dueño = await a.negocios?.deCuenta(ev.cuenta);
+      // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
+      if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
       const catalogo = consultaCatalogo(env, deps, dueño?.id, pf.ficha);
       const ia = deps.preguntarNegocio ? deps.preguntarNegocio(pf.ficha, catalogo) : preguntadorNegocio(env, pf.ficha, { catalogo });
       // Tope por negocio: uno con mucho movimiento no deja sin IA a los demás. También es lo que se le factura.
@@ -266,6 +268,9 @@ const leerFicha = async (request) => {
  * - POST /api/instagram/admin/apps    → registra la app de Instagram de un cliente {id, secreto, nombre};
  * - DELETE /api/instagram/admin/apps/<id> → la quita (y las cuentas conectadas con ella);
  * - DELETE /api/instagram/admin/cuentas/<id> → desconecta una cuenta.
+ * Negocios (ZL-122, para scripts/cliente-nuevo.ps1): los mismos de la app negocios.zustrolabs.com:
+ * - GET /api/instagram/admin/negocios · POST /api/instagram/admin/negocios {nombre, emails, canales}
+ * - PUT /api/instagram/admin/negocios/<id> {nombre, emails, canales, cuentas, limiteDia}
  * Fichas del negocio (ZL-113):
  * - POST /api/instagram/admin/ficha/revisar {texto} → errores, lo que falta completar y el menú (no guarda nada);
  * - POST /api/instagram/admin/ficha/probar {texto, mensajes[]} → charla de prueba con esa ficha (no guarda ni manda);
@@ -281,6 +286,11 @@ async function admin(request, env, deps) {
   const now = deps.now ?? Date.now();
   const ruta = url.pathname.replace('/api/instagram/admin', '');
 
+  if (ruta === '/negocios' || ruta.startsWith('/negocios/')) {
+    const a = almacen(env, deps);
+    if (!a.negocios) return json({ error: 'sin memoria' }, 503);
+    return administrar(request, ruta, { ...a, esCliente: (c) => esCliente(env, c) }, now);
+  }
   if (request.method === 'GET' && ruta === '/estado') {
     const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, creado: a.creado }));
     const listaCuentas = [];
@@ -290,6 +300,7 @@ async function admin(request, env, deps) {
       const pf = f?.texto ? parsearFicha(f.texto) : null;
       listaCuentas.push({
         id: c.id, username: c.username, app: c.app || String(env.IG_APP_ID ?? ''), tokenVenceEnDias: Math.floor((c.vence - now) / 86_400_000),
+        negocio: cli ? (await almacen(env, deps).negocios?.deCuenta(c.id))?.id ?? null : null,
         ficha: cli ? { tiene: Boolean(f?.texto), activa: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, pendientes: pf?.pendientes ?? [] } : 'estudio',
       });
     }

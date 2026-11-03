@@ -20,9 +20,14 @@ const SEGURIDAD = {
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
   'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
+/** Canales del negocio; los negocios creados antes de ZL-122 tienen solo Instagram. */
+export const canalesDe = (n) => n?.canales ?? { instagram: true, whatsapp: false };
+
 const resp = (cuerpo, status, tipo, extra = {}) => new Response(cuerpo, { status, headers: { 'content-type': tipo, ...SEGURIDAD, ...extra } });
 const json = (data, status = 200) => resp(JSON.stringify(data), status, 'application/json; charset=utf-8');
 const error = (mensaje, status = 400, campo) => json({ error: mensaje, ...(campo && { campo }) }, status);
+
+const leerCanales = (c) => ({ ...(typeof c?.instagram === 'boolean' && { instagram: c.instagram }), ...(typeof c?.whatsapp === 'boolean' && { whatsapp: c.whatsapp }) });
 
 const PAGINA_SIN_CONFIGURAR = `<!doctype html><html lang="es"><meta charset="utf-8"><title>Negocios · Zustro Labs</title><body style="font-family:system-ui;padding:2rem"><h1>Todavía no está configurado</h1><p>Falta la app de Cloudflare Access de negocios.zustrolabs.com (ver whatsapp/NEGOCIOS.md).</p></body></html>`;
 
@@ -88,7 +93,7 @@ export async function appNegocios(request, env, deps) {
     const cuentas = [];
     for (const c of negocio.cuentas) cuentas.push({ id: c, username: (await deps.cuentas?.get(c))?.username ?? null });
     return json({
-      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
+      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
       resumen: r.valor ?? null,
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
@@ -183,15 +188,18 @@ export async function appNegocios(request, env, deps) {
   return error('no existe', 404);
 }
 
-/** Alta y cambios de negocios, quién entra y qué cuentas de Instagram tiene (solo el equipo). */
-async function administrar(request, ruta, deps, now) {
+/**
+ * Alta y cambios de negocios, quién entra, qué canales tiene y qué cuentas de Instagram son suyas. Solo el equipo:
+ * desde la app (Access) o desde el script de alta de clientes (index.js, con IG_ADMIN_CLAVE).
+ */
+export async function administrar(request, ruta, deps, now) {
   if (request.method === 'GET' && ruta === '/negocios') {
     const hoy = new Date(now).toISOString().slice(0, 10);
     const out = [];
     for (const n of await deps.negocios.list()) {
       const f = await deps.negocios.ficha(n.id);
       const uso = await deps.negocios.uso(n.id);
-      out.push({ ...n, asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa) }, usoHoy: uso.find((u) => u.dia === hoy)?.n ?? 0, usoMes: uso.filter((u) => u.dia.slice(0, 7) === hoy.slice(0, 7)).reduce((a, u) => a + u.n, 0) });
+      out.push({ ...n, canales: canalesDe(n), asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa) }, usoHoy: uso.find((u) => u.dia === hoy)?.n ?? 0, usoMes: uso.filter((u) => u.dia.slice(0, 7) === hoy.slice(0, 7)).reduce((a, u) => a + u.n, 0) });
     }
     return json({ negocios: out });
   }
@@ -207,7 +215,7 @@ async function administrar(request, ruta, deps, now) {
   const b = request.method === 'GET' ? null : await leerJson(request);
   if (request.method === 'POST' && ruta === '/negocios') {
     if (!b) return error('pedido inválido');
-    const r = await deps.negocios.guardar(null, { nombre: b.nombre, emails: correosDe(Array.isArray(b.emails) ? b.emails.join(',') : b.emails), cuentas: [] });
+    const r = await deps.negocios.guardar(null, { nombre: b.nombre, emails: correosDe(Array.isArray(b.emails) ? b.emails.join(',') : b.emails), cuentas: [], ...(b.canales && { canales: leerCanales(b.canales) }) });
     return r.error ? error(r.error) : json(r.negocio, 201);
   }
   const m = /^\/negocios\/([a-z0-9]{4,40})$/.exec(ruta);
@@ -226,6 +234,7 @@ async function administrar(request, ruta, deps, now) {
       cambios.cuentas = b.cuentas.map(String);
     }
     if (b.limiteDia !== undefined) cambios.limiteDia = b.limiteDia;
+    if (b.canales !== undefined) cambios.canales = leerCanales(b.canales);
     const r = await deps.negocios.guardar(m[1], cambios);
     return r.error ? error(r.error) : json(r.negocio);
   }

@@ -4,7 +4,16 @@ Cómo dejar la cuenta de Instagram de un cliente respondiendo con el asistente, 
 
 **La idea:** cada cliente tiene **su propia app de Meta**, creada en **su** cuenta de Facebook. Para la cuenta de Instagram que uno mismo administra, Meta deja usar la API con el acceso estándar: **no hace falta App Review ni verificación de negocio**. Nuestro Worker atiende muchas apps a la vez (la del estudio y una por cliente), con los mismos límites y el mismo panel.
 
-**La herramienta:** `scripts\instagram-cliente.ps1` (Windows, PowerShell). Te lleva paso a paso, abre cada enlace, comprueba lo que se puede comprobar y registra la app del cliente en el Worker. Lo que no puede hacer es apretar los botones del panel de Meta (es dentro de la cuenta del cliente): para eso te dice dónde y qué.
+**Alta completa de un cliente (ZL-122), unos 30 minutos:** `scripts\cliente-nuevo.ps1`. Pregunta nombre, correos y canales (**Instagram, WhatsApp o los dos**), crea el negocio en negocios.zustrolabs.com, corre el script de cada canal y termina con los correos en Access y los productos. Cada canal tiene su script, que también se puede correr solo: `instagram-cliente.ps1` (este documento) y, cuando lo probemos, `whatsapp-cliente.ps1` (ver «WhatsApp de cada cliente» en `NEGOCIOS.md`). Las funciones compartidas están en `scripts\comun.ps1`.
+
+| Paso | Minutos (con el cliente al lado) |
+|---|---|
+| Datos del negocio y canales | 3 |
+| Instagram: requisitos, app de Meta, configuración, conexión | 15–20 |
+| Ficha: se arma desde la plantilla con el nombre puesto, se completa en el Bloc de notas, se revisa, chat de prueba, se activa | 5–10 |
+| Correos en Access (quedan copiados) y productos (Excel en la app) | 5 |
+
+**La herramienta del canal:** `scripts\instagram-cliente.ps1` (Windows, PowerShell). Te lleva paso a paso, abre cada enlace, comprueba lo que se puede comprobar y registra la app del cliente en el Worker. Lo que no puede hacer es apretar los botones del panel de Meta (es dentro de la cuenta del cliente): para eso te dice dónde y qué.
 
 ## Qué hace falta tener, y quién lo crea
 
@@ -44,10 +53,16 @@ Con el cliente al lado o por pantalla compartida, entrado en Facebook con **su**
 ### 4. Conectar la cuenta
 El script arma el link `https://zustrolabs.com/api/instagram/conectar?clave=…&app=<id>` y lo deja en el portapapeles. El cliente lo abre en un navegador donde esté entrado en Instagram con la cuenta del negocio, acepta los dos permisos y ve «Listo». El script espera y muestra la cuenta conectada. El token dura 60 días; el Worker lo renueva solo (cron diario) y comprueba la suscripción.
 
-### 5. Prueba
+### 5. Vincular la cuenta al negocio
+El script la marca como cuenta de ese negocio y enciende el canal Instagram (lo mismo que se ve en negocios.zustrolabs.com → Administración). Desde ahí, la IA consulta los productos de ese negocio antes de responder.
+
+### 6. La ficha
+Arma `fichas\clientes\<negocio>.md` desde la plantilla con el nombre puesto y lo abre en el Bloc de notas; al cerrarlo, la revisa, te deja chatear de prueba (con los productos del negocio) y la activa. Detalle abajo.
+
+### 7. Prueba
 Con la ficha activa (ver abajo), desde **otra** cuenta de Instagram: «hola» → saludo del negocio y su menú → un número → una pregunta. Si no responde, los registros del Worker (Observability) dicen por qué; la tabla está en el script y abajo.
 
-## 6. La ficha del negocio (lo que sabe y cómo habla)
+## La ficha del negocio (lo que sabe y cómo habla)
 
 Cada cuenta de cliente responde con **su ficha**, no con lo de Zustro Labs. **Sin ficha activa, la cuenta no responde nada**: se puede conectar tranquilo antes de tener la ficha lista.
 
