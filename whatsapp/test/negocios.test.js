@@ -222,3 +222,51 @@ test('la app: la página, el JS y el CSS se sirven con una política que no deja
   assert.match(js, /function leerXlsx/);
   assert.equal((await pedir(null, 'GET', '/app.js')).status, 401, 'sin entrar, ni siquiera el código');
 });
+
+test('canales por negocio (ZL-122): Instagram encendido de entrada; si el negocio lo apaga, esa cuenta no responde', async () => {
+  const { pedir, a, d, enviados, ia } = await armar();
+  assert.deepEqual((await pedir('duena@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.canales, { instagram: true, whatsapp: false });
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A] });
+  await pedir('equipo@example.com', 'PUT', `/api/n/${a.id}/ficha`, { texto: FICHA, activa: true });
+  const mensaje = async (text) => {
+    const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ sender: { id: '17841400000000009' }, recipient: { id: CUENTA_A }, timestamp: T0, message: { mid: 'm' + Math.random(), text } }] }] });
+    const logs = [];
+    const orig = console.log;
+    console.log = (x) => logs.push(String(x));
+    try { await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'X-Hub-Signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d); }
+    finally { console.log = orig; }
+    return logs.map((l) => JSON.parse(l));
+  };
+  const r = (await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { canales: { instagram: false } })).datos;
+  assert.deepEqual(r.canales, { instagram: false, whatsapp: false });
+  assert.ok((await mensaje('¿Tienen pan?')).some((l) => l.que === 'canal_apagado'));
+  assert.equal(enviados.filter((e) => e.url.endsWith('/me/messages')).length, 0);
+  assert.equal(ia.length, 0);
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { canales: { instagram: true, whatsapp: true } });
+  await mensaje('¿Tienen pan?');
+  assert.equal(ia.length, 1, 'encendido de nuevo, responde');
+  assert.deepEqual((await pedir('equipo@example.com', 'GET', '/api/admin/negocios')).datos.negocios.find((x) => x.id === a.id).canales, { instagram: true, whatsapp: true });
+});
+
+test('el script de alta (IG_ADMIN_CLAVE) crea el negocio, elige canales y lo vincula a la cuenta conectada', async () => {
+  const { d } = await armar();
+  const env = { ...ENV, IG_ADMIN_CLAVE: 'clave-admin-prueba' };
+  const admin = async (metodo, ruta, cuerpo, clave = env.IG_ADMIN_CLAVE) => {
+    const r = await worker.fetch(new Request(`https://zustrolabs.com/api/instagram/admin${ruta}`, { method: metodo, headers: { authorization: `Bearer ${clave}`, 'content-type': 'application/json' }, ...(cuerpo && { body: JSON.stringify(cuerpo) }) }), env, {}, d);
+    return { status: r.status, datos: await r.json() };
+  };
+  assert.equal((await admin('GET', '/negocios', undefined, 'otra')).status, 401);
+  const n = await admin('POST', '/negocios', { nombre: 'Chocolatería Ficticia', emails: 'dueno@example.com', canales: { instagram: true, whatsapp: true } });
+  assert.equal(n.status, 201);
+  assert.deepEqual(n.datos.canales, { instagram: true, whatsapp: true });
+  assert.equal((await admin('PUT', `/negocios/${n.datos.id}`, { cuentas: [ESTUDIO] })).status, 400, 'nunca la cuenta del estudio');
+  assert.equal((await admin('PUT', `/negocios/${n.datos.id}`, { cuentas: [CUENTA_A] })).status, 200);
+  const est = (await admin('GET', '/estado')).datos;
+  assert.equal(est.cuentas.find((c) => c.id === CUENTA_A).negocio, n.datos.id);
+  assert.equal(est.cuentas.find((c) => c.id === ESTUDIO).negocio, null);
+  // La ficha que carga el script por la cuenta queda en ESE negocio (no crea otro).
+  assert.equal((await admin('PUT', `/cuentas/${CUENTA_A}/ficha`, { texto: FICHA, activa: true })).status, 200);
+  const lista = (await admin('GET', '/negocios')).datos.negocios;
+  assert.equal(lista.length, 3, 'los dos de armar() y el nuevo: ninguno de más');
+  assert.equal(lista.find((x) => x.id === n.datos.id).asistente.activo, true);
+});

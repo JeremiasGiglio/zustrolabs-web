@@ -10,7 +10,7 @@
 // - chat:<número>  → la charla con atención humana (solo después de PERSONA): 30 días desde el último mensaje.
 // - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence, app}: no vence (se renueva el token).
 // - igapp:<id>     → app de Instagram de un cliente {id, secreto, nombre, creado}: no vence.
-// - neg:<id>       → negocio cliente {id, nombre, emails, cuentas, limiteDia, creado} (ZL-121): no vence.
+// - neg:<id>       → negocio cliente {id, nombre, emails, cuentas, canales {instagram, whatsapp}, limiteDia, creado}: no vence.
 //   negmail:<correo> → {ids} y negcta:<cuenta> → {id}: índices para encontrar el negocio de quien entra a la app o
 //   de la cuenta de Instagram que recibió un mensaje.
 // - negf:<id>      → ficha del asistente de ese negocio {texto, activa, actualizada} (ZL-113): no vence.
@@ -163,7 +163,11 @@ export function crearAtencion(storage) {
         if (dueño && dueño !== nid) return { error: `la cuenta ${c} ya es de otro negocio` };
       }
       const limiteDia = Math.min(Math.max(Number(datos?.limiteDia ?? antes?.limiteDia ?? 300) || 300, 10), 5000);
-      const n = { id: nid, nombre, emails, cuentas, limiteDia, creado: antes?.creado ?? now, actualizado: now };
+      // Canales que contrató el negocio (ZL-122): Instagram, WhatsApp o ambos. Con un canal apagado, el agente no responde ahí.
+      const c0 = antes?.canales ?? { instagram: true, whatsapp: false };
+      const ci = datos?.canales ?? {};
+      const canales = { instagram: typeof ci.instagram === 'boolean' ? ci.instagram : c0.instagram, whatsapp: typeof ci.whatsapp === 'boolean' ? ci.whatsapp : c0.whatsapp };
+      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);

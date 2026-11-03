@@ -1,173 +1,60 @@
 ﻿<#
-Zustro Labs · Instagram de un cliente, paso a paso (Windows, PowerShell 5.1 o más nuevo).
+Zustro Labs · Instagram de un cliente, de punta a punta (Windows PowerShell 5.1 o más nuevo). ZL-111, ZL-113, ZL-122.
 
-Conecta la cuenta de Instagram de un cliente al asistente del estudio usando la app de Meta DEL CLIENTE
-(así el acceso estándar le alcanza y no hace falta la revisión de Meta). El script:
-  1. revisa que el Worker esté configurado;
-  2. te va abriendo los enlaces de Meta en orden y te dice qué copiar en cada uno;
-  3. registra la app del cliente en el Worker;
-  4. comprueba que el webhook esté bien (misma frase de verificación);
-  5. arma el link de conexión y espera hasta ver la cuenta conectada;
-  6. carga la FICHA DEL NEGOCIO (fichas/PLANTILLA.md): la revisa, te deja chatear de prueba y la activa.
-     Sin ficha activa, la cuenta del cliente no responde nada (nunca como Zustro Labs).
-Lo que no puede hacer por vos: crear la app en Meta (es dentro de la cuenta del cliente) y apretar los botones del
-panel de Meta. Para eso te dice exactamente dónde y qué.
+Deja la cuenta de Instagram de un negocio respondiendo con SU ficha y SUS productos, usando la app de Meta DEL CLIENTE
+(acceso estándar: sin revisión de Meta ni verificación de empresa). Unos 20 minutos con el cliente al lado:
+  0. revisa el Worker;                         5. vincula la cuenta al negocio (canal Instagram);
+  1. el negocio (lo crea si es nuevo);          6. la ficha: la arma desde la plantilla, la revisás, chateás de
+  2. lo que el cliente necesita tener;            prueba y la activás;
+  3. la app de Meta (la registra en el Worker); 7. los correos en Access y los productos (si no viene de
+  4. la configuración de Meta y la conexión;       cliente-nuevo.ps1);  8. la prueba real.
+Lo que no puede hacer por vos: apretar los botones de Meta (es dentro de la cuenta del cliente) ni agregar los
+correos en Access. Para eso te dice exactamente dónde y qué, y te deja todo copiado.
 
-Uso (clic derecho → «Ejecutar con PowerShell», o en una ventana de PowerShell):
-  .\instagram-cliente.ps1
-  .\instagram-cliente.ps1 -Nombre "Chocolatería X"
-  .\instagram-cliente.ps1 -Ficha ..\fichas\clientes\chocolateria-x.md     (solo cargar o actualizar la ficha)
-  .\instagram-cliente.ps1 -SoloEstado
-Secretos: pide la clave de administración y la del link por teclado (no se muestran ni se guardan). Si querés evitar
-teclearlas cada vez, podés ponerlas en las variables de entorno ZL_IG_ADMIN_CLAVE y ZL_IG_CONECTAR_CLAVE de tu
-usuario de Windows (nunca en un archivo del repo).
+Uso (clic derecho → «Ejecutar con PowerShell», o en una ventana de PowerShell en esta carpeta):
+  .\cliente-nuevo.ps1                         lo normal: alta completa, elige Instagram, WhatsApp o ambos
+  .\instagram-cliente.ps1                     solo Instagram (negocio nuevo o uno que ya está)
+  .\instagram-cliente.ps1 -Ficha ..\fichas\clientes\mi-negocio.md    solo cargar o actualizar la ficha
+  .\instagram-cliente.ps1 -SoloEstado        ver qué cuentas hay y en qué estado
+Si Windows dice que los scripts están deshabilitados: Set-ExecutionPolicy -Scope Process Bypass
 Guía completa: whatsapp/INSTAGRAM_CLIENTES.md
 #>
 param(
-  [string]$Nombre = "",
+  [string]$Negocio = "",
   [string]$Ficha = "",
   [string]$Cuenta = "",
   [string]$Worker = "https://zustrolabs.com",
-  [switch]$SoloEstado
+  [switch]$SoloEstado,
+  [switch]$DesdeAlta
 )
 
-$ErrorActionPreference = "Stop"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$Admin = "$Worker/api/instagram/admin"
+. "$PSScriptRoot\comun.ps1"
 $UrlVuelta = "$Worker/api/instagram/conectar/vuelta"
 $UrlWebhook = "$Worker/api/instagram"
 
-function Titulo($t) { Write-Host ""; Write-Host ("═" * 72) -ForegroundColor DarkGray; Write-Host "  $t" -ForegroundColor Red; Write-Host ("═" * 72) -ForegroundColor DarkGray }
-function Paso($n, $t) { Write-Host ""; Write-Host "[$n] $t" -ForegroundColor Yellow }
-function Ok($t) { Write-Host "  ✔ $t" -ForegroundColor Green }
-function Falla($t) { Write-Host "  ✘ $t" -ForegroundColor Red }
-function Nota($t) { Write-Host "  · $t" -ForegroundColor Gray }
-function Abrir($url) { Write-Host "  → $url" -ForegroundColor Cyan; try { Start-Process $url | Out-Null } catch {} }
-function Seguir($t = "Apretá Enter cuando esté hecho") { Write-Host ""; Read-Host "  $t" | Out-Null }
-function Secreto($pregunta, $variable) {
-  if ($variable) {
-    $v = [Environment]::GetEnvironmentVariable($variable)
-    if ($v) { Nota "Usando $variable de las variables de entorno."; return $v }
-  }
-  $s = Read-Host "  $pregunta" -AsSecureString
-  $p = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
-  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($p) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p) }
-}
-function Llamar($metodo, $ruta, $cuerpo = $null) {
-  $args = @{ Method = $metodo; Uri = "$Admin$ruta"; Headers = @{ Authorization = "Bearer $script:ClaveAdmin" }; ContentType = "application/json; charset=utf-8" }
-  if ($cuerpo) { $args.Body = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $cuerpo -Compress)) }
-  return Invoke-RestMethod @args
-}
-
-# ── La ficha del negocio (ZL-113): revisar → probar → cargar → activar ──
-function Mostrar-Revision($r) {
-  if ($r.errores -and $r.errores.Count) { foreach ($e in $r.errores) { Falla $e }; return $false }
-  Ok ("Ficha de «" + $r.nombre + "» · idioma " + $r.idioma + " · trato " + $r.trato + " · precios " + $(if ($r.precios) { "sí" } else { "no" }) + " · pausa " + $r.pausaHoras + " h")
-  Nota "Menú:"; foreach ($o in $r.menu) { Nota ("   " + $o) }
-  if ($r.pendientes -and $r.pendientes.Count) {
-    Write-Host ("  ! Falta completar ([COMPLETAR …]): " + ($r.pendientes -join " · ")) -ForegroundColor Yellow
-    Nota "  Se puede probar y guardar apagada, pero no activar hasta completarla."
-  }
-  return $true
-}
-function Mostrar-Respuestas($item) {
-  foreach ($t in $item.respuestas) { Write-Host ""; foreach ($l in ($t -split "`n")) { Write-Host ("    │ " + $l) -ForegroundColor White } }
-  if ($item.notas -and $item.notas.Count) { Nota ("(controles: " + ($item.notas -join ", ") + ": se sacó algo que no estaba en la ficha)") }
-}
-function Flujo-Ficha($ruta, $cuentaId) {
-  if (-not $ruta) {
-    $ruta = Read-Host "  Ruta del archivo de la ficha (p. ej. ..\fichas\clientes\mi-negocio.md; la plantilla está en ..\fichas\PLANTILLA.md)"
-  }
-  $ruta = $ruta.Trim('"').Trim()
-  if (-not (Test-Path $ruta)) { Falla "No encuentro $ruta"; exit 1 }
-  $texto = [IO.File]::ReadAllText((Resolve-Path $ruta).Path, [Text.Encoding]::UTF8)
-
-  Paso "F1" "Reviso la ficha"
-  try { $rev = Llamar POST "/ficha/revisar" @{ texto = $texto } } catch {
-    try { $rev = ($_.ErrorDetails.Message | ConvertFrom-Json) } catch { Falla "El Worker no respondió: $($_.Exception.Message)"; exit 1 }
-  }
-  if (-not (Mostrar-Revision $rev)) { Falla "Arreglá eso en el archivo y volvé a correr el script."; exit 1 }
-
-  Paso "F2" "Chat de prueba (no se manda nada a Instagram ni se guarda)"
-  Nota "Así saluda a alguien que escribe «hola»:"
-  $p = Llamar POST "/ficha/probar" @{ texto = $texto; mensajes = @("hola") }
-  Mostrar-Respuestas $p.charla[0]
-  Write-Host ""
-  Nota "Escribí como si fueras un cliente (un número del menú, una pregunta, PERSONA…). Enter vacío para terminar."
-  while ($true) {
-    $m = Read-Host "  Cliente"
-    if (-not $m) { break }
-    try {
-      $p = Llamar POST "/ficha/probar" @{ texto = $texto; mensajes = @("hola", $m) }
-      Mostrar-Respuestas $p.charla[1]
-    } catch { Falla "No pude probar: $($_.Exception.Message)" }
-  }
-
-  Paso "F3" "¿En qué cuenta la cargo?"
-  $e = Llamar GET "/estado"
-  $clientes = @($e.cuentas | Where-Object { $_.ficha -ne "estudio" })
-  if (-not $clientes.Count) { Falla "No hay cuentas de clientes conectadas. Conectá la cuenta primero (el script sin -Ficha)."; exit 1 }
-  $elegida = $null
-  if ($cuentaId) { $elegida = $clientes | Where-Object { $_.id -eq $cuentaId -or $_.username -eq $cuentaId.TrimStart('@') } | Select-Object -First 1 }
-  if (-not $elegida) {
-    for ($i = 0; $i -lt $clientes.Count; $i++) {
-      $f = $clientes[$i].ficha
-      $estadoFicha = if (-not $f.tiene) { "sin ficha" } elseif ($f.activa) { "ficha activa: " + $f.nombre } else { "ficha apagada: " + $f.nombre }
-      Nota ("[" + ($i + 1) + "] @" + $clientes[$i].username + "  (" + $estadoFicha + ")")
-    }
-    $n = 0; [void][int]::TryParse((Read-Host "  Número de la cuenta"), [ref]$n)
-    if ($n -lt 1 -or $n -gt $clientes.Count) { Falla "Número inválido."; exit 1 }
-    $elegida = $clientes[$n - 1]
-  }
-
-  Paso "F4" "Cargar"
-  $activar = $false
-  if ($rev.pendientes -and $rev.pendientes.Count) {
-    Nota "Como falta completar, se guarda APAGADA: @$($elegida.username) no va a responder hasta que la actives."
-  } else {
-    $resp = Read-Host "  ¿La dejo respondiendo a los clientes de @$($elegida.username) ahora? (s/n)"
-    $activar = ($resp -match '^[sS]')
-  }
-  try {
-    $r = Llamar PUT ("/cuentas/" + $elegida.id + "/ficha") @{ texto = $texto; activa = $activar }
-    if ($activar) { Ok "Ficha cargada y ACTIVA en @$($elegida.username)." } else { Ok "Ficha cargada APAGADA en @$($elegida.username) (no responde todavía)." }
-  } catch {
-    $msg = $_.Exception.Message; try { $msg = ($_.ErrorDetails.Message | ConvertFrom-Json).error } catch {}
-    Falla "El Worker no la aceptó: $msg"; exit 1
-  }
-  Nota "Para cambiar algo: editá el archivo y corré  .\instagram-cliente.ps1 -Ficha `"$ruta`"  (pisa la anterior)."
-  Nota "Prueba real: desde OTRA cuenta de Instagram, «hola» a @$($elegida.username): saludo del negocio y su menú."
-}
-
-Titulo "Zustro Labs · Instagram de un cliente"
+if (-not $DesdeAlta) { Titulo "Zustro Labs · Instagram de un cliente" }
 
 # ── 0. El Worker ──
 Paso 0 "Reviso el Worker ($Worker)"
-$script:ClaveAdmin = Secreto "Clave de administración (IG_ADMIN_CLAVE)" "ZL_IG_ADMIN_CLAVE"
-try { $estado = Llamar GET "/estado" } catch {
-  Falla "No pude leer el estado: $($_.Exception.Message)"
-  Nota "¿La clave es la del secreto IG_ADMIN_CLAVE del Worker zustrolabs-whatsapp? ¿Está publicada la versión con /api/instagram/admin?"
-  exit 1
-}
-$c = $estado.configurado
-foreach ($k in @("app_estudio", "verify", "link", "ia", "aviso")) { if ($c.$k) { Ok "$k configurado" } else { Falla "$k SIN configurar" } }
-if (-not ($c.app_estudio -and $c.verify -and $c.link -and $c.ia)) {
-  Falla "Faltan secretos en Cloudflare (Workers & Pages → zustrolabs-whatsapp → Settings → Variables and Secrets). Ver whatsapp/README.md."
-  exit 1
-}
-Nota ("Apps de clientes registradas: " + $estado.apps.Count + " · cuentas conectadas: " + $estado.cuentas.Count)
+$estado = Conectar-Worker
 foreach ($cu in $estado.cuentas) {
   $fi = if ($cu.ficha -eq "estudio") { "cuenta del estudio" } elseif (-not $cu.ficha.tiene) { "SIN ficha: no responde" } elseif ($cu.ficha.activa) { "ficha activa" } else { "ficha apagada: no responde" }
-  Nota ("  @" + $cu.username + "  (app " + $cu.app + ", token vence en " + $cu.tokenVenceEnDias + " días, " + $fi + ")")
+  Nota ("  @" + $cu.username + "  (" + $fi + ", token vence en " + $cu.tokenVenceEnDias + " días)")
 }
 if ($SoloEstado) { exit 0 }
 if ($Ficha) { Flujo-Ficha $Ficha $Cuenta; exit 0 }
 
-# ── 1. El cliente ──
-Paso 1 "Datos del cliente"
-if (-not $Nombre) { $Nombre = Read-Host "  Nombre del cliente (como querés verlo en la lista)" }
-Write-Host ""
-Write-Host "  Lo que el cliente tiene que tener ANTES (si no, lo hacemos con él en este orden):" -ForegroundColor White
+# ── 1. El negocio ──
+Paso 1 "El negocio"
+if ($Negocio) {
+  $neg = @((Llamar GET "/negocios").negocios) | Where-Object { $_.id -eq $Negocio } | Select-Object -First 1
+  if (-not $neg) { Falla "No encuentro el negocio $Negocio."; exit 1 }
+  Ok "Negocio: $($neg.nombre)"
+} else { $neg = Elegir-Negocio }
+$Nombre = $neg.nombre
+
+# ── 2. El cliente ──
+Paso 2 "Lo que el cliente tiene que tener (si no, lo hacemos con él en este orden)"
 Nota "a) Una cuenta de Instagram PROFESIONAL (Empresa o Creador). Si es personal: Instagram → Configuración →"
 Nota "   Tipo de cuenta y herramientas → Cambiar a cuenta profesional."
 Abrir "https://help.instagram.com/502981923235522"
@@ -176,38 +63,36 @@ Nota "   Herramientas conectadas → «Permitir acceso a los mensajes» ENCENDID
 Nota "c) Una cuenta de Facebook del cliente (cualquiera, no hace falta página) para crear la app de Meta."
 Seguir "Apretá Enter cuando el cliente tenga las tres cosas"
 
-# ── 2. La app de Meta del cliente ──
-Paso 2 "Crear la app de Meta (en la cuenta de Facebook DEL CLIENTE, con él al lado o compartiendo pantalla)"
-Nota "1. Entrar a Meta for Developers con el Facebook del cliente. Si es la primera vez, le pide registrarse como"
-Nota "   desarrollador (verifica teléfono o correo y acepta los términos):"
+# ── 3. La app de Meta del cliente ──
+Paso 3 "Crear la app de Meta (en el Facebook DEL CLIENTE, con él al lado o compartiendo pantalla)"
+Nota "1. Si nunca usó Meta for Developers, registrarse como desarrollador (verifica teléfono o correo):"
 Abrir "https://developers.facebook.com/async/registration/"
 Nota "2. Crear la app:"
 Abrir "https://developers.facebook.com/apps/creation/"
-Nota "   · Nombre de la app: el nombre del negocio (p. ej. «$Nombre»). Correo: el del cliente."
-Nota "   · Caso de uso: «Manage messaging & content on Instagram» (Gestionar mensajes y contenido en Instagram)."
-Nota "   · Portafolio comercial: ninguno / omitir, salvo que el cliente ya tenga uno. Crear app."
-Nota "3. En la app: Use cases → Customize → pestaña «API setup with Instagram login»."
-Nota "   · Botón «Add all required permissions» (paso 1 de esa pestaña)."
-Nota "   · Arriba están «Instagram app ID» e «Instagram app secret» (botón Show). SON los de Instagram, no los de"
-Nota "     App settings → Basic (ese es el secret de Facebook y NO sirve acá)."
+Nota "   · Nombre de la app: «$Nombre». Correo: el del cliente."
+Nota "   · Caso de uso: «Manage messaging & content on Instagram». Portafolio comercial: ninguno. Crear app."
+Nota "3. En la app: Use cases → Customize → pestaña «API setup with Instagram login» (no la de Facebook login)."
+Nota "   · Botón «Add all required permissions»."
+Nota "   · Arriba: «Instagram app ID» e «Instagram app secret» (botón Show). SON los de Instagram: el «App secret»"
+Nota "     de App settings → Basic es el de Facebook y NO sirve acá."
 Write-Host ""
 $appId = (Read-Host "  Pegá el Instagram app ID").Trim()
 if ($appId -notmatch '^\d{6,20}$') { Falla "El Instagram app ID son solo dígitos."; exit 1 }
 $appSecret = (Secreto "Pegá el Instagram app secret (no se muestra)" $null).Trim()
 if ($appSecret.Length -lt 16) { Falla "Ese secret es muy corto; copialo entero con el botón Show."; exit 1 }
 try {
-  $alta = Llamar POST "/apps" @{ id = $appId; secreto = $appSecret; nombre = $Nombre }
+  Llamar POST "/apps" @{ id = $appId; secreto = $appSecret; nombre = $Nombre } | Out-Null
   Ok "App $appId registrada en el Worker como «$Nombre»."
-} catch { Falla "El Worker no aceptó la app: $($_.Exception.Message)"; exit 1 }
+} catch { Falla "El Worker no aceptó la app: $(Leer-Error $_)"; exit 1 }
 $appSecret = $null
 
-# ── 3. Lo que va en la pestaña «API setup with Instagram login» ──
-Paso 3 "Configurar la misma pestaña de Meta (tres cosas)"
-Nota "A) Paso 4 «Set up Instagram business login» → botón Set up → Redirect URL:"
+# ── 4. Configurar Meta y conectar ──
+Paso 4 "Configurar la misma pestaña de Meta (tres cosas) y conectar la cuenta"
+Nota "A) Paso «Set up Instagram business login» → Set up → Redirect URL:"
 Write-Host "       $UrlVuelta" -ForegroundColor White
-Set-Clipboard -Value $UrlVuelta; Nota "   (ya está copiada al portapapeles) → Save."
+Set-Clipboard -Value $UrlVuelta; Nota "   (copiada al portapapeles) → Save."
 Seguir
-Nota "B) Paso 3 «Configure webhooks»:"
+Nota "B) Paso «Configure webhooks»:"
 Write-Host "       Callback URL: $UrlWebhook" -ForegroundColor White
 Nota "   Verify token: la frase del secreto IG_VERIFY_TOKEN del Worker (la misma para todos los clientes)."
 $verify = Secreto "   Escribí esa frase acá para comprobarla antes de cargarla en Meta" "ZL_IG_VERIFY_TOKEN"
@@ -215,28 +100,23 @@ try {
   $resp = Invoke-WebRequest -UseBasicParsing -Uri ("$UrlWebhook" + "?hub.mode=subscribe&hub.verify_token=" + [Uri]::EscapeDataString($verify) + "&hub.challenge=prueba123")
   if ($resp.StatusCode -eq 200 -and $resp.Content -eq "prueba123") { Ok "El Worker acepta esa frase: es la correcta." } else { Falla "El Worker no la aceptó. Fijate el secreto IG_VERIFY_TOKEN en Cloudflare."; exit 1 }
 } catch { Falla "El Worker rechazó la frase (no coincide con IG_VERIFY_TOKEN). Cargá la correcta antes de seguir."; exit 1 }
-Set-Clipboard -Value $UrlWebhook; Nota "   Callback URL copiada al portapapeles. Pegala, escribí la frase y apretá «Verify and save»."
-Nota "   Tiene que quedar sin error. Después, en la lista de campos, poné «messages» en Subscribed."
+Set-Clipboard -Value $UrlWebhook
+Nota "   Callback URL copiada. Pegala, escribí la frase y apretá «Verify and save» (tiene que quedar sin error)."
+Nota "   Después, en la lista de campos, «messages» en Subscribed."
 $verify = $null
 Seguir
-Nota "C) App settings → Basic (menú izquierdo): Privacy Policy URL = https://zustrolabs.com/privacidad/ (o la del"
-Nota "   cliente si tiene), Category = «Business and pages», Save. Luego Publish (menú izquierdo) → Publish → Live."
-Nota "   Sin Live, Meta no manda mensajes reales."
+Nota "C) App settings → Basic: Privacy Policy URL = https://zustrolabs.com/privacidad/ (o la del cliente),"
+Nota "   Category = «Business and pages», Save. Después Publish → Live. Sin Live, Meta no manda mensajes reales."
 Seguir
-
-# ── 4. Conectar la cuenta ──
-Paso 4 "Conectar la cuenta de Instagram del cliente"
 $claveLink = Secreto "Clave del link (IG_CONECTAR_CLAVE)" "ZL_IG_CONECTAR_CLAVE"
 $link = "$Worker/api/instagram/conectar?clave=" + [Uri]::EscapeDataString($claveLink) + "&app=$appId"
 $claveLink = $null
 Set-Clipboard -Value $link
 Write-Host ""
-Write-Host "  El link de conexión quedó copiado al portapapeles. Mandáselo al cliente (o abrilo con él):" -ForegroundColor White
-Nota "· Tiene que abrirlo en un navegador donde esté ENTRADO en Instagram con la cuenta del negocio."
-Nota "· Instagram le muestra los dos permisos → Permitir → ve «Listo: la cuenta @… quedó conectada»."
+Write-Host "  El link de conexión quedó copiado. Abrilo con el cliente (o mandáselo):" -ForegroundColor White
+Nota "· En un navegador donde esté ENTRADO en Instagram con la cuenta del negocio → Permitir → «Listo»."
 Nota "· El link vence a los 15 minutos de abrirlo: si tarda, se vuelve a abrir."
-Write-Host ""
-Write-Host "  Espero a que aparezca la cuenta conectada (hasta 15 minutos)…" -ForegroundColor White
+Write-Host "  Espero la cuenta conectada (hasta 15 minutos)…" -ForegroundColor White
 $fin = (Get-Date).AddMinutes(15); $nueva = $null
 while ((Get-Date) -lt $fin) {
   Start-Sleep -Seconds 10
@@ -245,28 +125,37 @@ while ((Get-Date) -lt $fin) {
   Write-Host "." -NoNewline
 }
 Write-Host ""
-if (-not $nueva) { Falla "Todavía no se conectó. Cuando lo haga, corré el script con -SoloEstado para verla."; exit 1 }
-Ok ("Conectada: @" + $nueva.username + " (token vence en " + $nueva.tokenVenceEnDias + " días; el Worker lo renueva solo).")
+if (-not $nueva) { Falla "Todavía no se conectó. Cuando lo haga, corré  .\instagram-cliente.ps1 -SoloEstado  para verla."; exit 1 }
+Ok ("Conectada: @" + $nueva.username + " (el token dura 60 días y el Worker lo renueva solo).")
 
-# ── 5. La ficha del negocio ──
-Paso 5 "La ficha del negocio (lo que sabe y cómo habla el asistente de @$($nueva.username))"
+# ── 5. Vincularla al negocio ──
+Paso 5 "Vincular @$($nueva.username) a «$Nombre»"
+Vincular-Cuenta $neg $nueva.id "instagram"
+
+# ── 6. La ficha ──
+Paso 6 "La ficha del negocio (cómo habla el asistente de @$($nueva.username))"
 Nota "Hasta que tenga una ficha activa, la cuenta NO responde (nunca como Zustro Labs)."
-Nota "Si todavía no la completaste: copiá ..\fichas\PLANTILLA.md a ..\fichas\clientes\<negocio>.md, completala con el"
-Nota "cliente y volvé a correr  .\instagram-cliente.ps1 -Ficha ..\fichas\clientes\<negocio>.md"
-$hayFicha = Read-Host "  ¿Ya tenés la ficha completa? (s/n)"
-if ($hayFicha -match '^[sS]') { Flujo-Ficha "" $nueva.id }
+$rutaFicha = Preparar-Ficha $Nombre
+Flujo-Ficha $rutaFicha $nueva.id
 
-# ── 6. Prueba ──
-Paso 6 "Prueba"
+# ── 7. Access y productos (cliente-nuevo.ps1 lo hace una sola vez para todos los canales) ──
+if (-not $DesdeAlta) {
+  Paso 7 "Quién entra a la app y los productos"
+  Paso-Acceso (($neg.emails) -join ",")
+  Paso-Productos $Nombre
+}
+
+# ── 8. Prueba ──
+Paso 8 "Prueba real"
 Nota "Desde OTRA cuenta de Instagram (no la del negocio), mandar «hola» a @$($nueva.username)."
-Nota "Con la ficha activa tiene que llegar el saludo del negocio y su menú. Después un número y una pregunta."
+Nota "Tiene que llegar el saludo del negocio y su menú. Después un número y una pregunta sobre un producto."
 Nota "Si no responde: Cloudflare → Workers & Pages → zustrolabs-whatsapp → Observability. Buscá «que»:"
-Nota "  «sin_ficha» o «ficha_inactiva» = falta cargar o activar la ficha (-Ficha) ·"
-Nota "  «aviso» con eventos 0 = Meta mandó algo que no es un mensaje (eco, visto) · «cuenta_desconocida» = la cuenta"
-Nota "  no está conectada · «firma» = el secret cargado no es el de Instagram · nada = Meta no manda: revisar Live,"
-Nota "  «messages» suscripto y «Permitir acceso a los mensajes»."
-Write-Host ""
-Titulo "Listo. Resumen"
-Nota "Cliente: $Nombre · app $appId · cuenta @$($nueva.username)"
-Nota "Lo que queda a mano siempre: nada. El token se renueva solo y la suscripción se revisa todos los días."
-Nota "Para ver todo: .\instagram-cliente.ps1 -SoloEstado"
+Nota "  «sin_ficha» o «ficha_inactiva» = falta cargar o activar la ficha (-Ficha) · «canal_apagado» = en la app, el"
+Nota "  negocio tiene Instagram apagado · «cuenta_desconocida» = la cuenta no está conectada · «firma» = el secret"
+Nota "  cargado no es el de Instagram · nada = Meta no manda: revisar Live, «messages» y «Permitir acceso a los mensajes»."
+if (-not $DesdeAlta) {
+  Titulo "Listo"
+  Nota "Negocio: $Nombre · app de Meta $appId · @$($nueva.username) · ficha: $rutaFicha"
+  $min = [int][Math]::Floor(((Get-Date) - $script:Inicio).TotalMinutes)
+  Nota "Tiempo: $min minutos. El token se renueva solo y la suscripción se revisa todos los días."
+}

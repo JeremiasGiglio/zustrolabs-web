@@ -201,7 +201,8 @@ function app() {
         h('span', { class: 'chip' }, (d.resumen ? d.resumen.total : 0) + ((d.resumen && d.resumen.total === 1) ? ' producto' : ' productos')),
         h('span', { class: 'chip' }, (d.resumen ? d.resumen.activos : 0) + ' a la venta'),
         d.resumen && d.resumen.agotados ? h('span', { class: 'chip mal' }, d.resumen.agotados + (d.resumen.agotados === 1 ? ' agotado' : ' agotados')) : null,
-        h('span', { class: 'chip ' + (as.activo ? 'ok' : 'alerta') }, as.activo ? 'Asistente activo' : as.tiene ? 'Asistente apagado' : 'Asistente sin configurar')));
+        h('span', { class: 'chip ' + (as.activo ? 'ok' : 'alerta') }, as.activo ? 'Asistente activo' : as.tiene ? 'Asistente apagado' : 'Asistente sin configurar'),
+        h('span', { class: 'chip' }, 'Canales: ' + ([d.negocio.canales.instagram ? 'Instagram' : '', d.negocio.canales.whatsapp ? 'WhatsApp (en prueba)' : ''].filter(Boolean).join(' y ') || 'ninguno'))));
     const buscar = h('input', { type: 'search', placeholder: 'Buscar por nombre, código o categoría', 'aria-label': 'Buscar', value: estado.q });
     const cats = h('select', { 'aria-label': 'Categoría' }, h('option', { value: '' }, 'Todas las categorías'));
     const pausados = h('input', { type: 'checkbox', checked: estado.pausados });
@@ -539,7 +540,9 @@ function app() {
       for (const n of negocios) {
         const em = h('input', { type: 'text', value: n.emails.join(', '), 'aria-label': 'Correos de ' + n.nombre });
         const lim = h('input', { type: 'number', min: 10, max: 5000, value: n.limiteDia, 'aria-label': 'Respuestas de IA por día' });
-        const marcas = cuentas.filter((c) => !c.negocio || c.negocio === n.id).map((c) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: c.id, checked: n.cuentas.includes(c.id) }), '@' + (c.username || c.id)));
+        const marcas = cuentas.filter((c) => !c.negocio || c.negocio === n.id).map((c) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: c.id, 'data-cuenta': '1', checked: n.cuentas.includes(c.id) }), '@' + (c.username || c.id)));
+        const ig = h('input', { type: 'checkbox', checked: n.canales.instagram });
+        const wa = h('input', { type: 'checkbox', checked: n.canales.whatsapp });
         lista.append(h('div', { class: 'caja' },
           h('h3', {}, n.nombre),
           h('div', { class: 'chips' },
@@ -547,13 +550,16 @@ function app() {
             h('span', { class: 'chip' }, 'IA hoy: ' + n.usoHoy + ' / ' + n.limiteDia),
             h('span', { class: 'chip' }, 'IA este mes: ' + n.usoMes)),
           etiqueta('Quiénes entran', em), em,
+          h('p', { class: 'ayuda' }, 'Canales que contrató (con un canal apagado, el asistente no responde ahí)'),
+          h('label', { class: 'check' }, ig, 'Instagram'),
+          h('label', { class: 'check' }, wa, 'WhatsApp (en prueba: todavía no se conecta)'),
           h('p', { class: 'ayuda' }, 'Cuentas de Instagram'), marcas.length ? marcas : h('p', { class: 'ayuda' }, 'No hay cuentas conectadas libres. Conectalas con el script instagram-cliente.ps1.'),
           etiqueta('Tope de respuestas de la IA por día', lim), lim,
           h('div', { class: 'acciones' },
             h('button', { class: 'btn', onclick: () => { estado.negocio = n.id; estado.tab = 'productos'; recordar(); cargarNegocio(); } }, 'Abrir'),
             h('button', { class: 'btn prim', onclick: conError(async (e) => {
-              const marcadas = [...e.target.closest('.caja').querySelectorAll('input[type=checkbox]:checked')].map((x) => x.value);
-              await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value) } });
+              const marcadas = [...e.target.closest('.caja').querySelectorAll('input[data-cuenta]:checked')].map((x) => x.value);
+              await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value), canales: { instagram: ig.checked, whatsapp: wa.checked } } });
               aviso('Guardado');
             }) }, 'Guardar'))));
       }
