@@ -77,8 +77,26 @@ const parteJson = (s) => JSON.parse(new TextDecoder().decode(b64url(s)));
 let certs = { at: 0, url: "", keys: [] };
 export const _resetCerts = () => (certs = { at: 0, url: "", keys: [] });
 
-/** Verifica el token Cf-Access-Jwt-Assertion. Devuelve el mail o null. */
+/** Verifica el token Cf-Access-Jwt-Assertion del panel del equipo. Devuelve el mail (si está en PANEL_EMAILS) o null. */
 export async function verificarAcceso(request, env, fetchImpl = fetch, now = Date.now()) {
+  const email = await emailDeAcceso(request, env, env.ACCESS_AUD, fetchImpl, now);
+  const permitidos = correosDe(env.PANEL_EMAILS);
+  return email && permitidos.includes(email) ? email : null;
+}
+
+/** Lista de correos separada por comas, en minúsculas. */
+export const correosDe = (s) =>
+  String(s ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+
+/**
+ * Verifica la firma, la audiencia (`aud`: la de la app de Access que corresponde) y el vencimiento del token
+ * Cf-Access-Jwt-Assertion. Devuelve el mail de quien entró, o null. La lista de quién puede entrar la decide cada app.
+ */
+export async function emailDeAcceso(request, env, audEsperada, fetchImpl = fetch, now = Date.now()) {
+  if (!audEsperada || !env.ACCESS_TEAM_DOMAIN) return null;
   const token = request.headers.get("Cf-Access-Jwt-Assertion");
   if (!token) return null;
   const partes = token.split(".");
@@ -118,14 +136,10 @@ export async function verificarAcceso(request, env, fetchImpl = fetch, now = Dat
   );
   if (!ok) return null;
   const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  if (!aud.includes(env.ACCESS_AUD)) return null;
+  if (!aud.includes(audEsperada)) return null;
   if (!payload.exp || payload.exp * 1000 < now) return null;
   const email = String(payload.email ?? "").toLowerCase();
-  const permitidos = String(env.PANEL_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return permitidos.includes(email) ? email : null;
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? email : null;
 }
 
 // ───────────────────────── Panel ─────────────────────────

@@ -2,4 +2,4 @@
 // para el cron que revisa la suscripción de Instagram) y el Durable Object de la memoria (objeto.js).
 // index.js no importa nada de Cloudflare, así se prueba con `node --test`.
 export { default } from './index.js';
-export { Atencion } from './objeto.js';
+export { Atencion, Catalogo } from './objeto.js';

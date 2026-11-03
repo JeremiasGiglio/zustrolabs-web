@@ -157,3 +157,7 @@ Guía completa y script paso a paso para Windows: [`INSTAGRAM_CLIENTES.md`](INST
 ## Desarrollo
 - Tests: `npm test` acá, o `npm run test:worker` en la raíz, que también corre los del formulario y el asistente. No usan red: Meta, el modelo y el correo se simulan.
 - Si cambia `asistente/src/conocimiento.js`, este canal lo toma en la próxima publicación de este Worker.
+
+## App de negocios (ZL-121)
+
+`negocios.zustrolabs.com`: productos, stock, Excel, fotos e historial de cada negocio cliente, y lo que el asistente consulta antes de responder. Puesta en marcha (app de Access y `NEGOCIOS_ACCESS_AUD`) y alta de clientes en [`NEGOCIOS.md`](NEGOCIOS.md).

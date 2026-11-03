@@ -2,6 +2,7 @@
 // La lógica está en atencion.js; acá solo se conecta con Cloudflare y se programa la limpieza diaria.
 import { DurableObject } from 'cloudflare:workers';
 import { crearAtencion, DIA_MS } from './atencion.js';
+import { crearCatalogo, ejecutarCatalogo } from './catalogo.js';
 
 export class Atencion extends DurableObject {
   constructor(ctx, env) {
@@ -35,7 +36,35 @@ export class Atencion extends DurableObject {
   async guardarAppIg(id, datos, now) { await this.#alarma(); return this.a.guardarAppIg(id, datos, now); }
   borrarAppIg(id) { return this.a.borrarAppIg(id); }
   listaAppsIg() { return this.a.listaAppsIg(); }
-  fichaIg(cuenta) { return this.a.fichaIg(cuenta); }
-  async guardarFichaIg(cuenta, datos, now) { await this.#alarma(); return this.a.guardarFichaIg(cuenta, datos, now); }
-  borrarFichaIg(cuenta) { return this.a.borrarFichaIg(cuenta); }
+  negocio(id) { return this.a.negocio(id); }
+  listaNegocios() { return this.a.listaNegocios(); }
+  negociosDeEmail(email) { return this.a.negociosDeEmail(email); }
+  negocioDeCuenta(cuenta) { return this.a.negocioDeCuenta(cuenta); }
+  guardarNegocio(id, datos, now) { return this.a.guardarNegocio(id, datos, now); }
+  fichaNegocio(id) { return this.a.fichaNegocio(id); }
+  guardarFichaNegocio(id, datos, now) { return this.a.guardarFichaNegocio(id, datos, now); }
+  borrarFichaNegocio(id) { return this.a.borrarFichaNegocio(id); }
+  async contarUsoNegocio(id, now) { await this.#alarma(); return this.a.contarUsoNegocio(id, now); }
+  usoNegocio(id, now) { return this.a.usoNegocio(id, now); }
+}
+
+// Durable Object «Catalogo»: UNA instancia por negocio (idFromName(id del negocio)), con su propia base SQLite. Así
+// los productos de un negocio nunca están en la misma base que los de otro. La lógica está en catalogo.js.
+export class Catalogo extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.c = crearCatalogo(ctx.storage.sql, (fn) => ctx.storage.transactionSync(fn));
+  }
+
+  /** op: una de OPERACIONES (catalogo.js). Devuelve {ok, valor} o {ok: false, error}. */
+  async ejecutar(op, args) {
+    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + DIA_MS);
+    return ejecutarCatalogo(this.c, op, args);
+  }
+
+  /** Una vez por día: borra las fotos subidas que ningún producto usa (más de un día de viejas). */
+  async alarm() {
+    this.c.limpiarFotos(Date.now() - DIA_MS);
+    await this.ctx.storage.setAlarm(Date.now() + DIA_MS);
+  }
 }

@@ -7,6 +7,7 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
 import { parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { appNegocios, NEGOCIOS_HOST } from './negocios.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
@@ -51,11 +52,24 @@ export const mandarA = (env, m, fetchImpl, cuentas = null) => (esInstagram(m.to)
 /** Memoria, charlas y cuentas de Instagram: el Durable Object ATENCION (una sola instancia), o lo que pasen los tests. */
 function almacen(env, deps) {
   if (deps.memoria !== undefined || deps.charlas !== undefined || deps.cuentas !== undefined) {
-    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null, fichas: deps.fichas ?? null };
+    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null, fichas: deps.fichas ?? null, negocios: deps.negocios ?? null };
   }
-  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null, fichas: null };
+  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null, fichas: null, negocios: null };
   return adaptadores(env.ATENCION.get(env.ATENCION.idFromName('zustrolabs')));
 }
+
+/** La base de un negocio (Durable Object «Catalogo», una por negocio), o la de los tests. → {ejecutar(op, args)} */
+const catalogoDe = (env, deps) => deps.catalogo ?? ((id) => (env.CATALOGO ? env.CATALOGO.get(env.CATALOGO.idFromName(`negocio:${id}`)) : null));
+
+/** Lo que la IA consulta antes de responder: los productos de ese negocio que vienen al caso. */
+const consultaCatalogo = (env, deps, negocioId, ficha) => {
+  const cat = negocioId ? catalogoDe(env, deps)(negocioId) : null;
+  if (!cat) return null;
+  return async (texto) => {
+    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios }]);
+    return r?.ok ? r.valor : null;
+  };
+};
 
 const html = (cuerpo, status = 200) => new Response(cuerpo, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...SEGURIDAD } });
 
@@ -169,7 +183,14 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       const pf = parsearFicha(f.texto);
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
       perfil = perfilNegocio(pf.ficha);
-      preguntarEv = deps.preguntarNegocio ? deps.preguntarNegocio(pf.ficha) : preguntadorNegocio(env, pf.ficha);
+      const dueño = await a.negocios?.deCuenta(ev.cuenta);
+      const catalogo = consultaCatalogo(env, deps, dueño?.id, pf.ficha);
+      const ia = deps.preguntarNegocio ? deps.preguntarNegocio(pf.ficha, catalogo) : preguntadorNegocio(env, pf.ficha, { catalogo });
+      // Tope por negocio: uno con mucho movimiento no deja sin IA a los demás. También es lo que se le factura.
+      preguntarEv = async (texto, idioma) => {
+        if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
+        return ia(texto, idioma);
+      };
       charlasEv = null;
     }
     try {
@@ -210,11 +231,12 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
 /** La cuenta es de un cliente si se conectó con una app que no es la del estudio. */
 export const esCliente = (env, cuenta) => Boolean(cuenta?.app && cuenta.app !== String(env.IG_APP_ID ?? ''));
 
-/** Charla de prueba con una ficha, sin tocar la memoria real ni mandar nada a Instagram (para el script). */
-async function probarFicha(env, ficha, mensajes, deps) {
+/** Charla de prueba con una ficha (y los productos del negocio, si se sabe cuál), sin tocar la memoria real ni mandar nada. */
+async function probarFicha(env, ficha, mensajes, deps, negocioId = null) {
   const memoria = adaptadores(crearAtencion(almacenPrueba())).memoria;
   const perfil = perfilNegocio(ficha);
-  const preguntar = deps.preguntarNegocio ? deps.preguntarNegocio(ficha) : preguntadorNegocio(env, ficha);
+  const catalogo = consultaCatalogo(env, deps, negocioId, ficha);
+  const preguntar = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo });
   const now = deps.now ?? Date.now();
   const charla = [];
   for (const [i, texto] of mensajes.entries()) {
@@ -306,7 +328,8 @@ async function admin(request, env, deps) {
     const pf = parsearFicha(b.texto);
     if (ruta === '/ficha/revisar' || !pf.ok) return json({ ...resumenFicha(pf) }, pf.ok ? 200 : 400);
     const mensajes = (b.mensajes ?? ['hola']).map((x) => String(x).slice(0, 500)).filter(Boolean).slice(0, 12);
-    return json({ ...resumenFicha(pf), charla: await probarFicha(env, pf.ficha, mensajes, deps) }, 200);
+    const dueño = b.cuenta ? await almacen(env, deps).negocios?.deCuenta(String(b.cuenta)) : null;
+    return json({ ...resumenFicha(pf), charla: await probarFicha(env, pf.ficha, mensajes, deps, dueño?.id ?? null) }, 200);
   }
   m = /^\/cuentas\/(\d+)\/ficha$/.exec(ruta);
   if (m) {
@@ -328,7 +351,7 @@ async function admin(request, env, deps) {
       const pf = parsearFicha(b.texto);
       if (!pf.ok) return json(resumenFicha(pf), 400);
       if (b.activa && pf.pendientes.length) return json({ ...resumenFicha(pf), error: 'faltan completar cosas: la ficha se guarda solo apagada' }, 400);
-      await fichas.put(m[1], { texto: b.texto, activa: b.activa });
+      await fichas.put(m[1], { texto: b.texto, activa: b.activa, nombre: pf.ficha.nombre });
       console.log(JSON.stringify({ canal: 'ig', que: 'ficha', activa: b.activa }));
       return json({ ...resumenFicha(pf), activa: b.activa, cuenta: c.username }, 200);
     }
@@ -345,6 +368,13 @@ export default {
   async fetch(request, env, ctx, deps = {}) {
     const fetchImpl = deps.fetch ?? fetch;
     const url = new URL(request.url);
+    if (url.hostname === (env.NEGOCIOS_HOST || NEGOCIOS_HOST)) {
+      const a = almacen(env, deps);
+      return appNegocios(request, env, {
+        ...a, fetch: fetchImpl, now: deps.now, catalogo: catalogoDe(env, deps), esCliente: (c) => esCliente(env, c),
+        probar: (ficha, negocioId, mensajes) => probarFicha(env, ficha, mensajes, deps, negocioId),
+      });
+    }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
       const a = almacen(env, deps);
       return panel(request, env, { fetch: fetchImpl, now: deps.now, store: a.memoria, chats: a.charlas, send: (e, m) => mandarA(e, m, fetchImpl, a.cuentas) });
