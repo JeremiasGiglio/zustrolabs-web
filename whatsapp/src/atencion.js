@@ -8,7 +8,13 @@
 // - id:<wamid>     → para no responder dos veces un reintento de Meta: 1 hora.
 // - uso:<número>:<día> → cuántas respuestas de la IA tuvo ese número ese día: 2 días.
 // - chat:<número>  → la charla con atención humana (solo después de PERSONA): 30 días desde el último mensaje.
-// - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence}: no vence (se renueva el token).
+// - igc:<cuenta>   → cuenta de Instagram conectada {id, username, token, tokenVence, app}: no vence (se renueva el token).
+// - igapp:<id>     → app de Instagram de un cliente {id, secreto, nombre, creado}: no vence.
+// - neg:<id>       → negocio cliente {id, nombre, emails, cuentas, limiteDia, creado} (ZL-121): no vence.
+//   negmail:<correo> → {ids} y negcta:<cuenta> → {id}: índices para encontrar el negocio de quien entra a la app o
+//   de la cuenta de Instagram que recibió un mensaje.
+// - negf:<id>      → ficha del asistente de ese negocio {texto, activa, actualizada} (ZL-113): no vence.
+// - neguso:<id>:<día> → respuestas de la IA de ese negocio ese día: 40 días (para el tope diario y para facturar).
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
 export const DIA_MS = 24 * 3600_000;
@@ -94,14 +100,107 @@ export function crearAtencion(storage) {
       return (await s.get(`igc:${id}`)) ?? null;
     },
     async guardarCuentaIg(id, datos) {
-      const { username = '', token, tokenVence = 0 } = datos ?? {};
-      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence });
+      const { username = '', token, tokenVence = 0, app = '' } = datos ?? {};
+      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app) });
     },
     async borrarCuentaIg(id) {
       await s.delete(`igc:${id}`);
     },
     async listaCuentasIg() {
       return [...(await s.list({ prefix: 'igc:' })).values()];
+    },
+
+    // ── Apps de Instagram de clientes ──
+    async appIg(id) {
+      return (await s.get(`igapp:${id}`)) ?? null;
+    },
+    async guardarAppIg(id, datos, now) {
+      const { secreto, nombre = '' } = datos ?? {};
+      const antes = await s.get(`igapp:${id}`);
+      await s.put(`igapp:${id}`, { id: String(id), secreto, nombre: String(nombre).slice(0, 80), creado: antes?.creado ?? now });
+    },
+    async borrarAppIg(id) {
+      await s.delete(`igapp:${id}`);
+    },
+    async listaAppsIg() {
+      return [...(await s.list({ prefix: 'igapp:' })).values()];
+    },
+    // ── Negocios clientes (ZL-121) ──
+    // Los errores que puede ver quien usa la app vuelven como {error}; así cruzan el RPC del Durable Object.
+    async negocio(id) {
+      return (await s.get(`neg:${id}`)) ?? null;
+    },
+    async listaNegocios() {
+      return [...(await s.list({ prefix: 'neg:' })).values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+    },
+    async negociosDeEmail(email) {
+      const ids = (await s.get(`negmail:${String(email).toLowerCase()}`))?.ids ?? [];
+      const out = [];
+      for (const id of ids) {
+        const n = await s.get(`neg:${id}`);
+        if (n) out.push(n);
+      }
+      return out;
+    },
+    async negocioDeCuenta(cuenta) {
+      const id = (await s.get(`negcta:${cuenta}`))?.id;
+      return id ? (await s.get(`neg:${id}`)) ?? null : null;
+    },
+    /** Crea o cambia un negocio y mantiene los índices. Una cuenta de Instagram es de un solo negocio. */
+    async guardarNegocio(id, datos, now) {
+      const antes = id ? await s.get(`neg:${id}`) : null;
+      if (id && !antes) return { error: 'ese negocio no existe' };
+      const nombre = String(datos?.nombre ?? antes?.nombre ?? '').trim().slice(0, 80);
+      if (!nombre) return { error: 'falta el nombre del negocio' };
+      const emails = [...new Set((datos?.emails ?? antes?.emails ?? []).map((e) => String(e).trim().toLowerCase()).filter(Boolean))];
+      if (emails.some((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))) return { error: 'hay un correo mal escrito' };
+      if (emails.length > 20) return { error: 'máximo 20 personas por negocio' };
+      const cuentas = [...new Set((datos?.cuentas ?? antes?.cuentas ?? []).map(String))];
+      if (cuentas.some((c) => !/^\d{6,20}$/.test(c))) return { error: 'cuenta de Instagram inválida' };
+      const nid = antes?.id ?? `n${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      for (const c of cuentas) {
+        const dueño = (await s.get(`negcta:${c}`))?.id;
+        if (dueño && dueño !== nid) return { error: `la cuenta ${c} ya es de otro negocio` };
+      }
+      const limiteDia = Math.min(Math.max(Number(datos?.limiteDia ?? antes?.limiteDia ?? 300) || 300, 10), 5000);
+      const n = { id: nid, nombre, emails, cuentas, limiteDia, creado: antes?.creado ?? now, actualizado: now };
+      await s.put(`neg:${nid}`, n);
+      for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
+        const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);
+        if (ids.length) await s.put(`negmail:${e}`, { ids }); else await s.delete(`negmail:${e}`);
+      }
+      for (const e of emails) {
+        const ids = (await s.get(`negmail:${e}`))?.ids ?? [];
+        if (!ids.includes(nid)) await s.put(`negmail:${e}`, { ids: [...ids, nid] });
+      }
+      for (const c of antes?.cuentas ?? []) if (!cuentas.includes(c)) await s.delete(`negcta:${c}`);
+      for (const c of cuentas) await s.put(`negcta:${c}`, { id: nid });
+      return { negocio: n };
+    },
+    async fichaNegocio(id) {
+      return (await s.get(`negf:${id}`)) ?? null;
+    },
+    async guardarFichaNegocio(id, datos, now) {
+      if (!(await s.get(`neg:${id}`))) return { error: 'ese negocio no existe' };
+      const { texto, activa = false } = datos ?? {};
+      await s.put(`negf:${id}`, { texto: String(texto ?? ''), activa: activa === true, actualizada: now });
+      return { ok: true };
+    },
+    async borrarFichaNegocio(id) {
+      await s.delete(`negf:${id}`);
+    },
+    /** Suma una respuesta de la IA para ese negocio hoy y devuelve cuántas van. */
+    async contarUsoNegocio(id, now) {
+      const k = `neguso:${id}:${diaDe(now)}`;
+      const n = ((await s.get(k))?.n ?? 0) + 1;
+      await s.put(k, { n, vence: now + 40 * DIA_MS });
+      return n;
+    },
+    /** Uso de la IA por día (los últimos 40 días como mucho). */
+    async usoNegocio(id, now) {
+      const out = [];
+      for (const [k, v] of await s.list({ prefix: `neguso:${id}:` })) if (vigente(v, now)) out.push({ dia: k.split(':').pop(), n: v.n });
+      return out.sort((a, b) => (a.dia < b.dia ? -1 : 1));
     },
     /** Lista para el panel: sin texto, solo las vigentes, la más reciente primero. */
     async lista(now) {
@@ -143,8 +242,9 @@ export function almacenPrueba() {
 }
 
 /**
- * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar}, charlas {get, list, agregar, delete}
- * y cuentas {get, put, delete, list} (Instagram).
+ * Adaptadores que usa el Worker: memoria {get, put, delete, visto, contar}, charlas {get, list, agregar, delete},
+ * cuentas {get, put, delete, list} (Instagram), apps {get, put, delete, list} (apps de Instagram de clientes) y
+ * fichas {get, put, delete} (la ficha del negocio de cada cuenta de cliente).
  * `a` es la lógica directa (tests) o el stub RPC del Durable Object (producción); `reloj` da la hora.
  */
 export function adaptadores(a, reloj = () => Date.now()) {
@@ -165,11 +265,52 @@ export function adaptadores(a, reloj = () => Date.now()) {
   const cuentas = {
     get: async (id) => {
       const c = await a.cuentaIg(id);
-      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence } : null;
+      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' } : null;
     },
-    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence }),
+    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app }),
     delete: (id) => a.borrarCuentaIg(id),
-    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence })),
+    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' })),
   };
-  return { memoria, charlas, cuentas };
+  // Apps de Instagram de clientes: {id, secreto, nombre, creado}.
+  const apps = {
+    get: (id) => a.appIg(id),
+    put: (id, d) => a.guardarAppIg(id, d, reloj()),
+    delete: (id) => a.borrarAppIg(id),
+    list: () => a.listaAppsIg(),
+  };
+  // Negocios clientes (app negocios.zustrolabs.com).
+  const negocios = {
+    get: (id) => a.negocio(id),
+    list: () => a.listaNegocios(),
+    deEmail: (email) => a.negociosDeEmail(email),
+    deCuenta: (cuenta) => a.negocioDeCuenta(cuenta),
+    guardar: (id, d) => a.guardarNegocio(id, d, reloj()),
+    ficha: (id) => a.fichaNegocio(id),
+    guardarFicha: (id, d) => a.guardarFichaNegocio(id, d, reloj()),
+    borrarFicha: (id) => a.borrarFichaNegocio(id),
+    contarUso: (id) => a.contarUsoNegocio(id, reloj()),
+    uso: (id) => a.usoNegocio(id, reloj()),
+  };
+  // Ficha por cuenta de Instagram (lo que usan el Worker y el script): es la ficha del negocio dueño de esa cuenta.
+  // Cargar una ficha en una cuenta que todavía no es de ningún negocio crea el negocio con ese nombre.
+  const fichas = {
+    get: async (cuenta) => {
+      const n = await a.negocioDeCuenta(cuenta);
+      return n ? a.fichaNegocio(n.id) : null;
+    },
+    put: async (cuenta, d) => {
+      let n = await a.negocioDeCuenta(cuenta);
+      if (!n) {
+        const r = await a.guardarNegocio(null, { nombre: d?.nombre || `Cuenta ${cuenta}`, emails: [], cuentas: [String(cuenta)] }, reloj());
+        if (r.error) throw new Error(r.error);
+        n = r.negocio;
+      }
+      return a.guardarFichaNegocio(n.id, d, reloj());
+    },
+    delete: async (cuenta) => {
+      const n = await a.negocioDeCuenta(cuenta);
+      if (n) await a.borrarFichaNegocio(n.id);
+    },
+  };
+  return { memoria, charlas, cuentas, apps, fichas, negocios };
 }

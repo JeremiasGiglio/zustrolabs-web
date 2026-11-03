@@ -15,6 +15,8 @@ routes = [
   { pattern = "zustrolabs.com/api/whatsapp*", zone_name = "zustrolabs.com" },
   { pattern = "zustrolabs.com/api/instagram*", zone_name = "zustrolabs.com" },
   { pattern = "equipo.zustrolabs.com", custom_domain = true },
+  # App de los negocios clientes (ZL-121): productos, stock, Excel, fotos. Detrás de su propia app de Access.
+  { pattern = "negocios.zustrolabs.com", custom_domain = true },
 ]
 
 [vars]
@@ -23,10 +25,14 @@ MODELO = "claude-haiku-5-5"
 # WHATSAPP_PHONE_NUMBER_ID = "…"
 # ACCESS_TEAM_DOMAIN = "floral-shape-d2bf.cloudflareaccess.com"
 # ACCESS_AUD = "…"
-# Instagram (ZL-111): el id de la app de Instagram (no es secreto; está en la app de Meta → «API setup with
-# Instagram login»). Las cuentas se conectan solas por /api/instagram/conectar y quedan en el Durable Object.
+# Instagram (ZL-111): el id de la app de Instagram del estudio (no es secreto; está en la app de Meta → «API setup
+# with Instagram login»). Las cuentas se conectan solas por /api/instagram/conectar y quedan en el Durable Object;
+# las apps de los clientes se registran con scripts/instagram-cliente.ps1 (secreto IG_ADMIN_CLAVE).
 IG_APP_ID = "1834275711078065"
 # Mientras falte lo de WhatsApp, ese webhook responde 503, y el panel también: nada queda abierto.
+# App de negocios (negocios.zustrolabs.com): la audiencia (AUD) de SU app de Access, distinta de la del panel.
+# Sin esto (y sin ACCESS_TEAM_DOMAIN), la app responde 503. Entra el equipo (PANEL_EMAILS) y los correos de cada negocio.
+# NEGOCIOS_ACCESS_AUD = "…"
 
 # Cron diario: renueva los tokens de Instagram que están por vencer (duran 60 días) y comprueba que cada cuenta
 # conectada siga suscripta a los avisos de mensajes (src/instagram.js, mantenerCuentas). Hora UTC.
@@ -43,6 +49,16 @@ class_name = "Atencion"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Atencion"]
+
+# Catálogo: UNA base SQLite por negocio (Durable Object «Catalogo», idFromName(id del negocio)): productos, stock,
+# fotos e historial. La IA solo la lee. Ver src/catalogo.js.
+[[durable_objects.bindings]]
+name = "CATALOGO"
+class_name = "Catalogo"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Catalogo"]
 
 # Límites (sin ellos no responde): 20 mensajes por minuto por número (pasado eso, silencio) y 30 respuestas de la IA
 # por minuto en total, que es el tope de gasto de este canal. Además, 40 respuestas de la IA por número y por día

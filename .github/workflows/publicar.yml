@@ -110,4 +110,12 @@ jobs:
           # El formulario y el chat solo aceptan pedidos desde la página: sin Origin, 403.
           ESPERADOS="403" esperar -X POST -H 'content-type: application/json' -d '{}' https://zustrolabs.com/api/contacto
           ESPERADOS="403" esperar -X POST -H 'content-type: application/json' -d '{}' https://zustrolabs.com/api/chat
+          # La app de negocios nunca responde datos sin entrar: Access la manda a entrar (302), o el Worker dice 401/503.
+          # La primera vez el dominio nuevo tarda en tener certificado: eso es solo un aviso. Un 200 sin entrar es un error.
+          code=$(curl -s -o /dev/null -w '%{http_code}' https://negocios.zustrolabs.com/api/yo || true)
+          case "$code" in
+            200) echo "::error::negocios.zustrolabs.com respondió sin pedir que entren"; exit 1 ;;
+            302|401|403|503) echo "negocios.zustrolabs.com: $code (cerrado sin entrar, bien)" ;;
+            *) echo "::warning::negocios.zustrolabs.com respondió $code (¿el dominio nuevo todavía no tiene certificado?)" ;;
+          esac
           echo "Todo en línea."

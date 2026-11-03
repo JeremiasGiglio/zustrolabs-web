@@ -195,6 +195,12 @@ export async function enviar(env, mensaje, fetchImpl = fetch) {
 
 // ───────────────────────── Lógica ─────────────────────────
 
+/**
+ * Lo que cambia entre el asistente del estudio y el de un negocio cliente (negocio.js, perfilNegocio): idiomas,
+ * textos fijos, menú, cómo se arma la respuesta de la IA y qué pasa con PERSONA cuando no hay panel.
+ */
+export const PERFIL_ESTUDIO = { idiomas: IDIOMAS, textos, opcion, formatear: (c, idioma) => formatear(c, idioma), pausaSinPanel: false, horasPausa: HORAS_PERSONA };
+
 const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mandó algo que no es texto: audio, foto o archivo]');
 
 /**
@@ -202,19 +208,24 @@ const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mand�
  * deps: {memoria, charlas (o null sin panel), preguntar(texto, idioma) → respuesta controlada, now,
  *        cupo() → 'ok' | 'global' (el tope por minuto de toda la cuenta), solo antes de gastar IA}
  */
-export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok' }) {
+export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
   const estado = (memoria && (await memoria.get(ev.from))) || null;
+  // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
+  const unico = perfil.idiomas.length === 1 ? perfil.idiomas[0] : null;
   // El nombre o la bandera de un idioma como mensaje entero vale como el botón (en Instagram no hay botones);
   // mientras se espera el idioma (ya saludamos y todavía no eligió), también 1, 2 o 3.
   const num = ev.kind === 'text' ? numeroSolo(ev.text) : null;
-  const esperaIdioma = !!estado && !estado.idioma;
-  const elegido = ev.kind === 'text' ? eligeIdioma(ev.text) ?? (esperaIdioma ? IDIOMA_POR_NUMERO[num] ?? null : null) : null;
+  const esperaIdioma = !unico && !!estado && !estado.idioma;
+  const elegido = unico || ev.kind !== 'text' ? null : eligeIdioma(ev.text) ?? (esperaIdioma ? IDIOMA_POR_NUMERO[num] ?? null : null);
   if (elegido) ev = { ...ev, kind: 'idioma', idioma: elegido };
   const guardar = (s) => memoria?.put(ev.from, s);
-  const cmd = ev.kind === 'text' ? comando(ev.text) : null;
-  const idioma = idiomaDe(estado?.idioma);
-  const T = textos(idioma);
+  let cmd = ev.kind === 'text' ? comando(ev.text) : null;
+  if (unico && cmd === 'idioma') cmd = null;
+  const idioma = unico ?? idiomaDe(estado?.idioma);
+  const conocido = unico ?? estado?.idioma ?? null;
+  const T = perfil.textos(idioma);
+  const horas = perfil.horasPausa ?? HORAS_PERSONA;
 
   if (cmd === 'borrar') {
     await memoria?.delete(ev.from);
@@ -225,18 +236,23 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // Atiende una persona: el asistente no contesta (salvo BORRAR) hasta que lo devuelvan o pasen 24 h.
   // El mensaje queda en la charla del panel y la ventana de 24 h se renueva (se guarda como mucho una vez por hora).
   // Sin panel nadie lo leería: en ese caso sigue el asistente.
-  if (charlas && estado?.humanoHasta && estado.humanoHasta > now) {
+  // En un negocio no hay panel: la persona del negocio contesta desde su propia app de Instagram.
+  if ((charlas || perfil.pausaSinPanel) && estado?.humanoHasta && estado.humanoHasta > now) {
     const texto = ev.kind === 'text' ? String(ev.text ?? '').replace(CONTROL_RE, ' ').trim() || '[Mensaje vacío]' : notaNoTexto(ev);
-    await agregar(charlas, ev.from, { de: 'persona', texto }, now, { abierta: true });
-    const hasta = now + HORAS_PERSONA * 3600_000;
+    if (charlas) await agregar(charlas, ev.from, { de: 'persona', texto }, now, { abierta: true });
+    const hasta = now + horas * 3600_000;
     if (hasta - estado.humanoHasta > 3600_000) await guardar({ ...estado, humanoHasta: hasta });
     return { send: [], metrica: 'humano' };
   }
 
   if (cmd === 'persona') {
     // Sin panel o sin memoria nadie vería el pedido: se deriva al correo y el asistente no se calla.
+    if (memoria && !charlas && perfil.pausaSinPanel) {
+      await guardar({ ...estado, idioma, humanoHasta: now + horas * 3600_000 });
+      return { send: [msgTexto(ev.from, T.persona)], metrica: 'persona', handoff: true };
+    }
     if (!charlas || !memoria) return { send: [msgTexto(ev.from, T.personaMail)], metrica: 'persona', handoff: true };
-    await guardar({ ...estado, idioma, humanoHasta: now + HORAS_PERSONA * 3600_000 });
+    await guardar({ ...estado, idioma, humanoHasta: now + horas * 3600_000 });
     await agregar(
       charlas,
       ev.from,
@@ -254,7 +270,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     const nuevo = idiomaDe(ev.idioma);
     await guardar({ ...estado, idioma: nuevo, humanoHasta: 0 });
     // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
-    const N = textos(nuevo);
+    const N = perfil.textos(nuevo);
     return { send: [msgTexto(ev.from, `${N.bienvenida}\n\n${N.quienes}`), msgTexto(ev.from, N.menu)], metrica: 'idioma', idioma: nuevo };
   }
 
@@ -270,8 +286,9 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // presentación y el menú, sin gastar IA (también si ya eligió idioma antes y vuelve a escribir otro día).
   const saludo = ev.kind === 'text' ? esSaludo(ev.text) : null;
   const queHacen = ev.kind === 'text' && !saludo ? pideQueHacen(ev.text) : null;
-  if ((saludo || queHacen) && estado?.idioma) {
-    const P = textos(estado.idioma);
+  if ((saludo || queHacen) && conocido) {
+    if (unico && !estado) await guardar({ idioma: unico, humanoHasta: 0 });
+    const P = perfil.textos(conocido);
     const primero = saludo ? `${P.hola}\n\n${P.quienes}` : P.quienes;
     return { send: [msgTexto(ev.from, primero), msgTexto(ev.from, P.menu)], metrica: saludo ? 'saludo' : 'presentacion' };
   }
@@ -280,15 +297,19 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if (saludo && esperaIdioma) return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
   if (queHacen && esperaIdioma) {
     await guardar({ ...estado, idioma: queHacen, humanoHasta: 0 });
-    const P = textos(queHacen);
+    const P = perfil.textos(queHacen);
     return { send: [msgTexto(ev.from, P.quienes), msgTexto(ev.from, P.menu)], metrica: 'presentacion', idioma: queHacen };
   }
 
   // Un número del menú: respuesta fija, sin gastar IA.
-  if (num && estado?.idioma && opcion(idioma, num)) return { send: [msgTexto(ev.from, opcion(idioma, num))], metrica: 'opcion', opcion: num };
+  if (num && conocido && perfil.opcion(idioma, num)) return { send: [msgTexto(ev.from, perfil.opcion(idioma, num))], metrica: 'opcion', opcion: num };
+
+  // Primer contacto de un negocio con una pregunta concreta: saludo y presentación, y además la respuesta.
+  const primerContacto = !!(unico && memoria && !estado);
+  if (primerContacto) await guardar({ idioma: unico, humanoHasta: 0 });
 
   // Primer contacto (con memoria): botones de idioma. Si escribe otra cosa sin elegir, sigue en castellano.
-  if (memoria && !estado) {
+  if (memoria && !estado && !unico) {
     await guardar({ humanoHasta: 0 });
     return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
   }
@@ -301,8 +322,11 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if (memoria?.contar && (await memoria.contar(ev.from)) > TOPE_DIARIO) return { send: [msgTexto(ev.from, T.tope)], metrica: 'tope_diario' };
 
   const c = await preguntar(texto, idioma);
+  const respuesta = perfil.formatear(c, idioma);
   return {
-    send: [msgTexto(ev.from, formatear(c, idioma))],
+    send: primerContacto
+      ? [msgTexto(ev.from, `${T.hola}\n\n${T.quienes}`), msgTexto(ev.from, `${respuesta}\n\n${T.menuHint}`)]
+      : [msgTexto(ev.from, respuesta)],
     metrica: 'ia',
     idioma,
     fuera: c.fuera_de_tema,
