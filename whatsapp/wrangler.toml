@@ -23,7 +23,8 @@ routes = [
 MODELO = "claude-haiku-5-5"
 # Lo completa el segundo PR, cuando estén el número y la app de Access (no son secretos):
 # WHATSAPP_PHONE_NUMBER_ID = "…"
-# ACCESS_TEAM_DOMAIN = "floral-shape-d2bf.cloudflareaccess.com"
+# El equipo de Cloudflare Zero Trust (el mismo que usa el Radar). No es secreto.
+ACCESS_TEAM_DOMAIN = "floral-shape-d2bf.cloudflareaccess.com"
 # ACCESS_AUD = "…"
 # Instagram (ZL-111): el id de la app de Instagram del estudio (no es secreto; está en la app de Meta → «API setup
 # with Instagram login»). Las cuentas se conectan solas por /api/instagram/conectar y quedan en el Durable Object;
@@ -32,7 +33,8 @@ IG_APP_ID = "1834275711078065"
 # Mientras falte lo de WhatsApp, ese webhook responde 503, y el panel también: nada queda abierto.
 # App de negocios (negocios.zustrolabs.com): la audiencia (AUD) de SU app de Access, distinta de la del panel.
 # Sin esto (y sin ACCESS_TEAM_DOMAIN), la app responde 503. Entra el equipo (PANEL_EMAILS) y los correos de cada negocio.
-# NEGOCIOS_ACCESS_AUD = "…"
+# App de Access «negocios» (Zero Trust → Access → Applications), creada el 3/11/2026. No es secreto.
+NEGOCIOS_ACCESS_AUD = "c3a0c89ee2a7cb7e0b0564f472de9955d9508afa027ee7b0d840b86a10a5baf0"
 
 # Cron diario: renueva los tokens de Instagram que están por vencer (duran 60 días) y comprueba que cada cuenta
 # conectada siga suscripta a los avisos de mensajes (src/instagram.js, mantenerCuentas). Hora UTC.
