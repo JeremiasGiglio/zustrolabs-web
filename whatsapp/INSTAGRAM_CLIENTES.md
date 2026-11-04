@@ -102,10 +102,12 @@ Cada cuenta de cliente responde con **su ficha**, no con lo de Zustro Labs. **Si
 | `cuenta_desconocida` en los registros | Llegó un mensaje para una cuenta que no se conectó (o se desconectó) | Reabrir el link de conexión |
 | Publicaba pero no respondía | La app estaba en modo desarrollo | Publish → Live, siempre |
 
+**Todo lo que falló después y lo que puede fallar en un alta, con cómo evitarlo:** [`FALLAS_Y_PREVENCION.md`](FALLAS_Y_PREVENCION.md).
+
 ## Lo que todavía es manual, y lo que falta
 
 - Apretar los botones de Meta (crear app, permisos, redirect URL, webhook, Live): 10 minutos con el cliente al lado. Meta no deja hacerlo por API.
-- **Stock en vivo.** La ficha es fija: si un producto se agota, hay que editarla y volver a cargarla. Leer el stock de una planilla es la etapa siguiente (chocolatería).
+- **Stock:** ya está en la app de negocios (`NEGOCIOS.md`): el asistente lee los productos antes de cada respuesta. Lo que falta son los pedidos.
 - **Memoria de la charla.** Cada mensaje llega solo a la IA (no guardamos el texto): si la persona responde «sí» a una pregunta del asistente, puede pedir contexto.
 - Ventana de 24 h para responder (regla de Meta); después, el equipo responde desde el panel solo si la persona vuelve a escribir.
 - Solo texto: fotos y audios reciben «solo leo texto».
