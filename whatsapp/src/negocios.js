@@ -181,7 +181,8 @@ export async function appNegocios(request, env, deps) {
       const pf = parsearFicha(String(b.texto ?? (await deps.negocios.ficha(negocio.id))?.texto ?? ''));
       if (!pf.ok) return json({ ...resumenFicha(pf), error: 'la ficha tiene errores' }, 400);
       const mensajes = (Array.isArray(b.mensajes) ? b.mensajes : ['hola']).map((x) => String(x).slice(0, 500)).filter(Boolean).slice(0, 12);
-      return json({ ...resumenFicha(pf), charla: await deps.probar(pf.ficha, negocio.id, mensajes) });
+      // `estado` (lo que devolvió el mensaje anterior) sigue la misma charla: idioma elegido y pausa de PERSONA.
+      return json({ ...resumenFicha(pf), ...(await deps.probar(pf.ficha, negocio.id, mensajes, b.estado ?? null)) });
     }
     if (request.method === 'GET' && sub === '/uso') return json({ uso: await deps.negocios.uso(negocio.id), limiteDia: negocio.limiteDia });
   }

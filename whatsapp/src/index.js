@@ -255,24 +255,39 @@ async function fichaDelEstudio(a, cuenta) {
   return f;
 }
 
-/** Charla de prueba con una ficha (y los productos del negocio, si se sabe cuál), sin tocar la memoria real ni mandar nada. */
-async function probarFicha(env, ficha, mensajes, deps, negocioId = null) {
+/**
+ * Charla de prueba con una ficha (y los productos del negocio, si se sabe cuál), sin tocar la memoria real ni mandar nada.
+ * `estado`: lo que devolvió la prueba anterior ({idioma, humanoHasta}), para seguir la misma charla en la app (ZL-126).
+ * Devuelve {charla, estado}.
+ */
+async function probarFicha(env, ficha, mensajes, deps, negocioId = null, estado = null) {
   const memoria = adaptadores(crearAtencion(almacenPrueba())).memoria;
+  const DE = 'ig:0.0';
+  const previo = estadoDePrueba(estado);
+  if (previo) await memoria.put(DE, previo);
   const perfil = perfilNegocio(ficha);
   const catalogo = consultaCatalogo(env, deps, negocioId, ficha);
   const preguntar = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo });
   const now = deps.now ?? Date.now();
   const charla = [];
   for (const [i, texto] of mensajes.entries()) {
-    const ev = { id: `prueba-${i}`, from: 'ig:0.0', ts: now / 1000, kind: 'text', text: texto };
+    const ev = { id: `prueba-${i}`, from: DE, ts: now / 1000, kind: 'text', text: texto };
     try {
       const r = await atender(ev, { memoria, charlas: null, preguntar, now: now + i, perfil });
       charla.push({ mensaje: texto, respuestas: r.send.map((m) => m.text?.body ?? ''), que: r.metrica, notas: r.notas ?? [] });
     } catch (e) {
-      charla.push({ mensaje: texto, respuestas: [perfil.textos().falla], que: 'error', notas: [String(e?.message ?? 'error').slice(0, 40)] });
+      charla.push({ mensaje: texto, respuestas: [perfil.textos((await memoria.get(DE))?.idioma).falla], que: 'error', notas: [String(e?.message ?? 'error').slice(0, 40)] });
     }
   }
-  return charla;
+  return { charla, estado: estadoDePrueba(await memoria.get(DE)) };
+}
+
+/** Lo único que se guarda entre mensajes de la charla de prueba: el idioma elegido y la pausa de PERSONA. */
+function estadoDePrueba(e) {
+  if (!e || typeof e !== 'object') return null;
+  const idioma = ['es', 'en', 'hr'].includes(e.idioma) ? e.idioma : undefined;
+  const humanoHasta = Number.isFinite(e.humanoHasta) ? e.humanoHasta : 0;
+  return { ...(idioma && { idioma }), humanoHasta };
 }
 
 const leerFicha = async (request) => {
@@ -365,7 +380,7 @@ async function admin(request, env, deps) {
     if (ruta === '/ficha/revisar' || !pf.ok) return json({ ...resumenFicha(pf) }, pf.ok ? 200 : 400);
     const mensajes = (b.mensajes ?? ['hola']).map((x) => String(x).slice(0, 500)).filter(Boolean).slice(0, 12);
     const dueño = b.cuenta ? await almacen(env, deps).negocios?.deCuenta(String(b.cuenta)) : null;
-    return json({ ...resumenFicha(pf), charla: await probarFicha(env, pf.ficha, mensajes, deps, dueño?.id ?? null) }, 200);
+    return json({ ...resumenFicha(pf), ...(await probarFicha(env, pf.ficha, mensajes, deps, dueño?.id ?? null)) }, 200);
   }
   m = /^\/cuentas\/(\d+)\/ficha$/.exec(ruta);
   if (m) {
@@ -411,7 +426,7 @@ export default {
       const a = almacen(env, deps);
       return appNegocios(request, env, {
         ...a, fetch: fetchImpl, now: deps.now, catalogo: catalogoDe(env, deps), esCliente: (c) => esCliente(env, c),
-        probar: (ficha, negocioId, mensajes) => probarFicha(env, ficha, mensajes, deps, negocioId),
+        probar: (ficha, negocioId, mensajes, estado) => probarFicha(env, ficha, mensajes, deps, negocioId, estado),
       });
     }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
