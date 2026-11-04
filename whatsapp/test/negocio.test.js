@@ -248,6 +248,58 @@ test('worker: la cuenta de un cliente sin ficha, o con la ficha apagada, no resp
   assert.equal(enviados.at(-1).auth, 'Bearer tok-estudio');
 });
 
+test('worker: la cuenta del estudio vinculada a un negocio responde con su ficha solo si está activa; si no, con lo de la página (ZL-124)', async () => {
+  const { n, d, enviados, llamadas } = await base();
+  const charlas = [];
+  d.charlas = { ...d.charlas, agregar: async (...x) => charlas.push(x) };
+  const ultimo = () => enviados.at(-1).body.message.text;
+  // Vinculada pero sin ficha: como siempre (lo de Zustro Labs) y queda registrado por qué.
+  const { negocio } = await n.negocios.guardar(null, { nombre: 'ZustroLabs', emails: [], cuentas: [ESTUDIO] });
+  let logs = await conLogs(() => mensaje(d, ESTUDIO, 'hola', ENV.IG_APP_SECRET));
+  assert.match(ultimo(), /Zustro Labs|idioma/);
+  assert.ok(logs.some((l) => l.que === 'estudio_sin_ficha'));
+  // Con la ficha apagada, igual: nunca queda muda.
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: false });
+  logs = await conLogs(() => mensaje(d, ESTUDIO, 'hola', ENV.IG_APP_SECRET));
+  assert.match(ultimo(), /Zustro Labs|idioma/);
+  assert.ok(logs.some((l) => l.que === 'estudio_ficha_inactiva'));
+  assert.equal(llamadas.length, 0);
+  // Con la ficha activa: el saludo y las respuestas de la ficha, con el token del estudio.
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  const antes = enviados.length;
+  logs = await conLogs(() => mensaje(d, ESTUDIO, '¿Tienen facturas?', ENV.IG_APP_SECRET));
+  assert.deepEqual(llamadas, [['Panadería La Espiga', '¿Tienen facturas?']]);
+  const nuevos = enviados.slice(antes);
+  // (El saludo de la ficha no se repite: esta persona ya había elegido idioma en la charla con el estudio.)
+  assert.match(nuevos.map((e) => e.body.message.text).join('\n'), /Respuesta de Panadería La Espiga/);
+  assert.ok(nuevos.every((e) => e.auth === 'Bearer tok-estudio'));
+  assert.ok(logs.some((l) => l.negocio === true && l.estudio === 'ficha'));
+  // Con Instagram apagado en el negocio, vuelve a lo de la página (no se calla, como haría un cliente).
+  await n.negocios.guardar(negocio.id, { canales: { instagram: false, whatsapp: false } });
+  logs = await conLogs(() => mensaje(d, ESTUDIO, '¿Tienen facturas?', ENV.IG_APP_SECRET));
+  assert.equal(llamadas.length, 1);
+  assert.ok(logs.some((l) => l.que === 'estudio_canal_apagado'));
+  assert.equal(enviados.at(-1).auth, 'Bearer tok-estudio');
+  await n.negocios.guardar(negocio.id, { canales: { instagram: true, whatsapp: false } });
+  // Desvincularla la devuelve a lo de la página.
+  await n.negocios.guardar(negocio.id, { cuentas: [] });
+  await mensaje(d, ESTUDIO, 'hola de nuevo', ENV.IG_APP_SECRET);
+  assert.equal(llamadas.length, 1);
+  assert.equal(enviados.at(-1).auth, 'Bearer tok-estudio');
+});
+
+test('admin: la cuenta del estudio recibe ficha solo si ya está vinculada a un negocio, y el estado lo muestra', async () => {
+  const { n, d } = await base();
+  assert.equal((await admin(d, 'PUT', `/cuentas/${ESTUDIO}/ficha`, { texto: FICHA, activa: true })).status, 400, 'sin negocio no se crea uno solo');
+  assert.equal((await n.negocios.list()).length, 0);
+  await n.negocios.guardar(null, { nombre: 'ZustroLabs', emails: [], cuentas: [ESTUDIO] });
+  assert.equal((await admin(d, 'PUT', `/cuentas/${ESTUDIO}/ficha`, { texto: FICHA, activa: true })).status, 200);
+  const est = (await (await admin(d, 'GET', '/estado')).json()).cuentas.find((c) => c.id === ESTUDIO);
+  assert.equal(est.estudio, true);
+  assert.deepEqual(est.ficha, { tiene: true, activa: true, nombre: 'Panadería La Espiga', pendientes: [] });
+  assert.ok(est.negocio);
+});
+
 test('admin: revisar, probar, cargar (apagada o activa), ver, estado y borrar la ficha de una cuenta', async () => {
   const { d } = await base();
   assert.equal((await admin(d, 'POST', '/ficha/revisar', { texto: FICHA }, 'otra')).status, 401);

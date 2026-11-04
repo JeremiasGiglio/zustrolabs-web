@@ -149,11 +149,14 @@ test('fotos: se suben como imagen real y se sirven sin que el navegador pueda to
   assert.deepEqual([...new Uint8Array(g.datos)], [...png]);
 });
 
-test('administración: cuentas de Instagram de un solo negocio, nunca la del estudio; uso de la IA por negocio', async () => {
+test('administración: cuentas de Instagram de un solo negocio, la del estudio marcada; uso de la IA por negocio', async () => {
   const { pedir, a, b } = await armar();
   const cuentas = (await pedir('equipo@example.com', 'GET', '/api/admin/cuentas')).datos.cuentas;
-  assert.deepEqual(cuentas.map((c) => c.username).sort(), ['laespiga', 'otra.tienda'], 'la del estudio no aparece');
-  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [ESTUDIO] })).status, 400);
+  assert.deepEqual(cuentas.map((c) => c.username).sort(), ['laespiga', 'otra.tienda', 'zustrolabs']);
+  // ZL-124: la del estudio aparece marcada, y se puede vincular a un negocio (después se libera para lo que sigue).
+  assert.deepEqual(cuentas.filter((c) => c.estudio).map((c) => c.username), ['zustrolabs']);
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [ESTUDIO] })).status, 200);
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [] })).status, 200);
   assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: ['17841499999999999'] })).status, 400, 'no conectada');
   assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A], limiteDia: 2 })).status, 200);
   const dos = await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${b.id}`, { cuentas: [CUENTA_A] });
@@ -260,7 +263,8 @@ test('el script de alta (IG_ADMIN_CLAVE) crea el negocio, elige canales y lo vin
   const n = await admin('POST', '/negocios', { nombre: 'Chocolatería Ficticia', emails: 'dueno@example.com', canales: { instagram: true, whatsapp: true } });
   assert.equal(n.status, 201);
   assert.deepEqual(n.datos.canales, { instagram: true, whatsapp: true });
-  assert.equal((await admin('PUT', `/negocios/${n.datos.id}`, { cuentas: [ESTUDIO] })).status, 400, 'nunca la cuenta del estudio');
+  // La del estudio se puede vincular (ZL-124: responde con la ficha del negocio solo si está activa); acá se desvincula.
+  assert.equal((await admin('PUT', `/negocios/${n.datos.id}`, { cuentas: [ESTUDIO] })).status, 200, 'la cuenta del estudio se puede vincular');
   assert.equal((await admin('PUT', `/negocios/${n.datos.id}`, { cuentas: [CUENTA_A] })).status, 200);
   const est = (await admin('GET', '/estado')).datos;
   assert.equal(est.cuentas.find((c) => c.id === CUENTA_A).negocio, n.datos.id);
