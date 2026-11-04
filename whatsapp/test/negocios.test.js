@@ -220,6 +220,7 @@ test('la app: la página, el JS y el CSS se sirven con una política que no deja
   assert.doesNotThrow(() => new Function(js), 'el JS compila');
   assert.doesNotMatch(js, /innerHTML|insertAdjacentHTML|eval\(/, 'lo que viene de la base nunca se pone como HTML');
   assert.match(js, /function leerXlsx/);
+  assert.ok(js.startsWith('var __name = function (f) { return f; };'), 'empaquetado por Wrangler, el código trae __name(): tiene que existir (ZL-123)');
   assert.equal((await pedir(null, 'GET', '/app.js')).status, 401, 'sin entrar, ni siquiera el código');
 });
 
