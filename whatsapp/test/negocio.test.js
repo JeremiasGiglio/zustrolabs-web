@@ -186,7 +186,7 @@ test('preguntadorNegocio: pide JSON con el esquema del negocio y controla la sal
   const r = await preguntar('¿cuánto sale?');
   assert.equal(cuerpo.model, 'modelo-prueba');
   assert.deepEqual(cuerpo.messages, [{ role: 'user', content: '¿cuánto sale?' }]);
-  assert.deepEqual(cuerpo.output_config.format.schema.required, ['respuesta', 'persona', 'fuera_de_tema']);
+  assert.deepEqual(cuerpo.output_config.format.schema.required, ['respuesta', 'persona', 'fuera_de_tema', 'idioma']);
   assert.equal(r.vacia, true, 'el monto inventado se saca');
   assert.deepEqual(r.uso, { entrada: 10, salida: 5 });
 });

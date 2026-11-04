@@ -12,7 +12,7 @@
 import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../asistente/src/asistente.js';
 import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { agregar } from './panel.js';
-import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
+import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, idiomasDelSaludo, idiomasQueHacen, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
@@ -292,7 +292,17 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   const queHacen = ev.kind === 'text' && !saludo ? pideQueHacen(ev.text) : null;
   if ((saludo || queHacen) && conocido) {
     if (unico && !estado) await guardar({ idioma: unico, humanoHasta: 0 });
-    const P = perfil.textos(conocido);
+    // Un negocio con varios idiomas (ZL-127): el idioma del mensaje manda. «Hello» con castellano guardado pasa a
+    // inglés; un saludo que vale en varios idiomas («hey», «info») deja el que ya tenía.
+    let en = conocido;
+    if (perfil.idiomaPorNumero) {
+      const posibles = (saludo ? idiomasDelSaludo(ev.text) : idiomasQueHacen(ev.text)).filter((i) => perfil.idiomas.includes(i));
+      if (posibles.length && !posibles.includes(conocido)) {
+        en = posibles[0];
+        await guardar({ ...estado, idioma: en, humanoHasta: estado?.humanoHasta ?? 0 });
+      }
+    }
+    const P = perfil.textos(en);
     const primero = saludo ? `${P.hola}\n\n${P.quienes}` : P.quienes;
     return { send: [msgTexto(ev.from, primero), msgTexto(ev.from, P.menu)], metrica: saludo ? 'saludo' : 'presentacion' };
   }
@@ -327,7 +337,12 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if (memoria?.contar && (await memoria.contar(ev.from)) > TOPE_DIARIO) return { send: [msgTexto(ev.from, T.tope)], metrica: 'tope_diario' };
 
   const c = await preguntar(texto, idioma);
-  const respuesta = perfil.formatear(c, idioma);
+  // Un negocio con varios idiomas (ZL-127): la IA responde en el idioma del mensaje y dice cuál es; desde ahí, los
+  // textos fijos (menú, PERSONA) siguen en ese idioma.
+  const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(c?.idioma) : null;
+  const enIdioma = cambio ?? idioma;
+  if (cambio && cambio !== idioma) await guardar({ ...(estado ?? {}), idioma: cambio, humanoHasta: estado?.humanoHasta ?? 0 });
+  const respuesta = perfil.formatear(c, enIdioma);
   return {
     send: primerContacto
       ? [msgTexto(ev.from, `${T.hola}\n\n${T.quienes}`), msgTexto(ev.from, `${respuesta}\n\n${T.menuHint}`)]

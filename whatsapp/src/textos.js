@@ -252,12 +252,22 @@ export function esSaludo(texto) {
   return null;
 }
 
+/** Todos los idiomas en que el mensaje entero es un saludo («hey» es de castellano y de inglés) (ZL-127). */
+export function idiomasDelSaludo(texto) {
+  const palabras = plano(texto).split(' ').filter(Boolean);
+  if (!palabras.length || palabras.length > 8) return [];
+  return [['es', SALUDO_ES], ['hr', SALUDO_HR], ['en', SALUDO_EN]].filter(([i, re]) => palabras.every((w) => re.test(w)) && palabras.some((w) => NUCLEO[i].test(w))).map(([i]) => i);
+}
+
 // «¿Qué hacen?», «¿qué me ofrecés?», «info», «servicios»: la persona no nos conoce y quiere saber qué ofrecemos.
 const QUE_HACEN = [
   ['es', /^(?:(?:hola |buenas |y |entonces |bueno |che )*(?:(?:que|q|en que) (?:es lo que |cosas |tipo de cosas |servicios )?(?:hacen|haces|hace zustro(?: labs)?|es zustro(?: labs)?|ofrecen|ofreces|me ofreces|me ofrecen|me pueden ofrecer|me podes ofrecer|me podes ayudar|me pueden ayudar|venden|trabajan|son|ofrece zustro(?: labs)?)|a que se dedican|a que te dedicas|que servicios (?:tienen|ofrecen|hay|dan)|servicios|info|informacion|mas info|mas informacion|quiero (?:mas )?info(?:rmacion)?|quisiera (?:mas )?informacion|me pasas info|me pasan info|opciones|que opciones hay|quienes son|quien sos|quien sos vos)(?: ustedes| vos)?)$/],
   ['hr', /^(?:(?:bok |pozdrav )*(?:sto|cime) (?:radite|nudite|se bavite|mi mozete ponuditi|je zustro(?: labs)?)|usluge|koje usluge nudite|informacije|vise informacija|tko ste|tko ste vi)$/],
   ['en', /^(?:(?:hi |helo |hey |so )*(?:what (?:do you (?:do|ofer|sel)|can you do(?: for me)?|is zustro(?: labs)?|are your services|services do you ofer)|services|info|more info|information|who are you))$/],
 ];
+
+/** Todos los idiomas en que el mensaje entero pregunta qué hacemos («info» es de castellano y de inglés). */
+export const idiomasQueHacen = (texto) => QUE_HACEN.filter(([, re]) => re.test(plano(texto))).map(([i]) => i);
 
 /** Si el mensaje entero pregunta qué hacemos u ofrecemos, el idioma de la pregunta; si no, null. */
 export function pideQueHacen(texto) {
