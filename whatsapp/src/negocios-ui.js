@@ -580,5 +580,24 @@ function app() {
   })();
 }
 
+/**
+ * Wrangler empaqueta con esbuild «keepNames», que agrega `__name(fn, "nombre")` adentro de las funciones. Como la página
+ * se arma con .toString(), esas llamadas llegan al navegador, donde `__name` no existe, y la app no arrancaba (se
+ * quedaba en «Cargando…», ZL-123). Esta definición las vuelve inofensivas, se empaquete como se empaquete.
+ */
+const SIN_NOMBRES = 'var __name = function (f) { return f; };';
+
+/**
+ * Cada función del lector, con su nombre de siempre. Al empaquetar, esbuild puede renombrarlas (leerCsv → leerCsv2) para
+ * no chocar con los nombres que usa la app; con keepNames, f.name sigue siendo el original. Se declara con el nombre que
+ * quedó en el código (las funciones se llaman entre sí así) y además con el original (así las llama la app).
+ */
+function declarar(f) {
+  const src = f.toString();
+  const declarado = (/^(?:async\s+)?function\s*\*?\s*([\w$]+)/.exec(src) || [])[1];
+  if (!declarado) throw new Error(`el lector tiene que usar funciones con nombre: ${f.name}`);
+  return declarado === f.name ? src : `${src}\nvar ${f.name} = ${declarado};`;
+}
+
 /** El JS que se manda: el lector de planillas + la app. */
-export const appJs = () => `${FUNCIONES_LECTOR.map((f) => f.toString()).join('\n')}\n(${app.toString()})();\n`;
+export const appJs = () => `${SIN_NOMBRES}\n${FUNCIONES_LECTOR.map(declarar).join('\n')}\n(${app.toString()})();\n`;

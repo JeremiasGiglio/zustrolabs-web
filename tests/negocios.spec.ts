@@ -3,10 +3,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
-import worker from '../whatsapp/src/index.js';
+import { build } from 'esbuild';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { adaptadores, almacenPrueba, crearAtencion } from '../whatsapp/src/atencion.js';
 import { crearCatalogo, ejecutarCatalogo } from '../whatsapp/src/catalogo.js';
-import { _resetCerts } from '../whatsapp/src/panel.js';
 import { sqlPrueba } from '../whatsapp/test/sqlite.js';
 
 const TEAM = 'equipo-de-prueba.cloudflareaccess.com';
@@ -14,10 +16,14 @@ const AUD = 'aud-negocios-prueba';
 const ENV = { ACCESS_TEAM_DOMAIN: TEAM, NEGOCIOS_ACCESS_AUD: AUD, PANEL_EMAILS: 'equipo@example.com', IG_APP_ID: '1000000000000001' };
 const FICHA = readFileSync('whatsapp/test/ficha-prueba.md', 'utf8');
 
+let claves: CryptoKeyPair;
+let jwk: JsonWebKey & { kid: string };
 async function montar(page: Page, email: string) {
-  _resetCerts();
-  const claves = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
-  const jwk = { ...(await crypto.subtle.exportKey('jwk', claves.publicKey)), kid: 'k1' };
+  // Una sola clave por corrida: el Worker empaquetado guarda en memoria las claves de Access que ya bajó.
+  if (!claves) {
+    claves = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+    jwk = { ...(await crypto.subtle.exportKey('jwk', claves.publicKey)), kid: 'k1' };
+  }
   const b64 = (s: string) => Buffer.from(s).toString('base64url');
   const firmarToken = async (correo: string) => {
     const cuerpo = `${b64(JSON.stringify({ alg: 'RS256', kid: 'k1' }))}.${b64(JSON.stringify({ email: correo, aud: [AUD], exp: Math.floor(Date.now() / 1000) + 3600 }))}`;
@@ -50,6 +56,15 @@ async function montar(page: Page, email: string) {
   await page.goto('https://negocios.zustrolabs.com/');
   return { negocio: r.negocio };
 }
+
+// El Worker empaquetado IGUAL que lo hace Wrangler (esbuild con keepNames): así se prueba el código como queda en
+// Cloudflare. Sin el empaquetado, la página andaba acá y en producción se quedaba en «Cargando…» (ZL-123).
+let worker: any;
+test.beforeAll(async () => {
+  const salida = join(tmpdir(), `zl-negocios-${process.pid}-${Date.now()}.mjs`);
+  await build({ entryPoints: ['whatsapp/src/index.js'], bundle: true, format: 'esm', platform: 'neutral', keepNames: true, external: ['cloudflare:*', 'node:*'], outfile: salida, logLevel: 'silent' });
+  worker = (await import(pathToFileURL(salida).href)).default;
+});
 
 test.describe('app de negocios (ZL-121)', () => {
   test('la dueña carga un producto, le cambia el stock y lo ve en el historial', async ({ page }) => {
