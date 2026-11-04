@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import worker from '../src/index.js';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
-import { controlarNegocio, parsearFicha, perfilNegocio, preguntadorNegocio, promptNegocio, resumenFicha } from '../src/negocio.js';
+import { controlarNegocio, cumpleNegocio, parsearFicha, perfilNegocio, preguntadorNegocio, promptNegocio, resumenFicha } from '../src/negocio.js';
 import { armarFrom } from '../src/instagram.js';
 import { atender, firmar } from '../src/whatsapp.js';
 
@@ -161,6 +161,23 @@ test('prompt: el negocio, sus reglas, su información y nada de Zustro Labs', ()
   assert.doesNotMatch(p, /Zustro/);
   assert.doesNotMatch(p, /ayuda y no cuenta/);
   assert.match(promptNegocio(parsearFicha(FICHA.replace('Precios: sí', 'Precios: no')).ficha), /nunca digas precios/);
+});
+
+test('preguntadorNegocio pasa por la llamada real a la API y acepta el esquema del negocio (ZL-125)', async () => {
+  // Antes, llamarClaude validaba con el esquema de la landing y toda respuesta de una ficha fallaba con «esquema».
+  const ficha = parsearFicha(FICHA).ficha;
+  const pedidos = [];
+  const api = (salida) => async (url, o) => (pedidos.push({ url, cuerpo: JSON.parse(o.body) }), Response.json({ content: [{ type: 'text', text: JSON.stringify(salida) }], stop_reason: 'end_turn', usage: { input_tokens: 3, output_tokens: 2 } }));
+  const ok = preguntadorNegocio({ ANTHROPIC_API_KEY: 'clave-prueba' }, ficha, { fetchImpl: api({ respuesta: 'Sí, hacemos facturas todos los días.', persona: false, fuera_de_tema: false }) });
+  const r = await ok('¿Tienen facturas?');
+  assert.equal(r.respuesta, 'Sí, hacemos facturas todos los días.');
+  assert.equal(r.persona, false);
+  assert.equal(pedidos[0].url, 'https://api.anthropic.com/v1/messages');
+  assert.match(pedidos[0].cuerpo.system, /si pide otro idioma/);
+  // Una salida con el formato de la landing (o rota) sigue siendo un error.
+  const mal = preguntadorNegocio({ ANTHROPIC_API_KEY: 'clave-prueba' }, ficha, { fetchImpl: api({ respuesta: 'x', seccion: '', enlace: '', escribirnos: false, fuera_de_tema: false }) });
+  await assert.rejects(() => mal('hola'), /esquema/);
+  assert.equal(cumpleNegocio({ respuesta: '', persona: true, fuera_de_tema: false }), true);
 });
 
 test('preguntadorNegocio: pide JSON con el esquema del negocio y controla la salida', async () => {

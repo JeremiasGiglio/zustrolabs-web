@@ -190,7 +190,9 @@ export function controlar(r, idioma = 'es') {
 const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 /** Llama a la API de Claude. Devuelve { salida, uso } o tira un Error con un motivo corto (sin datos de la persona). */
-export async function llamarClaude(cuerpo, { apiKey, fetchImpl = fetch, esperaMs = LIMITES.esperaMs, pausaMs = 1200 } = {}) {
+// `validar`: el control del formato de la salida. Por defecto, el del asistente de la landing; las fichas de negocio
+// (whatsapp/src/negocio.js) pasan el suyo, que tiene otros campos (ZL-125).
+export async function llamarClaude(cuerpo, { apiKey, fetchImpl = fetch, esperaMs = LIMITES.esperaMs, pausaMs = 1200, validar = cumpleEsquema } = {}) {
   if (!apiKey) throw new Error('config');
   let res, data;
   for (let intento = 1; intento <= 2; intento++) {
@@ -213,7 +215,7 @@ export async function llamarClaude(cuerpo, { apiKey, fetchImpl = fetch, esperaMs
   } catch {
     throw new Error('json');
   }
-  if (!cumpleEsquema(salida)) throw new Error('esquema');
+  if (!validar(salida)) throw new Error('esquema');
   return { salida, uso: data.usage ?? {} };
 }
 

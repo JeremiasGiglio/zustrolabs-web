@@ -506,7 +506,9 @@ function app() {
         const r = await api(base() + '/probar', { metodo: 'POST', cuerpo: { texto: texto.value, mensajes: ['hola', m] } });
         const ultima = r.charla[r.charla.length - 1];
         for (const t of ultima.respuestas) chat.append(h('div', { class: 'burbuja asis' }, t));
-        if (ultima.notas && ultima.notas.length) chat.append(h('p', { class: 'ayuda' }, 'Controles: se sacó ' + ultima.notas.join(', ') + ' (no estaba en la ficha ni en los productos).'));
+        // Una falla de la IA no es un control: se muestra como lo que es (ZL-125).
+        if (ultima.que === 'error') chat.append(h('p', { class: 'ayuda' }, 'La IA no respondió (motivo: ' + (ultima.notas || []).join(', ') + '). El cliente recibiría el mensaje de arriba.'));
+        else if (ultima.notas && ultima.notas.length) chat.append(h('p', { class: 'ayuda' }, 'Controles: se sacó ' + ultima.notas.join(', ') + ' (no estaba en la ficha ni en los productos).'));
         chat.scrollTop = chat.scrollHeight;
       }) }, msg, h('button', { class: 'btn prim', type: 'submit' }, 'Enviar')));
     conError(async () => {
