@@ -299,3 +299,25 @@ ${CAPTAR}
 - No escribas direcciones web: el sistema agrega el link que corresponda.
 - Cada mensaje llega solo, sin el historial de la charla: si falta contexto, pedilo en una oración.
 - El idioma es el del último mensaje de la persona; si no se puede saber, el que eligió: {idioma}.`;
+
+// ───────────────────────── Idioma de un mensaje libre (ZL-127) ─────────────────────────
+// Sin IA: palabras que casi solo aparecen en un idioma. Se dejan afuera las que se comparten («me», «a», «no», «si»,
+// «do», «to», «da», «mi», «i», «u», «web»): en la duda, null, y manda el idioma que ya tenía la charla.
+const PALABRAS = {
+  en: new Set('hello hi hey how are you your youre what whats does can could would should the is its this that these and for with have need want please thanks thank we our website price cost much many where when who why build make im ive dont doesnt there here about any some get do you'.split(' ').filter((w) => w !== 'do')),
+  es: new Set('hola que como cuanto cuanta cuantos donde cuando quien quienes el la los las lo del de y en un una unos unas es son esta estan tienen tenes tiene hacen haces hace para por con sin mis tu vos usted ustedes quiero quisiera necesito puedo pueden podes gracias buenas buen dia tardes noches precio sitio pagina tambien muy mas pero hay algo tengo'.split(' ')),
+  hr: new Set('bok pozdrav zdravo dobar dobro kako ste sto sta je li se imate imas trebam treba trebate zelim zelio molim hvala koliko cijena gdje kada tko zasto vi vas vam nam za sa od ali ili ovo taj jos nije ne mogu mozete mozes stranicu stranica izrada radite nudite'.split(' ')),
+};
+
+/** El idioma de un mensaje libre ('es' | 'en' | 'hr') si sus palabras lo dicen claro; si no, null. */
+export function idiomaDelTexto(texto) {
+  const palabras = String(texto ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  // Letras repetidas al final («hellooo», «holaaa») cuentan como una.
+  const puntos = { es: 0, en: 0, hr: 0 };
+  for (const w0 of palabras) {
+    const w = w0.replace(/(.)\1+$/, '$1');
+    for (const i of ['es', 'en', 'hr']) if (PALABRAS[i].has(w) || PALABRAS[i].has(w0)) puntos[i]++;
+  }
+  const orden = Object.entries(puntos).sort((x, y) => y[1] - x[1]);
+  return orden[0][1] > 0 && orden[0][1] > orden[1][1] ? orden[0][0] : null;
+}

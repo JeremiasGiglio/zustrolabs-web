@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
 import { parsearFicha, perfilNegocio, preguntadorNegocio, promptNegocio } from '../src/negocio.js';
 import { atender } from '../src/whatsapp.js';
+import { idiomaDelTexto } from '../src/textos.js';
 
 const BASE = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
 const T0 = 1_792_000_000_000;
@@ -187,4 +188,44 @@ test('charla: la IA responde en el idioma del mensaje y desde ahí el menú sigu
   assert.match(r[0], /^Fine, thanks!\n\n🙋 If you’d like to talk to someone at Panadería La Espiga, type PERSON\.$/, 'el pie de PERSONA en inglés');
   assert.equal((await memoria.get('ig:9.9')).idioma, 'en');
   assert.match((await decir('menu')).at(-1), /How can I help\?/);
+});
+
+test('idiomaDelTexto: reconoce el idioma de un mensaje libre sin IA, y en la duda no adivina (ZL-127)', () => {
+  const casos = {
+    'Hello how are u?': 'en', 'Hellooo how are u': 'en', 'do you build websites?': 'en', 'i want a website': 'en', 'price?': 'en',
+    'hola, ¿hacen páginas web?': 'es', '¿cuánto sale?': 'es', 'quiero una web': 'es', 'Holaaa como estas': 'es',
+    'Kako ste? Imate li izradu web stranica?': 'hr', 'Koliko košta?': 'hr',
+    'ok': null, '2': null, 'info': null, 'me interesa': null, '👍': null, '': null,
+  };
+  for (const [t, i] of Object.entries(casos)) assert.equal(idiomaDelTexto(t), i, t);
+});
+
+test('charla: con castellano guardado, «Hello how are u» va a la IA con la orden de responder en inglés (ZL-127)', async () => {
+  const pf = parsearFicha(TRES);
+  const perfil = perfilNegocio(pf.ficha);
+  const memoria = adaptadores(crearAtencion(almacenPrueba()), () => T0).memoria;
+  const cuerpos = [];
+  // La IA de mentira desobedece a propósito (dice «es»): igual manda lo que se reconoció en el mensaje.
+  const preguntar = preguntadorNegocio({}, pf.ficha, { llamar: async (c) => (cuerpos.push(c), { salida: { respuesta: 'Fine, thanks!', persona: false, fuera_de_tema: false, idioma: 'es' }, uso: {} }) });
+  let k = 0;
+  const decir = async (text) => (await atender({ id: `y${++k}`, from: 'ig:7.7', ts: T0 / 1000, kind: 'text', text }, { memoria, charlas: null, preguntar, now: T0 + k, perfil })).send.map((m) => m.text.body);
+  await decir('hola');
+  await decir('1');
+  await decir('Hello how are u?');
+  assert.match(cuerpos[0].system, /IMPORTANTE: el último mensaje de la persona está escrito en inglés\. Respondé SOLO en inglés/);
+  assert.equal((await memoria.get('ig:7.7')).idioma, 'en');
+  assert.match((await decir('menu')).at(-1), /How can I help\?/);
+  // Un mensaje que no deja saber el idioma no lo cambia ni lleva la orden.
+  await decir('ok');
+  assert.doesNotMatch(cuerpos[1].system, /IMPORTANTE/);
+  assert.equal((await memoria.get('ig:7.7')).idioma, 'en');
+});
+
+test('charla: con un solo idioma, la IA igual recibe la orden del idioma del mensaje (el menú sigue en el de la ficha)', async () => {
+  const pf = parsearFicha(BASE);
+  const perfil = perfilNegocio(pf.ficha);
+  const cuerpos = [];
+  const preguntar = preguntadorNegocio({}, pf.ficha, { llamar: async (c) => (cuerpos.push(c), { salida: { respuesta: 'Yes!', persona: false, fuera_de_tema: false, idioma: 'en' }, uso: {} }) });
+  await atender({ id: 'z1', from: 'ig:8.8', ts: T0 / 1000, kind: 'text', text: 'do you have gluten free bread?' }, { memoria: null, charlas: null, preguntar, now: T0, perfil });
+  assert.match(cuerpos[0].system, /Respondé SOLO en inglés/);
 });

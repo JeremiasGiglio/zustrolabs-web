@@ -286,7 +286,7 @@ const NOMBRE_IDIOMA = { es: 'castellano', en: 'inglés', hr: 'croata' };
 const TRATO = { vos: 'de «vos», en castellano rioplatense', tu: 'de «tú»', usted: 'de «usted»' };
 
 /** catalogo: {texto} de Catalogo.paraAsistente (los productos del negocio en este momento), o null si no tiene. */
-export function promptNegocio(ficha, canal = 'Instagram', catalogo = null, elegido = null) {
+export function promptNegocio(ficha, canal = 'Instagram', catalogo = null, elegido = null, delMensaje = null) {
   return `Sos el asistente virtual de ${ficha.nombre} en ${canal}. Atendés a sus clientes usando SOLO la información que está entre <informacion> y </informacion>.
 
 Reglas, en este orden:
@@ -312,7 +312,7 @@ ${ficha.conocimiento}
 ${ficha.faq ? `\n## Preguntas frecuentes\n${ficha.faq}` : ''}
 ## Opciones del menú (el sistema las responde solo)
 ${ficha.menu.map((o) => `${o.n}. ${o.titulo}: ${o.texto}`).join('\n')}
-</informacion>${catalogo ? `\n\n<catalogo>\n${catalogo.texto}\n</catalogo>` : ''}`;
+</informacion>${catalogo ? `\n\n<catalogo>\n${catalogo.texto}\n</catalogo>` : ''}${delMensaje && NOMBRE_IDIOMA[delMensaje] ? `\n\nIMPORTANTE: el último mensaje de la persona está escrito en ${NOMBRE_IDIOMA[delMensaje]}. Respondé SOLO en ${NOMBRE_IDIOMA[delMensaje]}, aunque la información de arriba esté en otro idioma (traducila).` : ''}`;
 }
 
 /**
@@ -322,14 +322,15 @@ ${ficha.menu.map((o) => `${o.n}. ${o.titulo}: ${o.texto}`).join('\n')}
  */
 export const preguntadorNegocio =
   (env, ficha, { fetchImpl = fetch, llamar = (cuerpo) => llamarClaude(cuerpo, { apiKey: env.ANTHROPIC_API_KEY, fetchImpl, esperaMs: 12_000, pausaMs: 800, validar: cumpleNegocio }), canal = 'Instagram', catalogo = null } = {}) =>
-  async (texto, idioma = null) => {
+  async (texto, idioma = null, { seguro = false } = {}) => {
     const cat = catalogo ? await catalogo(texto).catch(() => null) : null;
     const conCatalogo = cat ? { ...ficha, permitidos: { ...ficha.permitidos, montos: [...ficha.permitidos.montos, ...(cat.montos ?? [])] } } : ficha;
     const cuerpo = {
       model: env.MODELO || MODELO_NEGOCIO,
       max_tokens: 700,
       // El idioma elegido solo cuenta si la ficha tiene varios: con uno, manda el del mensaje (como siempre).
-      system: promptNegocio(ficha, canal, cat, (ficha.idiomas?.length ?? 1) > 1 ? idioma : null),
+      // `seguro`: el idioma del mensaje se reconoció sin IA (ZL-127) y se le ordena al final del prompt.
+      system: promptNegocio(ficha, canal, cat, (ficha.idiomas?.length ?? 1) > 1 ? idioma : null, seguro ? idioma : null),
       messages: [{ role: 'user', content: texto }],
       output_config: { format: { type: 'json_schema', schema: ESQUEMA_NEGOCIO } },
     };

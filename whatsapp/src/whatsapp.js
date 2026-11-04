@@ -12,7 +12,7 @@
 import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../asistente/src/asistente.js';
 import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { agregar } from './panel.js';
-import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, idiomasDelSaludo, idiomasQueHacen, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
+import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, idiomaDelTexto, idiomasDelSaludo, idiomasQueHacen, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
@@ -336,10 +336,13 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if ((await cupo()) !== 'ok') return { send: [msgTexto(ev.from, T.limite)], metrica: 'limite_global' };
   if (memoria?.contar && (await memoria.contar(ev.from)) > TOPE_DIARIO) return { send: [msgTexto(ev.from, T.tope)], metrica: 'tope_diario' };
 
-  const c = await preguntar(texto, idioma);
-  // Un negocio con varios idiomas (ZL-127): la IA responde en el idioma del mensaje y dice cuál es; desde ahí, los
-  // textos fijos (menú, PERSONA) siguen en ese idioma.
-  const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(c?.idioma) : null;
+  // Un negocio (ZL-127): el idioma del mensaje se reconoce sin IA y se le ordena a la IA responder en ese; si no se
+  // reconoce, la IA usa el de la charla y dice en cuál respondió. Con varios idiomas, desde ahí los textos fijos (menú,
+  // PERSONA) siguen en ese idioma. El estudio sigue como siempre.
+  const detectado = perfil === PERFIL_ESTUDIO ? null : idiomaDelTexto(texto);
+  const c = detectado ? await preguntar(texto, detectado, { seguro: true }) : await preguntar(texto, idioma);
+  // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
+  const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;
   const enIdioma = cambio ?? idioma;
   if (cambio && cambio !== idioma) await guardar({ ...(estado ?? {}), idioma: cambio, humanoHasta: estado?.humanoHasta ?? 0 });
   const respuesta = perfil.formatear(c, enIdioma);
