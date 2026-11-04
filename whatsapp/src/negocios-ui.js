@@ -478,10 +478,12 @@ function app() {
     const info = h('div', { 'aria-live': 'polite' });
     const chat = h('div', { class: 'chat' });
     const msg = h('input', { type: 'text', placeholder: 'Escribí como si fueras un cliente', 'aria-label': 'Mensaje de prueba' });
+    let estadoPrueba = null;
     const mostrar = (r) => {
       poner(info, 
         r.errores && r.errores.length ? h('ul', { class: 'errores' }, r.errores.map((e) => h('li', {}, e))) : null,
         r.pendientes && r.pendientes.length ? h('p', { class: 'chip alerta' }, 'Falta completar: ' + r.pendientes.join(' · ')) : null,
+        r.idiomas && r.idiomas.length > 1 ? h('p', { class: 'ayuda' }, 'Idiomas: ' + r.idiomas.map((i) => ({ es: 'castellano', en: 'inglés', hr: 'croata' })[i]).join(', ') + ' (el primer mensaje pregunta en cuál seguir)') : null,
         r.menu ? h('p', { class: 'ayuda' }, 'Menú: ' + r.menu.join(' · ')) : null,
         r.error ? h('p', { class: 'errores' }, r.error) : null);
     };
@@ -495,7 +497,8 @@ function app() {
         }) }, 'Guardar')),
       info,
       h('h3', {}, 'Probar'),
-      h('p', { class: 'ayuda' }, 'Charla simulada con la ficha de arriba (aunque no esté guardada) y los productos cargados. No se manda nada a Instagram.'),
+      h('p', { class: 'ayuda' }, 'Charla simulada con la ficha de arriba (aunque no esté guardada) y los productos cargados, como la vería alguien que escribe por primera vez. No se manda nada a Instagram.'),
+      h('div', { class: 'acciones' }, h('button', { class: 'btn', type: 'button', onclick: () => { estadoPrueba = null; poner(chat); msg.focus(); } }, 'Reiniciar charla')),
       chat,
       h('form', { class: 'barra', onsubmit: conError(async (e) => {
         e.preventDefault();
@@ -503,7 +506,9 @@ function app() {
         if (!m) return;
         msg.value = '';
         chat.append(h('div', { class: 'burbuja cliente' }, m));
-        const r = await api(base() + '/probar', { metodo: 'POST', cuerpo: { texto: texto.value, mensajes: ['hola', m] } });
+        // La charla sigue: se manda lo que devolvió el mensaje anterior (idioma elegido, pausa de PERSONA) (ZL-126).
+        const r = await api(base() + '/probar', { metodo: 'POST', cuerpo: { texto: texto.value, mensajes: [m], estado: estadoPrueba } });
+        estadoPrueba = r.estado || null;
         const ultima = r.charla[r.charla.length - 1];
         for (const t of ultima.respuestas) chat.append(h('div', { class: 'burbuja asis' }, t));
         // Una falla de la IA no es un control: se muestra como lo que es (ZL-125).

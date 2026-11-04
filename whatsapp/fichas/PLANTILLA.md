@@ -13,10 +13,13 @@
 
 ## Datos
 
-> Nombre: como lo dice el negocio. Idioma: castellano, inglés o croata. Trato: vos, tú o usted.
+> Nombre: como lo dice el negocio. Idioma: castellano, inglés o croata; o varios, separados por coma («castellano,
+> inglés»): el primero es el principal y, con varios, el primer mensaje pregunta en cuál seguir (ver «Varios idiomas»
+> al final). Trato: vos, tú o usted (para el castellano).
 > Emojis: sí o no. Precios: «sí» si el asistente puede decir los precios escritos en esta ficha; «no» si nunca.
 > Horas de pausa: cuánto se calla el asistente después de que alguien escribe PERSONA (de 1 a 72).
-> Cuándo responde una persona: aparece en el mensaje que recibe quien pide una persona.
+> Cuándo responde una persona: aparece en el mensaje que recibe quien pide una persona. Con varios idiomas, una línea
+> por idioma: «- Cuándo responde una persona (inglés): Monday to Saturday, 9 to 19» (sin ella, ese idioma no lo dice).
 
 - Nombre: [COMPLETAR nombre del negocio]
 - Idioma: castellano
@@ -80,3 +83,21 @@
 
 - Quiere hacer un pedido o una reserva.
 - Pregunta por pedidos grandes, eventos o mayoristas.
+
+<!--
+## Varios idiomas (solo si en «Idioma» pusiste más de uno)
+
+Por cada idioma que no sea el principal, copiá el saludo y el menú traducidos, con las MISMAS opciones y en el mismo
+orden (el número 2 tiene que ser lo mismo en todos los idiomas). Lo demás («Lo que sabe el asistente», preguntas,
+«Nunca») va una sola vez, en el principal: la IA lo responde en el idioma de la persona. Para que cuente, borrá
+la primera y la última línea de este bloque (las que lo marcan como comentario).
+
+## Saludo (inglés)
+
+I'm the virtual assistant of … 
+
+## Menú (inglés)
+
+### 1. 🛍️ Our products
+…
+-->

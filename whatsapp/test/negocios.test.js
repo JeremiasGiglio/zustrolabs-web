@@ -183,6 +183,22 @@ test('la IA consulta el catálogo de SU negocio antes de responder, y el tope di
   assert.match(ia.at(-1).catalogo, /Medialunas · \$ 900 · AGOTADO: no ofrecer/);
   assert.doesNotMatch(ia.at(-1).catalogo, /secreto/, 'nunca el catálogo de otro negocio');
 
+  // ZL-126: la charla de prueba sigue entre mensajes (idioma elegido), con una ficha en dos idiomas sin guardar.
+  const dos = FICHA.replace('- Idioma: castellano', '- Idioma: castellano, inglés') +
+    '\n## Saludo (inglés)\n\nHi from the bakery.\n\n## Menú (inglés)\n\n### 1. Bread\nFresh.\n\n### 2. Cakes\nTo order.\n\n### 3. Hours\nMon to Sat.\n';
+  const probar = async (m, estado) => (await pedir('equipo@example.com', 'POST', `/api/n/${a.id}/probar`, { texto: dos, mensajes: [m], estado })).datos;
+  const q1 = await probar('hello', null);
+  assert.equal(q1.charla[0].que, 'pide_idioma');
+  assert.deepEqual(q1.estado, { humanoHasta: 0 });
+  const q2 = await probar('2', q1.estado);
+  assert.equal(q2.charla[0].que, 'idioma');
+  assert.match(q2.charla[0].respuestas.join('\n'), /Hi from the bakery[\s\S]*Bread/);
+  assert.equal(q2.estado.idioma, 'en');
+  const q3 = await probar('2', q2.estado);
+  assert.match(q3.charla[0].respuestas[0], /To order/, 'con el idioma ya elegido, 2 es la opción del menú');
+  // Un estado raro se ignora (no rompe la prueba).
+  assert.equal((await probar('hello', { idioma: 'xx', humanoHasta: 'mucho' })).charla[0].que, 'pide_idioma');
+
   // Un mensaje real de Instagram a la cuenta de La Espiga: consulta su catálogo y responde con su token.
   const mensaje = async (cuenta, text, quien = '17841400000000009') => {
     const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: cuenta, time: T0, messaging: [{ sender: { id: quien }, recipient: { id: cuenta }, timestamp: T0, message: { mid: 'm' + Math.random(), text } }] }] });

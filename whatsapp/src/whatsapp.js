@@ -217,12 +217,16 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // mientras se espera el idioma (ya saludamos y todavía no eligió), también 1, 2 o 3.
   const num = ev.kind === 'text' ? numeroSolo(ev.text) : null;
   const esperaIdioma = !unico && !!estado && !estado.idioma;
-  const elegido = unico || ev.kind !== 'text' ? null : eligeIdioma(ev.text) ?? (esperaIdioma ? IDIOMA_POR_NUMERO[num] ?? null : null);
+  // Un negocio con varios idiomas (ZL-126) pregunta con los suyos, en su orden; el estudio, con los tres de siempre.
+  const delPerfil = (i) => (i && perfil.idiomas.includes(i) ? i : null);
+  const porNumero = perfil.idiomaPorNumero ?? IDIOMA_POR_NUMERO;
+  const pedirIdioma = () => (perfil.preguntaIdioma ? msgTexto(ev.from, perfil.preguntaIdioma) : msgIdiomas(ev.from));
+  const elegido = unico || ev.kind !== 'text' ? null : delPerfil(eligeIdioma(ev.text)) ?? (esperaIdioma ? porNumero[num] ?? null : null);
   if (elegido) ev = { ...ev, kind: 'idioma', idioma: elegido };
   const guardar = (s) => memoria?.put(ev.from, s);
   let cmd = ev.kind === 'text' ? comando(ev.text) : null;
   if (unico && cmd === 'idioma') cmd = null;
-  const idioma = unico ?? idiomaDe(estado?.idioma);
+  const idioma = unico ?? delPerfil(estado?.idioma) ?? perfil.idiomas[0];
   const conocido = unico ?? estado?.idioma ?? null;
   const T = perfil.textos(idioma);
   const horas = perfil.horasPausa ?? HORAS_PERSONA;
@@ -267,7 +271,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   }
 
   if (ev.kind === 'idioma') {
-    const nuevo = idiomaDe(ev.idioma);
+    const nuevo = delPerfil(ev.idioma) ?? perfil.idiomas[0];
     await guardar({ ...estado, idioma: nuevo, humanoHasta: 0 });
     // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
     const N = perfil.textos(nuevo);
@@ -277,7 +281,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if (cmd === 'idioma') {
     // Mientras elige, los números 1 a 3 son idiomas (no opciones del menú).
     if (estado) await guardar({ humanoHasta: estado.humanoHasta ?? 0 });
-    return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
+    return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   }
   if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu)], metrica: 'menu' };
   if (ev.kind === 'otro') return { send: [msgTexto(ev.from, T.soloTexto)], metrica: 'otro' };
@@ -294,11 +298,12 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   }
   // Todavía no eligió idioma: si saluda otra vez se le vuelve a preguntar; si pregunta qué hacemos, se toma el idioma
   // de la pregunta.
-  if (saludo && esperaIdioma) return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
+  if (saludo && esperaIdioma) return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   if (queHacen && esperaIdioma) {
-    await guardar({ ...estado, idioma: queHacen, humanoHasta: 0 });
-    const P = perfil.textos(queHacen);
-    return { send: [msgTexto(ev.from, P.quienes), msgTexto(ev.from, P.menu)], metrica: 'presentacion', idioma: queHacen };
+    const en = delPerfil(queHacen) ?? perfil.idiomas[0];
+    await guardar({ ...estado, idioma: en, humanoHasta: 0 });
+    const P = perfil.textos(en);
+    return { send: [msgTexto(ev.from, P.quienes), msgTexto(ev.from, P.menu)], metrica: 'presentacion', idioma: en };
   }
 
   // Un número del menú: respuesta fija, sin gastar IA.
@@ -311,7 +316,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // Primer contacto (con memoria): botones de idioma. Si escribe otra cosa sin elegir, sigue en castellano.
   if (memoria && !estado && !unico) {
     await guardar({ humanoHasta: 0 });
-    return { send: [msgIdiomas(ev.from)], metrica: 'pide_idioma' };
+    return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   }
 
   const texto = String(ev.text ?? '').replace(CONTROL_RE, ' ').trim().slice(0, LIMITES.mensaje);

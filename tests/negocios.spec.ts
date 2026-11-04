@@ -127,6 +127,28 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('combobox', { name: 'Negocio' }).locator('option:checked')).toHaveText('Chocolatería Ficticia');
   });
 
+  test('la charla de prueba con una ficha en dos idiomas pregunta el idioma, lo recuerda y se reinicia (ZL-126)', async ({ page }) => {
+    await montar(page, 'equipo@example.com');
+    await page.getByRole('tab', { name: 'Asistente' }).click();
+    const dos = FICHA.replace('- Idioma: castellano', '- Idioma: castellano, inglés') +
+      '\n## Saludo (inglés)\n\nHi from the bakery.\n\n## Menú (inglés)\n\n### 1. Bread\nFresh.\n\n### 2. Cakes\nTo order.\n\n### 3. Hours\nMon to Sat.\n';
+    await page.getByLabel('Ficha del negocio').fill(dos);
+    const enviar = async (m: string) => {
+      await page.getByLabel('Mensaje de prueba').fill(m);
+      await page.getByRole('button', { name: 'Enviar' }).click();
+    };
+    await enviar('hello');
+    await expect(page.locator('.burbuja.asis').last()).toContainText('2️⃣ English');
+    await enviar('2');
+    await expect(page.locator('.burbuja.asis').last()).toContainText('How can I help?');
+    await enviar('2');
+    await expect(page.locator('.burbuja.asis').last()).toContainText('To order.');
+    await page.getByRole('button', { name: 'Reiniciar charla' }).click();
+    await expect(page.locator('.burbuja')).toHaveCount(0);
+    await enviar('2');
+    await expect(page.locator('.burbuja.asis').last()).toContainText('Which language', { timeout: 5000 });
+  });
+
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {
     await montar(page, 'duena@example.com');
     await page.getByRole('button', { name: '+ Nuevo producto' }).click();

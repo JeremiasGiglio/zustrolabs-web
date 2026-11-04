@@ -61,6 +61,15 @@ adelante, por WhatsApp). Vive en el Worker `zustrolabs-whatsapp`, igual que el p
 5. **Asistente:** pegar la ficha completa, Revisar, probar la charla (usa los productos) y Guardar con «Activa».
 6. Prueba real desde otra cuenta de Instagram.
 
+## Varios idiomas (ZL-126)
+
+En la ficha, «Idioma: castellano, inglés, croata» (el primero es el principal). Con más de uno, el primer mensaje de
+cada persona pregunta en cuál seguir (1, 2, 3, el nombre o la bandera) y el saludo, el menú y sus respuestas salen en
+ese idioma; por cada idioma que no es el principal van «## Saludo (inglés)» y «## Menú (inglés)» con las mismas
+opciones (son textos fijos, sin IA: la plantilla lo explica al final). La IA responde en el idioma elegido, salvo que
+la persona escriba o pida otro; IDIOMA vuelve a preguntar. Con un solo idioma no se pregunta nada. La charla de
+prueba de la pestaña Asistente sigue entre mensajes (idioma, PERSONA) y se reinicia con «Reiniciar charla».
+
 ## La cuenta de Instagram del estudio (ZL-124)
 
 @zustrolabs (conectada con la app de Meta del estudio) responde con lo de la landing, salvo que esté **vinculada a un
