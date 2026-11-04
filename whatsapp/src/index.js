@@ -194,9 +194,9 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       const catalogo = consultaCatalogo(env, deps, dueño?.id, pf.ficha);
       const ia = deps.preguntarNegocio ? deps.preguntarNegocio(pf.ficha, catalogo) : preguntadorNegocio(env, pf.ficha, { catalogo });
       // Tope por negocio: uno con mucho movimiento no deja sin IA a los demás. También es lo que se le factura.
-      preguntarEv = async (texto, idioma) => {
+      preguntarEv = async (texto, idioma, opciones) => {
         if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
-        return ia(texto, idioma);
+        return ia(texto, idioma, opciones);
       };
       if (cliente) charlasEv = null;
     }
