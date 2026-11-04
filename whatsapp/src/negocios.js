@@ -206,9 +206,9 @@ export async function administrar(request, ruta, deps, now) {
   if (request.method === 'GET' && ruta === '/cuentas') {
     const lista = (await deps.cuentas?.list?.()) ?? [];
     const out = [];
+    // La del estudio también aparece (ZL-124): vinculada a un negocio con ficha activa, responde con esa ficha y su catálogo.
     for (const c of lista) {
-      if (!deps.esCliente(c)) continue;
-      out.push({ id: c.id, username: c.username, negocio: (await deps.negocios.deCuenta(c.id))?.id ?? null });
+      out.push({ id: c.id, username: c.username, negocio: (await deps.negocios.deCuenta(c.id))?.id ?? null, ...(!deps.esCliente(c) && { estudio: true }) });
     }
     return json({ cuentas: out });
   }
@@ -229,7 +229,6 @@ export async function administrar(request, ruta, deps, now) {
       for (const c of b.cuentas) {
         const cu = conectadas.get(String(c));
         if (!cu) return error(`la cuenta ${c} no está conectada`);
-        if (!deps.esCliente(cu)) return error('esa es la cuenta del estudio');
       }
       cambios.cuentas = b.cuentas.map(String);
     }

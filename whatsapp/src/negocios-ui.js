@@ -541,7 +541,7 @@ function app() {
       for (const n of negocios) {
         const em = h('input', { type: 'text', value: n.emails.join(', '), 'aria-label': 'Correos de ' + n.nombre });
         const lim = h('input', { type: 'number', min: 10, max: 5000, value: n.limiteDia, 'aria-label': 'Respuestas de IA por día' });
-        const marcas = cuentas.filter((c) => !c.negocio || c.negocio === n.id).map((c) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: c.id, 'data-cuenta': '1', checked: n.cuentas.includes(c.id) }), '@' + (c.username || c.id)));
+        const marcas = cuentas.filter((c) => !c.negocio || c.negocio === n.id).map((c) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: c.id, 'data-cuenta': '1', checked: n.cuentas.includes(c.id) }), '@' + (c.username || c.id) + (c.estudio ? ' (cuenta del estudio: con la ficha activa responde con ella; si no, con lo de la página)' : '')));
         const ig = h('input', { type: 'checkbox', checked: n.canales.instagram });
         const wa = h('input', { type: 'checkbox', checked: n.canales.whatsapp });
         lista.append(h('div', { class: 'caja' },

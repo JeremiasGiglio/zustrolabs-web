@@ -175,10 +175,15 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
     }
     // La cuenta de un cliente (conectada con su propia app) responde con SU ficha del negocio; sin ficha activa, no
     // responde nada (nunca como Zustro Labs). Sin panel: el negocio contesta desde su app mientras el asistente se calla.
-    const negocio = esCliente(env, cuenta);
+    // La cuenta del estudio (ZL-124) usa la ficha y el catálogo de su negocio solo si está vinculada a uno y la ficha
+    // está activa y sin errores; si no, responde como siempre, con lo de la landing. PERSONA sigue yendo al panel del equipo.
+    const cliente = esCliente(env, cuenta);
+    const fichaEstudio = !cliente && cuenta ? await fichaDelEstudio(a, ev.cuenta) : null;
+    if (fichaEstudio?.motivo) log({ ok: fichaEstudio.motivo !== 'ficha_invalida', que: `estudio_${fichaEstudio.motivo}` });
+    const negocio = cliente || Boolean(fichaEstudio?.texto);
     let perfil, preguntarEv = preguntar, charlasEv = charlas;
     if (negocio) {
-      const f = await a.fichas?.get(ev.cuenta);
+      const f = cliente ? await a.fichas?.get(ev.cuenta) : fichaEstudio;
       if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
       const pf = parsearFicha(f.texto);
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
@@ -193,7 +198,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
         if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
         return ia(texto, idioma);
       };
-      charlasEv = null;
+      if (cliente) charlasEv = null;
     }
     try {
       // Sin límites no se responde: son el freno al abuso y al gasto en IA.
@@ -219,7 +224,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
         if (avisado === false && !avisoError) avisoError = 'sin_config';
       }
       // Solo métricas: ni el número ni el texto.
-      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio, idioma: r.idioma, fuera: r.fuera, notas: r.notas, uso: r.uso, handoff: r.handoff, avisado, avisoError });
+      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio, ...(fichaEstudio?.texto && { estudio: 'ficha' }), idioma: r.idioma, fuera: r.fuera, notas: r.notas, uso: r.uso, handoff: r.handoff, avisado, avisoError });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
       // El aviso de falla va en el idioma de la charla (si la memoria responde).
@@ -232,6 +237,23 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
 
 /** La cuenta es de un cliente si se conectó con una app que no es la del estudio. */
 export const esCliente = (env, cuenta) => Boolean(cuenta?.app && cuenta.app !== String(env.IG_APP_ID ?? ''));
+
+/**
+ * La ficha que usa la cuenta del estudio (ZL-124): la de su negocio, si está vinculada a uno y la ficha está activa y
+ * sin errores. Si no, {motivo} (o null sin negocio) y la cuenta responde con lo de la landing, como siempre: nunca muda.
+ */
+async function fichaDelEstudio(a, cuenta) {
+  if (!a.negocios || !a.fichas) return null;
+  const dueño = await a.negocios.deCuenta(cuenta);
+  if (!dueño) return null;
+  // Con Instagram apagado en ese negocio, la del estudio vuelve a lo de la landing (un cliente, en cambio, se calla).
+  if (!canalesDe(dueño).instagram) return { motivo: 'canal_apagado' };
+  const f = await a.fichas.get(cuenta);
+  if (!f?.texto) return { motivo: 'sin_ficha' };
+  if (!f.activa) return { motivo: 'ficha_inactiva' };
+  if (!parsearFicha(f.texto).ok) return { motivo: 'ficha_invalida' };
+  return f;
+}
 
 /** Charla de prueba con una ficha (y los productos del negocio, si se sabe cuál), sin tocar la memoria real ni mandar nada. */
 async function probarFicha(env, ficha, mensajes, deps, negocioId = null) {
@@ -296,12 +318,15 @@ async function admin(request, env, deps) {
     const listaCuentas = [];
     for (const c of await cuentas.list()) {
       const cli = esCliente(env, c);
-      const f = cli ? await fichas?.get(c.id) : null;
+      const negocio = (await almacen(env, deps).negocios?.deCuenta(c.id))?.id ?? null;
+      // La del estudio sin negocio responde con lo de la landing («estudio»); vinculada a uno, con su ficha (ZL-124).
+      const f = cli || negocio ? await fichas?.get(c.id) : null;
       const pf = f?.texto ? parsearFicha(f.texto) : null;
       listaCuentas.push({
         id: c.id, username: c.username, app: c.app || String(env.IG_APP_ID ?? ''), tokenVenceEnDias: Math.floor((c.vence - now) / 86_400_000),
-        negocio: cli ? (await almacen(env, deps).negocios?.deCuenta(c.id))?.id ?? null : null,
-        ficha: cli ? { tiene: Boolean(f?.texto), activa: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, pendientes: pf?.pendientes ?? [] } : 'estudio',
+        negocio,
+        ...(!cli && { estudio: true }),
+        ficha: cli || negocio ? { tiene: Boolean(f?.texto), activa: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, pendientes: pf?.pendientes ?? [] } : 'estudio',
       });
     }
     return json({
@@ -347,7 +372,10 @@ async function admin(request, env, deps) {
     if (!fichas) return json({ error: 'sin memoria' }, 503);
     const c = await cuentas.get(m[1]);
     if (!c) return json({ error: 'esa cuenta no está conectada: conectala primero' }, 404);
-    if (!esCliente(env, c)) return json({ error: 'es la cuenta del estudio: responde con lo de la landing, no con una ficha' }, 400);
+    // La del estudio puede tener ficha solo si ya está vinculada a un negocio (en la app): así nunca se crea un negocio solo.
+    if (!esCliente(env, c) && !(await almacen(env, deps).negocios?.deCuenta(c.id))) {
+      return json({ error: 'es la cuenta del estudio: vinculala a un negocio en negocios.zustrolabs.com (Administración) para darle una ficha' }, 400);
+    }
     if (request.method === 'GET') {
       const f = await fichas.get(m[1]);
       return f ? json({ ok: true, texto: f.texto, activa: f.activa, actualizada: f.actualizada, ...resumenFicha(parsearFicha(f.texto)) }, 200) : json({ error: 'sin ficha' }, 404);
