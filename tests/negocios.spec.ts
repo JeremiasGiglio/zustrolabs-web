@@ -139,6 +139,13 @@ test.describe('app de negocios (ZL-121)', () => {
     expect(texto).toContain(`;"'=HYPERLINK(""http://malo.example.com"")";`);
   });
 
+  test('un correo sin negocio ve el aviso, sin pestañas y sin textos sueltos («null»)', async ({ page }) => {
+    await montar(page, 'nadie@example.com');
+    await expect(page.getByText('Tu correo todavía no está en ningún negocio')).toBeVisible();
+    await expect(page.getByRole('tab')).toHaveCount(0);
+    expect(await page.locator('body').innerText()).not.toMatch(/\bnull\b|\bundefined\b/);
+  });
+
   test('sin scroll horizontal y sin problemas graves de accesibilidad', async ({ page }) => {
     await montar(page, 'equipo@example.com');
     await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();

@@ -160,7 +160,8 @@ function app() {
       ? h('select', { 'aria-label': 'Negocio', onchange: (e) => { estado.negocio = e.target.value; recordar(); cargarNegocio(); } },
           estado.yo.negocios.map((n) => h('option', { value: n.id, selected: n.id === estado.negocio }, n.nombre)))
       : h('strong', {}, (estado.yo.negocios[0] || {}).nombre || '');
-    raiz.append(
+    // poner() saltea lo vacío: sin negocio no hay pestañas (append escribiría «null»).
+    poner(raiz,
       h('header', { class: 'top' },
         h('div', { class: 'marca' }, logo(), h('span', {}, 'Negocios')),
         estado.yo.negocios.length ? sel : null,
