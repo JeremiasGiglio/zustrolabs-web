@@ -51,6 +51,8 @@ adelante, por WhatsApp). Vive en el Worker `zustrolabs-whatsapp`, igual que el p
 
 ## Alta de un cliente
 
+Antes de la primera, leer [`FALLAS_Y_PREVENCION.md`](FALLAS_Y_PREVENCION.md): lo que ya nos falló y cómo evitarlo.
+
 **Lo normal:** `whatsapp\scripts\cliente-nuevo.ps1` hace todo en unos 30 minutos (ver `INSTAGRAM_CLIENTES.md`). A mano, en la app:
 
 1. **Administración → Nuevo negocio:** nombre y correos de quienes van a entrar.
