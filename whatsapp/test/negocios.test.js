@@ -37,6 +37,7 @@ async function token(email, { aud = AUD, exp = T0 / 1000 + 3600 } = {}) {
 
 // Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
 const FIRMA_FALSA = 'secreto-del-webhook';
+const CLAVE_YC = 'clave-api-ycloud-de-prueba-123';
 
 async function armar() {
   _resetCerts();
@@ -397,7 +398,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
   assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { canales: { instagram: true, whatsapp: true }, pedidos: true })).status, 200);
   const pan = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Pan francés', precio: 2500, stock: 10 })).datos;
-  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000001', apiKey: 'clave-api-ycloud-de-prueba-123' })).status, 200);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000001', apiKey: CLAVE_YC })).status, 200);
   const clave = /\/ycloud\/([0-9a-f]{24})$/.exec(enviados.find((e) => e.url.endsWith('/webhookEndpoints')).body.url)[1];
   // La «IA»: pide el carrito con la ref que ve en el catálogo.
   const vio = [];
@@ -445,7 +446,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
     assert.equal(r.datos.estado, estado);
     assert.equal(r.datos.aviso, true);
     const e = enviados.slice(antes).find((x) => x.url.endsWith('/sendDirectly'));
-    assert.equal(e.clave, 'clave-api-ycloud-de-prueba-123');
+    assert.equal(e.clave, CLAVE_YC);
     assert.deepEqual([e.body.from, e.body.to], ['+5493410000001', '+5493410000009']);
     avisos.push(e.body.text.body);
   }
