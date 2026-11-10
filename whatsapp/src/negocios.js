@@ -59,7 +59,11 @@ export const todosLosNumeros = async (ycloud) => (await ycloud.list()).map(sinSe
  * hacia este Worker, guarda la clave y el secreto (nunca se devuelven) y enciende WhatsApp en el negocio.
  * → {status, datos}
  */
-export async function conectarWhatsApp({ ycloud, negocios, fetch: fetchImpl = fetch }, negocio, cuerpo, host) {
+// El webhook va SIEMPRE a zustrolabs.com: negocios. y equipo. están detrás de Cloudflare Access y YCloud recibiría la
+// página de inicio de sesión (con 200), sin que el mensaje llegue nunca al asistente (pasó el 10/11/2026).
+export const WEBHOOK_ORIGEN = 'https://zustrolabs.com';
+
+export async function conectarWhatsApp({ ycloud, negocios, fetch: fetchImpl = fetch }, negocio, cuerpo) {
   const numero = numeroE164(cuerpo?.numero);
   if (!numero) return { status: 400, datos: { error: 'el número va con código de país, por ejemplo +5493411234567' } };
   const apiKey = String(cuerpo?.apiKey ?? '').trim();
@@ -70,7 +74,7 @@ export async function conectarWhatsApp({ ycloud, negocios, fetch: fetchImpl = fe
   const clave = claveNueva();
   let wh;
   try {
-    wh = await crearWebhook(apiKey, `https://${host}/api/whatsapp/ycloud/${clave}`, fetchImpl);
+    wh = await crearWebhook(apiKey, `${WEBHOOK_ORIGEN}/api/whatsapp/ycloud/${clave}`, fetchImpl);
   } catch (e) {
     console.log(JSON.stringify({ canal: 'yc', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 60) }));
     return { status: 502, datos: { error: String(e?.message ?? 'no se pudo crear el webhook en YCloud') } };
@@ -196,7 +200,7 @@ export async function appNegocios(request, env, deps) {
     if (request.method === 'GET' && sub === '/whatsapp') return json({ numeros: await numerosDe(deps.ycloud, negocio.id), canal: canalesDe(negocio).whatsapp });
     if (request.method === 'POST' && sub === '/whatsapp') {
       const b = await request.json().catch(() => null);
-      const r = await conectarWhatsApp(deps, negocio, b, url.host);
+      const r = await conectarWhatsApp(deps, negocio, b);
       return json(r.datos, r.status);
     }
     const w = /^\/whatsapp\/([0-9a-f]{24})$/.exec(sub);

@@ -306,7 +306,8 @@ test('WhatsApp (ZL-136): el negocio conecta su número solo, con su clave de YCl
   assert.doesNotMatch(JSON.stringify(r.datos), /clave-api|secreto-del-webhook/);
   const wh = enviados.find((e) => e.url.endsWith('/webhookEndpoints'));
   assert.equal(wh.clave, CLAVE, 'el webhook se crea en la cuenta de YCloud del negocio');
-  assert.match(wh.body.url, /^https:\/\/negocios\.zustrolabs\.com\/api\/whatsapp\/ycloud\/[0-9a-f]{24}$/);
+  // Siempre a zustrolabs.com: negocios. está detrás de Access y YCloud recibiría el inicio de sesión (10/11/2026).
+  assert.match(wh.body.url, /^https:\/\/zustrolabs\.com\/api\/whatsapp\/ycloud\/[0-9a-f]{24}$/);
   assert.equal((await n.negocios.get(a.id)).canales.whatsapp, true);
   const lista = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/whatsapp`);
   assert.deepEqual(lista.datos.numeros.map((x) => x.numero), ['+5493410000001']);
