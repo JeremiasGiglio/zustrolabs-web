@@ -34,6 +34,9 @@ async function token(email, { aud = AUD, exp = T0 / 1000 + 3600 } = {}) {
   return `${cuerpo}.${Buffer.from(firma).toString('base64url')}`;
 }
 
+// Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
+const FIRMA_FALSA = 'secreto-del-webhook';
+
 async function armar() {
   _resetCerts();
   const n = adaptadores(crearAtencion(almacenPrueba()), () => T0);
@@ -54,7 +57,7 @@ async function armar() {
     fetch: async (url, o) => {
       if (String(url) === `https://${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [jwk] });
       enviados.push({ url: String(url), auth: o?.headers?.authorization, clave: o?.headers?.['X-API-Key'], metodo: o?.method, body: JSON.parse(o?.body ?? 'null') });
-      if (String(url).endsWith('/webhookEndpoints')) return Response.json({ id: 'we_1', secret: 'secreto-del-webhook' });
+      if (String(url).endsWith('/webhookEndpoints')) return Response.json({ id: 'we_1', secret: FIRMA_FALSA });
       return Response.json({});
     },
     preguntarNegocio: (f, cat) => async (texto) => {

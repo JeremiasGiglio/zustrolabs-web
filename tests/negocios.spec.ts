@@ -18,6 +18,9 @@ const FICHA = readFileSync('whatsapp/test/ficha-prueba.md', 'utf8');
 
 let claves: CryptoKeyPair;
 let jwk: JsonWebKey & { kid: string };
+// Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
+const FIRMA_FALSA = 'secreto-de-prueba';
+
 async function montar(page: Page, email: string) {
   // Una sola clave por corrida: el Worker empaquetado guarda en memoria las claves de Access que ya bajó.
   if (!claves) {
@@ -39,7 +42,7 @@ async function montar(page: Page, email: string) {
       return { ejecutar: async (op: string, args: unknown[]) => structuredClone(ejecutarCatalogo(bases.get(id), op, structuredClone(args))) };
     },
     fetch: async (url: string) => (String(url).includes('/cdn-cgi/access/certs') ? Response.json({ keys: [jwk] })
-      : String(url).endsWith('/webhookEndpoints') ? Response.json({ id: 'we_1', secret: 'secreto-de-prueba' }) : Response.json({})),
+      : String(url).endsWith('/webhookEndpoints') ? Response.json({ id: 'we_1', secret: FIRMA_FALSA }) : Response.json({})),
     preguntarNegocio: () => async () => ({ respuesta: 'Sí, tenemos pan francés 🥖 ¿Cuánto querés?', persona: false, fuera_de_tema: false, vacia: false, notas: [] }),
   };
   const r = await n.negocios.guardar(null, { nombre: 'Panadería La Espiga', emails: ['duena@example.com'], cuentas: [] });
