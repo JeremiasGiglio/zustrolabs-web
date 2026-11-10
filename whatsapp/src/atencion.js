@@ -115,9 +115,10 @@ export function crearAtencion(storage) {
       return (await s.get(`igapp:${id}`)) ?? null;
     },
     async guardarAppIg(id, datos, now) {
-      const { secreto, nombre = '' } = datos ?? {};
+      const { secreto, nombre = '', compartida } = datos ?? {};
       const antes = await s.get(`igapp:${id}`);
-      await s.put(`igapp:${id}`, { id: String(id), secreto, nombre: String(nombre).slice(0, 80), creado: antes?.creado ?? now });
+      // `compartida` (ZL-137): la app de Zustro Labs para clientes, con la que conectan desde la app de negocios.
+      await s.put(`igapp:${id}`, { id: String(id), secreto, nombre: String(nombre).slice(0, 80), compartida: compartida ?? antes?.compartida ?? false, creado: antes?.creado ?? now });
     },
     async borrarAppIg(id) {
       await s.delete(`igapp:${id}`);
@@ -184,7 +185,9 @@ export function crearAtencion(storage) {
       const c0 = antes?.canales ?? { instagram: true, whatsapp: false };
       const ci = datos?.canales ?? {};
       const canales = { instagram: typeof ci.instagram === 'boolean' ? ci.instagram : c0.instagram, whatsapp: typeof ci.whatsapp === 'boolean' ? ci.whatsapp : c0.whatsapp };
-      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, creado: antes?.creado ?? now, actualizado: now };
+      // El pedido de invitación de Instagram (ZL-137): {usuario, pedido} hasta que el equipo lo atiende (null lo borra).
+      const invitacionIg = datos?.invitacionIg !== undefined ? datos.invitacionIg : antes?.invitacionIg ?? null;
+      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, invitacionIg, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);

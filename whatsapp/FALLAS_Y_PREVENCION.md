@@ -117,6 +117,16 @@ Columna «Auto»: ✅ ya lo hace el script · 🔧 se puede automatizar (ver sec
 | Usa WhatsApp para Windows | Esos mensajes no los ve el asistente | web.whatsapp.com | ✋ |
 | Se recrea el webhook a mano en YCloud | Registro `firma` | `-Desconectar` y volver a conectar | ✅ |
 
+### I. La app compartida de Instagram (ZL-137)
+
+| Qué puede fallar | Cómo se nota | Cómo evitarlo | Auto |
+|---|---|---|---|
+| La app compartida no está registrada | El botón «Conectar Instagram» está apagado y dice «Todavía no está disponible» | `instagram-app-clientes.ps1` una vez | ✅ |
+| La cuenta no es Instagram Tester (o no aceptó) | Instagram muestra un error al apretar «Conectar Instagram» | `-Invitaciones`, agregarla como Instagram Tester y que acepte en manage_access | ✋ |
+| La app no está en Live | Conecta, pero no llegan los mensajes | Publish → Live en la app compartida | ✋ |
+| Se llenó (unas 50 cuentas) | Meta no deja agregar más evaluadores | Registrar otra app con el script: se usa la más nueva | ✅ |
+| El link de conectar venció (1 hora) | «el link venció o no es válido» al volver | Apretar «Conectar Instagram» de nuevo | ✅ |
+
 ## 3. Qué dice cada registro
 
 Cloudflare → Workers & Pages → `zustrolabs-whatsapp` → Observability. Buscar por `que`:

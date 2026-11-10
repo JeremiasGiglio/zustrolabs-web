@@ -180,30 +180,35 @@ export async function secretosDe(env, apps) {
   return [...(propia ? [propia.secreto] : []), ...(lista ?? []).map((a) => a.secreto)].filter(Boolean);
 }
 
-/** `state` firmado para el OAuth: lleva la app y vence a los 15 minutos; así nadie conecta una cuenta sin pasar por nuestro link. */
-export async function firmarEstado(secreto, now = Date.now(), app = '') {
+/**
+ * `state` firmado para el OAuth: lleva la app (y, desde la app de negocios, el negocio: ZL-137) y vence a los 15
+ * minutos; así nadie conecta una cuenta sin pasar por nuestro link, ni la vincula a un negocio que no es suyo.
+ */
+export async function firmarEstado(secreto, now = Date.now(), app = '', negocio = '') {
   const hasta = String(now + 15 * 60_000);
-  const cuerpo = `${hasta}.${app}`;
+  const cuerpo = negocio ? `${hasta}.${app}.${negocio}` : `${hasta}.${app}`;
   return `${cuerpo}.${await hmac(secreto, cuerpo)}`;
 }
-/** Devuelve {app} si el state es válido; null si no. */
+/** Devuelve {app, negocio?} si el state es válido; null si no. */
 export async function leerEstado(secreto, estado, now = Date.now()) {
-  const m = /^(\d+)\.(\d*)\.([A-Za-z0-9_-]+)$/.exec(String(estado ?? ''));
+  const m = /^(\d+)\.(\d*)(?:\.([a-z0-9]{4,40}))?\.([A-Za-z0-9_-]+)$/.exec(String(estado ?? ''));
   if (!m || Number(m[1]) < now) return null;
-  return m[3] === (await hmac(secreto, `${m[1]}.${m[2]}`)) ? { app: m[2] } : null;
+  const cuerpo = m[3] ? `${m[1]}.${m[2]}.${m[3]}` : `${m[1]}.${m[2]}`;
+  if (m[4] !== (await hmac(secreto, cuerpo))) return null;
+  return m[3] ? { app: m[2], negocio: m[3] } : { app: m[2] };
 }
 export const estadoValido = async (secreto, estado, now) => Boolean(await leerEstado(secreto, estado, now));
 
 export const urlVuelta = (origen) => `${origen}/api/instagram/conectar/vuelta`;
 
 /** Adónde mandar a la persona para que entre con su Instagram y acepte los permisos (con la app que corresponda). */
-export async function urlAutorizar(env, origen, now = Date.now(), app = appDelEstudio(env)) {
+export async function urlAutorizar(env, origen, now = Date.now(), app = appDelEstudio(env), negocio = '') {
   const u = new URL('https://www.instagram.com/oauth/authorize');
   u.searchParams.set('client_id', app.id);
   u.searchParams.set('redirect_uri', urlVuelta(origen));
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('scope', PERMISOS.join(','));
-  u.searchParams.set('state', await firmarEstado(env.IG_APP_SECRET, now, app.id));
+  u.searchParams.set('state', await firmarEstado(env.IG_APP_SECRET, now, app.id, negocio));
   u.searchParams.set('enable_fb_login', '0');
   u.searchParams.set('force_authentication', '1');
   return u.toString();
@@ -285,9 +290,11 @@ export async function mantenerCuentas(env, cuentas, fetchImpl = fetch, now = Dat
 }
 
 /** Página mínima que se muestra al terminar de conectar (sin datos de la persona). */
-export function paginaConectado({ ok, username, suscripta, error }) {
+export function paginaConectado({ ok, username, suscripta, error, volver }) {
+  // `volver`: desde la app de negocios (ZL-137), el botón para volver a ella.
+  const boton = volver ? `<p><a href="${volver}" style="display:inline-block;background:#C8102E;color:#fff;padding:.6rem 1rem;border-radius:8px;text-decoration:none;font-weight:600">Volver a mi negocio</a></p>` : '<p>Ya podés cerrar esta ventana.</p>';
   const t = ok
-    ? `<h1>Listo</h1><p>La cuenta ${username ? '@' + username.replace(/[^\w.]/g, '') : ''} quedó conectada${suscripta ? ' y suscripta a los mensajes' : ', pero falta la suscripción: avisanos'}.</p><p>Ya podés cerrar esta ventana.</p>`
-    : `<h1>No se pudo conectar</h1><p>Volvé a abrir el link que te mandamos o escribinos a contact@zustrolabs.com.</p><p><small>${String(error ?? '').replace(/[<>&]/g, '')}</small></p>`;
+    ? `<h1>Listo</h1><p>La cuenta ${username ? '@' + username.replace(/[^\w.]/g, '') : ''} quedó conectada${suscripta ? ' y suscripta a los mensajes' : ', pero falta la suscripción: avisanos'}.</p>${boton}`
+    : `<h1>No se pudo conectar</h1><p>${volver ? 'Volvé a tu negocio y probá de nuevo' : 'Volvé a abrir el link que te mandamos'}, o escribinos a contact@zustrolabs.com.</p><p><small>${String(error ?? '').replace(/[<>&]/g, '')}</small></p>${volver ? boton : ''}`;
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Instagram · Zustro Labs</title><style>body{font:18px/1.5 system-ui,sans-serif;color:#1B2230;max-width:36rem;margin:3rem auto;padding:0 1rem}h1{color:#C8102E}</style></head><body>${t}</body></html>`;
 }

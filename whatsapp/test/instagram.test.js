@@ -497,3 +497,16 @@ test('la página de conexión no lleva palabras prohibidas ni otros correos', ()
     for (const c of p.match(/[\w.+-]+@[\w.-]+\w/g) ?? []) assert.equal(c, 'contact@zustrolabs.com');
   }
 });
+
+test('el state del «Conectar Instagram» lleva la app y, si viene de la app de negocios, el negocio (ZL-137)', async () => {
+  const S = ENV.IG_APP_SECRET;
+  assert.deepEqual(await leerEstado(S, await firmarEstado(S, T0), T0), { app: '' });
+  assert.deepEqual(await leerEstado(S, await firmarEstado(S, T0, '3000000000000003'), T0), { app: '3000000000000003' });
+  const con = await firmarEstado(S, T0, '3000000000000003', 'n1a2b3c4');
+  assert.deepEqual(await leerEstado(S, con, T0), { app: '3000000000000003', negocio: 'n1a2b3c4' });
+  // Cambiar el negocio (o sacarlo) rompe la firma.
+  assert.equal(await leerEstado(S, con.replace('n1a2b3c4', 'z9z9z9z9'), T0), null);
+  assert.equal(await leerEstado(S, con.replace('.n1a2b3c4', ''), T0), null);
+  // Vencido, no sirve.
+  assert.equal(await leerEstado(S, con, T0 + 3_600_000), null);
+});
