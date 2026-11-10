@@ -8,7 +8,8 @@ falta que Zustro Labs sea empresa verificada ante Meta.
 **Lo normal (ZL-136): el cliente lo hace solo** en `negocios.zustrolabs.com` → su negocio → pestaña **WhatsApp**:
 la pestaña tiene los pasos de YCloud, el número, la clave de API (campo oculto) y «Conectar». No hace falta ninguna clave
 de Zustro Labs ni pasarnos su clave por chat. Antes, el equipo da de alta el negocio y su correo (Administración y la
-política de Access), como para Instagram. `scripts\whatsapp-cliente.ps1` queda para el equipo (con `IG_ADMIN_CLAVE`).
+política de Access), como para Instagram. `scripts\whatsapp-cliente.ps1` queda para el equipo (con `IG_ADMIN_CLAVE`); `scripts\alta.ps1` (ZL-138) ofrece las dos
+formas y termina con el semáforo, que avisa si el webhook no apunta a zustrolabs.com o si no llegó ningún mensaje.
 
 ## Cómo funciona
 

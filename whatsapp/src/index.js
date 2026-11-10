@@ -8,11 +8,13 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
 import { parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
-import { administrar, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
+import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
-import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla } from './ycloud.js';
+import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, webhookDeYCloud } from './ycloud.js';
+import { agregarAAcceso, correosEnAcceso } from './acceso.js';
+import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
 const MAX_CUERPO = 256_000;
 const MAX_EDAD_MS = 3600_000; // mensajes de más de 1 h se ignoran (reintentos tardíos o reenvíos de un pedido firmado)
@@ -436,11 +438,69 @@ function estadoDePrueba(e) {
 const leerFicha = async (request) => {
   try {
     const b = await request.json();
-    return { texto: String(b?.texto ?? ''), activa: b?.activa === true, mensajes: Array.isArray(b?.mensajes) ? b.mensajes : null };
+    return { texto: String(b?.texto ?? ''), activa: b?.activa === true, mensajes: Array.isArray(b?.mensajes) ? b.mensajes : null, cuenta: b?.cuenta ?? null, negocio: b?.negocio ?? null };
   } catch {
     return null;
   }
 };
+
+/** Agregar correos a la política de Access de la app de negocios (ZL-138), o null si no hay token de Cloudflare. */
+export const accesoDe = (env, deps) => (emails) => agregarAAcceso(env, deps.fetch ?? fetch, env.NEGOCIOS_HOST || NEGOCIOS_HOST, emails);
+
+/** GET|PUT /api/instagram/admin/negocios/<id>/ficha: la ficha del NEGOCIO (sirve sin Instagram, ZL-138). */
+async function fichaDeNegocio(request, env, deps, id) {
+  const { negocios } = almacen(env, deps);
+  const n = await negocios.get(id);
+  if (!n) return json({ error: 'no existe ese negocio' }, 404);
+  if (request.method === 'GET') {
+    const f = await negocios.ficha(id);
+    return f?.texto ? json({ ok: true, texto: f.texto, activa: Boolean(f.activa), ...resumenFicha(parsearFicha(f.texto)) }, 200) : json({ error: 'sin ficha' }, 404);
+  }
+  if (request.method !== 'PUT') return json({ error: 'usá GET o PUT' }, 405);
+  const b = await leerFicha(request);
+  if (!b) return json({ error: 'pedido inválido' }, 400);
+  const pf = parsearFicha(b.texto);
+  if (!pf.ok) return json(resumenFicha(pf), 400);
+  if (b.activa && pf.pendientes.length) return json({ ...resumenFicha(pf), error: 'faltan completar cosas: la ficha se guarda solo apagada' }, 400);
+  await negocios.guardarFicha(id, { texto: b.texto, activa: b.activa, nombre: pf.ficha.nombre });
+  console.log(JSON.stringify({ canal: 'negocio', que: 'ficha', activa: b.activa }));
+  return json({ ...resumenFicha(pf), activa: b.activa, negocio: n.nombre }, 200);
+}
+
+/** GET /api/instagram/admin/negocios/<id>/verificar: el semáforo del negocio, con una charla de prueba (ZL-138). */
+async function verificar(env, deps, id, now) {
+  const a = almacen(env, deps);
+  const fetchImpl = deps.fetch ?? fetch;
+  const negocio = await a.negocios.get(id);
+  if (!negocio) return json({ error: 'no existe ese negocio' }, 404);
+  const f = await a.negocios.ficha(id);
+  const pf = f?.texto ? parsearFicha(f.texto) : null;
+  const ficha = { tiene: Boolean(f?.texto), valida: Boolean(pf?.ok), activa: Boolean(f?.activa), errores: pf?.errores ?? [], pendientes: pf?.pendientes ?? [] };
+  const cuentas = [];
+  for (const cid of negocio.cuentas ?? []) {
+    const c = await a.cuentas.get(cid);
+    cuentas.push({ id: cid, username: c?.username ?? null, conectada: Boolean(c?.token), venceEnDias: c?.vence ? Math.floor((c.vence - now) / 86_400_000) : null });
+  }
+  const numeros = [];
+  for (const r of ((await a.ycloud?.list?.()) ?? []).filter((x) => x.negocio === id)) {
+    numeros.push({ clave: r.clave, numero: r.numero, ecos: r.ecos, ultimo: r.ultimo ?? null, webhook: await webhookDeYCloud(r.apiKey, r.endpointId, fetchImpl) });
+  }
+  let productos = null;
+  try {
+    const cat = catalogoDe(env, deps)(id);
+    const r = cat ? await cat.ejecutar('resumen', []) : null;
+    productos = r?.ok ? r.valor : null;
+  } catch { productos = null; }
+  const acceso = await correosEnAcceso(env, fetchImpl, env.NEGOCIOS_HOST || NEGOCIOS_HOST);
+  let charla = null;
+  if (ficha.valida && ficha.activa && !ficha.pendientes.length) {
+    const varios = (pf.ficha.idiomas?.length ?? 1) > 1;
+    charla = (await probarFicha(env, pf.ficha, mensajesDePrueba(varios), deps, id)).charla;
+  }
+  const r = verificarNegocio({ negocio: { ...negocio, canales: canalesDe(negocio) }, ficha, cuentas, numeros, productos, acceso, charla, now });
+  console.log(JSON.stringify({ canal: 'negocio', que: 'verificar', verde: r.verde, mal: r.controles.filter((x) => x.estado === 'mal').map((x) => x.id) }));
+  return json({ negocio: { id, nombre: negocio.nombre }, ...r, charla }, 200);
+}
 
 /**
  * Administración de Instagram para el script scripts/instagram-cliente.ps1 (Bearer IG_ADMIN_CLAVE):
@@ -469,7 +529,17 @@ async function admin(request, env, deps) {
   if (ruta === '/negocios' || ruta.startsWith('/negocios/')) {
     const a = almacen(env, deps);
     if (!a.negocios) return json({ error: 'sin memoria' }, 503);
-    return administrar(request, ruta, { ...a, esCliente: (c) => esCliente(env, c) }, now);
+    const mf = /^\/negocios\/([a-z0-9]{4,40})\/(ficha|verificar|instagram-link)$/.exec(ruta);
+    if (mf?.[2] === 'ficha') return fichaDeNegocio(request, env, deps, mf[1]);
+    if (mf?.[2] === 'verificar') return verificar(env, deps, mf[1], now);
+    if (mf?.[2] === 'instagram-link' && request.method === 'POST') {
+      // El link de «Conectar Instagram» con la app compartida para ese negocio (ZL-137/138), para mandárselo al cliente.
+      if (!(await a.negocios.get(mf[1]))) return json({ error: 'no existe ese negocio' }, 404);
+      const app = await appCompartida(apps);
+      if (!app || !env.IG_APP_SECRET) return json({ error: 'todavía no hay app compartida: corré instagram-app-clientes.ps1' }, 503);
+      return json({ url: await urlAutorizar(env, 'https://zustrolabs.com', now, app, mf[1]), app: app.id }, 200);
+    }
+    return administrar(request, ruta, { ...a, esCliente: (c) => esCliente(env, c), acceso: accesoDe(env, deps) }, now);
   }
   if (ruta === '/ycloud' || ruta.startsWith('/ycloud/')) return adminYCloud(request, env, deps, ruta, url, now);
   if (request.method === 'GET' && ruta === '/estado') {
@@ -523,7 +593,7 @@ async function admin(request, env, deps) {
     const pf = parsearFicha(b.texto);
     if (ruta === '/ficha/revisar' || !pf.ok) return json({ ...resumenFicha(pf) }, pf.ok ? 200 : 400);
     const mensajes = (b.mensajes ?? ['hola']).map((x) => String(x).slice(0, 500)).filter(Boolean).slice(0, 12);
-    const dueño = b.cuenta ? await almacen(env, deps).negocios?.deCuenta(String(b.cuenta)) : null;
+    const dueño = b.negocio ? await almacen(env, deps).negocios?.get(String(b.negocio)) : b.cuenta ? await almacen(env, deps).negocios?.deCuenta(String(b.cuenta)) : null;
     return json({ ...resumenFicha(pf), ...(await probarFicha(env, pf.ficha, mensajes, deps, dueño?.id ?? null)) }, 200);
   }
   m = /^\/cuentas\/(\d+)\/ficha$/.exec(ruta);

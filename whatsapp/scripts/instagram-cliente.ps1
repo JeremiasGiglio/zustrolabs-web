@@ -16,6 +16,7 @@ Uso (clic derecho → «Ejecutar con PowerShell», o en una ventana de PowerShel
   .\instagram-cliente.ps1                     solo Instagram (negocio nuevo o uno que ya está)
   .\instagram-cliente.ps1 -Ficha ..\fichas\clientes\mi-negocio.md    solo cargar o actualizar la ficha
   .\instagram-cliente.ps1 -SoloEstado        ver qué cuentas hay y en qué estado
+  (alta.ps1 lo llama con -SinFicha: la ficha ya la cargó por negocio)
 Si Windows dice que los scripts están deshabilitados: Set-ExecutionPolicy -Scope Process Bypass
 Guía completa: whatsapp/INSTAGRAM_CLIENTES.md
 #>
@@ -25,7 +26,8 @@ param(
   [string]$Cuenta = "",
   [string]$Worker = "https://zustrolabs.com",
   [switch]$SoloEstado,
-  [switch]$DesdeAlta
+  [switch]$DesdeAlta,
+  [switch]$SinFicha
 )
 
 . "$PSScriptRoot\comun.ps1"
@@ -133,10 +135,13 @@ Paso 5 "Vincular @$($nueva.username) a «$Nombre»"
 Vincular-Cuenta $neg $nueva.id "instagram"
 
 # ── 6. La ficha ──
-Paso 6 "La ficha del negocio (cómo habla el asistente de @$($nueva.username))"
-Nota "Hasta que tenga una ficha activa, la cuenta NO responde (nunca como Zustro Labs)."
-$rutaFicha = Preparar-Ficha $Nombre
-Flujo-Ficha $rutaFicha $nueva.id
+$rutaFicha = "(la del negocio, cargada por alta.ps1)"
+if (-not $SinFicha) {
+  Paso 6 "La ficha del negocio (cómo habla el asistente de @$($nueva.username))"
+  Nota "Hasta que tenga una ficha activa, la cuenta NO responde (nunca como Zustro Labs)."
+  $rutaFicha = Preparar-Ficha $Nombre
+  Flujo-Ficha $rutaFicha $nueva.id
+}
 
 # ── 7. Access y productos (cliente-nuevo.ps1 lo hace una sola vez para todos los canales) ──
 if (-not $DesdeAlta) {

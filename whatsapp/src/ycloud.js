@@ -147,3 +147,16 @@ export async function borrarWebhook(apiKey, id, fetchImpl = fetch) {
   const r = await fetchImpl(`${YCLOUD_API}/webhookEndpoints/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'X-API-Key': apiKey } });
   return r.ok || r.status === 404;
 }
+
+/** Adónde apunta el webhook en la cuenta de YCloud del negocio (para el semáforo, ZL-138) → {url} o {error}. */
+export async function webhookDeYCloud(apiKey, id, fetchImpl = fetch) {
+  try {
+    const r = await fetchImpl(`${YCLOUD_API}/webhookEndpoints/${encodeURIComponent(id)}`, { headers: { 'X-API-Key': apiKey } });
+    if (r.status === 404) return { error: 'el webhook ya no existe en YCloud' };
+    if (!r.ok) return { error: motivo(r.status) };
+    const d = await r.json().catch(() => ({}));
+    return { url: String(d?.url ?? ''), activo: d?.status ? d.status === 'active' : true };
+  } catch {
+    return { error: 'YCloud no respondió' };
+  }
+}

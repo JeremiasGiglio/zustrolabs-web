@@ -49,16 +49,28 @@ adelante, por WhatsApp). Vive en el Worker `zustrolabs-whatsapp`, igual que el p
    el panel de Cloudflare: cada deploy reemplaza las variables de texto por las del archivo. El correo del equipo sí va
    como **secreto** (no se borra): Workers & Pages → `zustrolabs-whatsapp` → Settings → Variables and Secrets → Add →
    Type **Secret** → `PANEL_EMAILS` = tu correo (varios, separados por coma) → Deploy.
-4. Entrar a https://negocios.zustrolabs.com con tu correo → pestaña **Administración**.
+4. **Access automático (ZL-138), una sola vez.** Para que los correos de cada negocio se agreguen solos a la política:
+   - Cloudflare → My Profile → API Tokens → Create Token → Custom token. Nombre: `zustrolabs-whatsapp Access`.
+     Permiso: **Account → Access: Apps and Policies → Edit**, solo esa cuenta. Sin vencimiento o con recordatorio.
+   - Workers & Pages → `zustrolabs-whatsapp` → Settings → Variables and Secrets → Add → Type **Secret**:
+     `CF_API_TOKEN` = el token, y `CF_ACCOUNT_ID` = el Account ID (está en la página principal de la cuenta) → Deploy.
+   - Sin estos dos, todo funciona igual, pero al guardar un negocio te avisa qué correos agregar a mano. Solo agrega:
+     sacar un correo de Access sigue siendo a mano.
+5. Entrar a https://negocios.zustrolabs.com con tu correo → pestaña **Administración**.
 
 ## Alta de un cliente
 
 Antes de la primera, leer [`FALLAS_Y_PREVENCION.md`](FALLAS_Y_PREVENCION.md): lo que ya nos falló y cómo evitarlo.
 
-**Lo normal:** `whatsapp\scripts\cliente-nuevo.ps1` hace todo en unos 30 minutos (ver `INSTAGRAM_CLIENTES.md`). A mano, en la app:
+**Lo normal (ZL-138):** `whatsapp\scripts\alta.ps1` hace todo en 10 a 15 minutos: el negocio y sus correos (que van
+solos a Access), la ficha del negocio con charla de prueba, Instagram (app compartida o la del cliente), WhatsApp (el
+cliente desde la app o con su clave), los productos y, al final, **el semáforo** (`GET /api/instagram/admin/negocios/<id>/verificar`):
+revisa Access, ficha, cuentas, números, que el webhook apunte a zustrolabs.com, productos y una charla de prueba, y dice
+qué hacer con cada cosa en rojo. `.\alta.ps1 -Verificar` corre solo el semáforo (para un cliente que dice que no anda).
+Deja copiado el mensaje de bienvenida para el cliente. A mano, en la app:
 
 1. **Administración → Nuevo negocio:** nombre y correos de quienes van a entrar.
-2. **Access:** agregar esos correos a la política de la app «Negocios» (paso 2 de arriba). Sin eso, Access no los deja pasar.
+2. **Access:** con `CF_API_TOKEN` se agregan solos al guardar; si no, Administración avisa cuáles agregar a mano en la política de la app «Negocios».
 3. **Instagram:** lo normal, el cliente lo hace desde su pestaña Instagram (ZL-137; nosotros lo agregamos como evaluador
    con `scripts\instagram-app-clientes.ps1 -Invitaciones`). Si no, conectar la cuenta con `scripts/instagram-cliente.ps1` (ver `INSTAGRAM_CLIENTES.md`) y, en
    Administración, marcar esa cuenta en el negocio → Guardar.

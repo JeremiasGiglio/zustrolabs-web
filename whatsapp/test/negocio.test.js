@@ -343,6 +343,15 @@ test('los scripts de Windows se guardan con BOM (PowerShell 5.1 lee los .ps1 sin
   const wa = leer('whatsapp-cliente.ps1').toString('utf8');
   for (const t of ['. "$PSScriptRoot\\comun.ps1"', 'Llamar POST "/ycloud"', '[switch]$DesdeAlta', '[switch]$Desconectar', '$apiKey = $null', 'Paso-Acceso']) assert.ok(wa.includes(t), t);
   assert.doesNotMatch(wa, /Write-Host[^\n]*\$apiKey/, 'la clave de API nunca se muestra');
-  const alta = leer('cliente-nuevo.ps1').toString('utf8');
-  for (const t of ['instagram-cliente.ps1', 'whatsapp-cliente.ps1', '[3] Los dos', 'Paso-Acceso', '-DesdeAlta']) assert.ok(alta.includes(t), t);
+  // ZL-138: el alta completa es alta.ps1; cliente-nuevo.ps1 solo lo llama.
+  assert.deepEqual([...leer('alta.ps1').subarray(0, 3)], [0xef, 0xbb, 0xbf], 'alta.ps1');
+  assert.deepEqual([...leer('instagram-app-clientes.ps1').subarray(0, 3)], [0xef, 0xbb, 0xbf], 'instagram-app-clientes.ps1');
+  assert.ok(leer('cliente-nuevo.ps1').toString('utf8').includes('alta.ps1'));
+  const alta = leer('alta.ps1').toString('utf8');
+  for (const t of ['. "$PSScriptRoot\\comun.ps1"', 'instagram-cliente.ps1', '-SinFicha', 'whatsapp-cliente.ps1', '[3] Los dos', 'Paso-Acceso', '-DesdeAlta',
+    '/verificar', '/instagram-link', '/ficha"', 'negocio = $neg.id', '[switch]$Verificar', 'Mensaje-Bienvenida']) assert.ok(alta.includes(t), t);
+  assert.doesNotMatch(alta, /\$args\s*=/, 'no se pisa la variable reservada $args');
+  // Nada de lo que se le manda al cliente habla de precios ni de «empresa» (HZZ).
+  const bienvenida = alta.slice(alta.indexOf('function Mensaje-Bienvenida'), alta.indexOf('# ── 0.'));
+  assert.doesNotMatch(bienvenida, /precio|empresa|contrat/i);
 });
