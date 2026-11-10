@@ -34,6 +34,9 @@ async function token(email, { aud = AUD, exp = T0 / 1000 + 3600 } = {}) {
   return `${cuerpo}.${Buffer.from(firma).toString('base64url')}`;
 }
 
+// Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
+const FIRMA_FALSA = 'secreto-del-webhook';
+
 async function armar() {
   _resetCerts();
   const n = adaptadores(crearAtencion(almacenPrueba()), () => T0);
@@ -53,7 +56,8 @@ async function armar() {
     ...n, catalogo, now: T0,
     fetch: async (url, o) => {
       if (String(url) === `https://${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [jwk] });
-      enviados.push({ url: String(url), auth: o?.headers?.authorization, body: JSON.parse(o?.body ?? 'null') });
+      enviados.push({ url: String(url), auth: o?.headers?.authorization, clave: o?.headers?.['X-API-Key'], metodo: o?.method, body: JSON.parse(o?.body ?? 'null') });
+      if (String(url).endsWith('/webhookEndpoints')) return Response.json({ id: 'we_1', secret: FIRMA_FALSA });
       return Response.json({});
     },
     preguntarNegocio: (f, cat) => async (texto) => {
@@ -290,4 +294,34 @@ test('el script de alta (IG_ADMIN_CLAVE) crea el negocio, elige canales y lo vin
   const lista = (await admin('GET', '/negocios')).datos.negocios;
   assert.equal(lista.length, 3, 'los dos de armar() y el nuevo: ninguno de más');
   assert.equal(lista.find((x) => x.id === n.datos.id).asistente.activo, true);
+});
+
+test('WhatsApp (ZL-136): el negocio conecta su número solo, con su clave de YCloud; no ve ni toca los de otro negocio', async () => {
+  const { n, a, b, pedir, enviados } = await armar();
+  const CLAVE = 'clave-api-ycloud-del-negocio-1';
+  // La dueña conecta su número con su correo, sin clave de administración.
+  const r = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+54 9 341 000-0001', apiKey: CLAVE });
+  assert.equal(r.status, 200, JSON.stringify(r.datos));
+  assert.equal(r.datos.numero, '+5493410000001');
+  assert.doesNotMatch(JSON.stringify(r.datos), /clave-api|secreto-del-webhook/);
+  const wh = enviados.find((e) => e.url.endsWith('/webhookEndpoints'));
+  assert.equal(wh.clave, CLAVE, 'el webhook se crea en la cuenta de YCloud del negocio');
+  assert.match(wh.body.url, /^https:\/\/negocios\.zustrolabs\.com\/api\/whatsapp\/ycloud\/[0-9a-f]{24}$/);
+  assert.equal((await n.negocios.get(a.id)).canales.whatsapp, true);
+  const lista = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/whatsapp`);
+  assert.deepEqual(lista.datos.numeros.map((x) => x.numero), ['+5493410000001']);
+  assert.doesNotMatch(JSON.stringify(lista.datos), /clave-api|secreto-del-webhook/);
+  // Otro negocio no ve ese número ni lo puede desconectar.
+  assert.deepEqual((await pedir('otro@example.com', 'GET', `/api/n/${b.id}/whatsapp`)).datos.numeros, []);
+  assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/whatsapp`)).status, 404);
+  assert.equal((await pedir('otro@example.com', 'DELETE', `/api/n/${b.id}/whatsapp/${r.datos.clave}`)).status, 404);
+  // Errores claros, y sin la cabecera propia no se puede cambiar nada.
+  assert.match((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '341', apiKey: CLAVE })).datos.error, /código de país/);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000001', apiKey: CLAVE })).status, 409);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000002', apiKey: CLAVE }, { sinCabecera: true })).status, 403);
+  // La dueña lo desconecta: se borra el webhook en YCloud.
+  const del = await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/whatsapp/${r.datos.clave}`);
+  assert.equal(del.status, 200);
+  assert.equal(enviados.at(-1).metodo, 'DELETE');
+  assert.deepEqual((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/whatsapp`)).datos.numeros, []);
 });

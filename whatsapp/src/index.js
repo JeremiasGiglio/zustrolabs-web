@@ -8,11 +8,11 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
 import { parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
-import { administrar, appNegocios, canalesDe, NEGOCIOS_HOST } from './negocios.js';
+import { administrar, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
-import { borrarWebhook, claveMemoria, claveNueva, claveValida, crearWebhook, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, numeroE164 } from './ycloud.js';
+import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla } from './ycloud.js';
 
 const MAX_CUERPO = 256_000;
 const MAX_EDAD_MS = 3600_000; // mensajes de más de 1 h se ignoran (reintentos tardíos o reenvíos de un pedido firmado)
@@ -349,42 +349,22 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
  * - DELETE /ycloud/<clave> → borra el webhook y el registro.
  */
 async function adminYCloud(request, env, deps, ruta, url, now) {
-  const fetchImpl = deps.fetch ?? fetch;
   const a = almacen(env, deps);
   if (!a.ycloud || !a.negocios) return json({ error: 'sin memoria' }, 503);
-  const sinSecretos = (r) => ({ clave: r.clave, negocio: r.negocio, numero: r.numero, ecos: r.ecos, creado: r.creado, ultimo: r.ultimo || null });
-  if (request.method === 'GET' && ruta === '/ycloud') return json({ ok: true, numeros: (await a.ycloud.list()).map(sinSecretos) }, 200);
+  const d = { ycloud: a.ycloud, negocios: a.negocios, fetch: deps.fetch ?? fetch };
+  if (request.method === 'GET' && ruta === '/ycloud') return json({ ok: true, numeros: await todosLosNumeros(a.ycloud) }, 200);
   if (request.method === 'POST' && ruta === '/ycloud') {
     let b;
     try { b = await request.json(); } catch { return json({ error: 'pedido inválido' }, 400); }
     const dueño = await a.negocios.get(String(b?.negocio ?? ''));
     if (!dueño) return json({ error: 'ese negocio no existe' }, 404);
-    const numero = numeroE164(b?.numero);
-    if (!numero) return json({ error: 'el número va con código de país, por ejemplo +5493411234567' }, 400);
-    const apiKey = String(b?.apiKey ?? '').trim();
-    if (apiKey.length < 16 || /\s/.test(apiKey)) return json({ error: 'la clave de API parece incompleta' }, 400);
-    if ((await a.ycloud.list()).some((r) => normalizar(r.numero) === normalizar(numero))) return json({ error: 'ese número ya está conectado: para volver a conectarlo, borralo primero' }, 409);
-    const clave = claveNueva();
-    let wh;
-    try {
-      wh = await crearWebhook(apiKey, `https://${url.host}/api/whatsapp/ycloud/${clave}`, fetchImpl);
-    } catch (e) {
-      console.log(JSON.stringify({ canal: 'yc', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 60) }));
-      return json({ error: String(e?.message ?? 'no se pudo crear el webhook en YCloud') }, 502);
-    }
-    await a.ycloud.put(clave, { negocio: dueño.id, numero, apiKey, secreto: wh.secreto, endpointId: wh.id, ecos: wh.ecos });
-    // El negocio queda con WhatsApp encendido (Instagram, como estaba).
-    await a.negocios.guardar(dueño.id, { canales: { ...canalesDe(dueño), whatsapp: true } });
-    console.log(JSON.stringify({ canal: 'yc', que: 'numero_conectado', ecos: wh.ecos }));
-    return json({ ok: true, clave, numero, negocio: dueño.id, ecos: wh.ecos }, 200);
+    const r = await conectarWhatsApp(d, dueño, b, url.host);
+    return json(r.datos, r.status);
   }
   const m = /^\/ycloud\/([0-9a-f]{24})$/.exec(ruta);
   if (request.method === 'DELETE' && m) {
-    const reg = await a.ycloud.get(m[1]);
-    if (!reg) return json({ error: 'no existe' }, 404);
-    const borrado = await borrarWebhook(reg.apiKey, reg.endpointId, fetchImpl).catch(() => false);
-    await a.ycloud.delete(m[1]);
-    return json({ ok: true, webhookBorrado: borrado }, 200);
+    const r = await desconectarWhatsApp(d, m[1]);
+    return json(r.datos, r.status);
   }
   return json({ error: 'no existe' }, 404);
 }

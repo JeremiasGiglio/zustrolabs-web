@@ -5,7 +5,10 @@ de `negocios.zustrolabs.com`). El negocio conecta su número a **su propia cuent
 **coexistencia**: sigue usando la app de WhatsApp Business con el mismo número y no pierde sus charlas. Así no hace
 falta que Zustro Labs sea empresa verificada ante Meta.
 
-**Lo normal:** `scripts\whatsapp-cliente.ps1` (o `cliente-nuevo.ps1`, que lo llama). Unos 15 minutos con el cliente.
+**Lo normal (ZL-136): el cliente lo hace solo** en `negocios.zustrolabs.com` → su negocio → pestaña **WhatsApp**:
+la pestaña tiene los pasos de YCloud, el número, la clave de API (campo oculto) y «Conectar». No hace falta ninguna clave
+de Zustro Labs ni pasarnos su clave por chat. Antes, el equipo da de alta el negocio y su correo (Administración y la
+política de Access), como para Instagram. `scripts\whatsapp-cliente.ps1` queda para el equipo (con `IG_ADMIN_CLAVE`).
 
 ## Cómo funciona
 

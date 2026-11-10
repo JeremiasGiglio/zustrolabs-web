@@ -18,6 +18,9 @@ const FICHA = readFileSync('whatsapp/test/ficha-prueba.md', 'utf8');
 
 let claves: CryptoKeyPair;
 let jwk: JsonWebKey & { kid: string };
+// Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
+const FIRMA_FALSA = 'secreto-de-prueba';
+
 async function montar(page: Page, email: string) {
   // Una sola clave por corrida: el Worker empaquetado guarda en memoria las claves de Access que ya bajó.
   if (!claves) {
@@ -38,7 +41,8 @@ async function montar(page: Page, email: string) {
       if (!bases.has(id)) { const { sql, transaccion } = sqlPrueba(); bases.set(id, crearCatalogo(sql, transaccion)); }
       return { ejecutar: async (op: string, args: unknown[]) => structuredClone(ejecutarCatalogo(bases.get(id), op, structuredClone(args))) };
     },
-    fetch: async (url: string) => (String(url).includes('/cdn-cgi/access/certs') ? Response.json({ keys: [jwk] }) : Response.json({})),
+    fetch: async (url: string) => (String(url).includes('/cdn-cgi/access/certs') ? Response.json({ keys: [jwk] })
+      : String(url).endsWith('/webhookEndpoints') ? Response.json({ id: 'we_1', secret: FIRMA_FALSA }) : Response.json({})),
     preguntarNegocio: () => async () => ({ respuesta: 'Sí, tenemos pan francés 🥖 ¿Cuánto querés?', persona: false, fuera_de_tema: false, vacia: false, notas: [] }),
   };
   const r = await n.negocios.guardar(null, { nombre: 'Panadería La Espiga', emails: ['duena@example.com'], cuentas: [] });
@@ -147,6 +151,25 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.locator('.burbuja')).toHaveCount(0);
     await enviar('2');
     await expect(page.locator('.burbuja.asis').last()).toContainText('Which language', { timeout: 5000 });
+  });
+
+  test('WhatsApp (ZL-136): la dueña conecta su número sola, ve el estado y lo desconecta; la página es accesible', async ({ page }) => {
+    await montar(page, 'duena@example.com');
+    await page.getByRole('tab', { name: 'WhatsApp' }).click();
+    await expect(page.getByText('Todavía no hay un número de WhatsApp conectado.')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'YCloud' })).toHaveAttribute('href', 'https://www.ycloud.com/console#/entry/register');
+    await page.getByLabel('Tu número de WhatsApp Business (con código de país)').fill('+54 9 341 000-0001');
+    await page.getByLabel('Clave de API de YCloud').fill('clave-api-ycloud-de-prueba');
+    await expect(page.getByLabel('Clave de API de YCloud')).toHaveAttribute('type', 'password');
+    await page.getByRole('button', { name: 'Conectar' }).click();
+    await expect(page.locator('.wa-num')).toContainText('+5493410000001');
+    await expect(page.locator('.wa-num')).toContainText('Se calla cuando contestás vos');
+    await expect(page.getByLabel('Clave de API de YCloud')).toHaveValue('');
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    await page.getByRole('button', { name: 'Desconectar' }).click();
+    await page.getByRole('button', { name: /¿Seguro\?/ }).click();
+    await expect(page.getByText('Todavía no hay un número de WhatsApp conectado.')).toBeVisible();
   });
 
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {
