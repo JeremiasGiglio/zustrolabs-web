@@ -131,6 +131,8 @@ export function crearAtencion(storage) {
     },
     async guardarNumeroYc(clave, datos, now) {
       const antes = await s.get(`ycl:${clave}`);
+      // Un aviso que llega justo cuando se desconectaba el número no lo revive (solo se anota «ultimo» si existe).
+      if (!antes && !datos?.secreto) return;
       const { negocio, numero, apiKey, secreto, endpointId, ecos, ultimo } = { ...antes, ...datos };
       await s.put(`ycl:${clave}`, { clave: String(clave), negocio: String(negocio), numero: String(numero), apiKey, secreto, endpointId: String(endpointId ?? ''), ecos: Boolean(ecos), ultimo: ultimo ?? 0, creado: antes?.creado ?? now });
     },

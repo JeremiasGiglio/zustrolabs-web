@@ -52,6 +52,7 @@ if ($conWa) {
   Paso 3 "WhatsApp"
   if (Test-Path "$PSScriptRoot\whatsapp-cliente.ps1") {
     & "$PSScriptRoot\whatsapp-cliente.ps1" -Negocio $neg.id -Worker $Worker -DesdeAlta
+    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { Falla "WhatsApp no terminó. Cuando lo resuelvas: .\whatsapp-cliente.ps1 -Negocio $($neg.id)" }
   } else {
     Aviso "WhatsApp todavía está en prueba: el negocio quedó con WhatsApp elegido, pero sin número conectado."
     Nota "Cuando esté probado con un número nuestro, se agrega con  .\whatsapp-cliente.ps1 -Negocio $($neg.id)"

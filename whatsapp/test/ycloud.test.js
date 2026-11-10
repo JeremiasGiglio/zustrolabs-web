@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import worker from '../src/index.js';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
-import { crearWebhook, enviarYCloud, firmarYCloud, firmaYCloud, idCharla, leerYCloud, numeroE164 } from '../src/ycloud.js';
+import { claveMemoria, crearWebhook, enviarYCloud, firmarYCloud, firmaYCloud, idCharla, leerYCloud, normalizar, numeroE164 } from '../src/ycloud.js';
 
 const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
 const T0 = 1_792_000_000_000;
@@ -19,9 +19,9 @@ const entrante = (texto, o = {}) => ({
   id: 'evt_' + Math.random(), type: 'whatsapp.inbound_message.received', apiVersion: 'v2', createTime: new Date(T0).toISOString(),
   whatsappInboundMessage: { id: 'm' + Math.random(), wamid: 'wamid.' + Math.random(), wabaId: '1', from: PERSONA_TEL, to: NEGOCIO_TEL, sendTime: new Date(T0).toISOString(), type: 'text', text: { body: texto }, ...o },
 });
-const eco = (texto) => ({
+const eco = (texto, o = {}) => ({
   id: 'evt_' + Math.random(), type: 'whatsapp.smb.message.echoes', apiVersion: 'v2', createTime: new Date(T0).toISOString(),
-  whatsappMessage: { id: 'x', wamid: 'wamid.e', wabaId: '1', from: NEGOCIO_TEL, to: PERSONA_TEL, type: 'text', text: { body: texto }, status: 'sent' },
+  whatsappMessage: { id: 'x', wamid: 'wamid.e', wabaId: '1', from: NEGOCIO_TEL, to: PERSONA_TEL, type: 'text', text: { body: texto }, status: 'sent', sendTime: new Date(T0).toISOString(), ...o },
 });
 
 // ——— Piezas ———
@@ -43,9 +43,27 @@ test('lectura: un mensaje de texto, uno que no es texto, un botón, un eco del d
   assert.deepEqual({ from: t.from, kind: t.kind, text: t.text, ts: t.ts }, { from: 'yc:5493410000001:5493410000009', kind: 'text', text: '¿Tienen facturas?', ts: T0 / 1000 });
   assert.equal(leerYCloud(entrante('', { type: 'image', text: undefined, image: { id: 'x' } }))[0].kind, 'otro');
   assert.equal(leerYCloud(entrante('', { type: 'button', text: undefined, button: { text: 'Sí' } }))[0].text, 'Sí');
-  assert.deepEqual(leerYCloud(eco('ya te contesto yo')), [{ eco: true, from: 'yc:5493410000001:5493410000009' }]);
+  assert.deepEqual(leerYCloud(eco('ya te contesto yo')), [{ eco: true, from: 'yc:5493410000001:5493410000009', ts: T0 / 1000 }]);
+  // Una reacción (👍 a un mensaje del dueño) no es un mensaje para contestar.
+  assert.deepEqual(leerYCloud(entrante('', { type: 'reaction', text: undefined, reaction: { emoji: '👍' } })), []);
   assert.deepEqual(leerYCloud({ type: 'whatsapp.message.updated', whatsappMessage: {} }), []);
   assert.deepEqual(leerYCloud(null), []);
+});
+
+test('firma: en mayúsculas también vale', async () => {
+  const cuerpo = JSON.stringify(entrante('hola'));
+  const firma = (await firmarYCloud(cuerpo, 'secreto-1', T0 / 1000)).replace(/s=([0-9a-f]+)/, (_, h) => `s=${h.toUpperCase()}`);
+  assert.equal(await firmaYCloud(cuerpo, firma, 'secreto-1', T0), true);
+});
+
+test('números: el mismo celular escrito de dos formas (Argentina con o sin 9, México con o sin 1) es la misma charla', () => {
+  assert.equal(normalizar('+54 341 000 0009'), '5493410000009');
+  assert.equal(normalizar('5493410000009'), '5493410000009');
+  assert.equal(normalizar('5215512345678'), '525512345678');
+  assert.equal(normalizar('+34600000000'), '34600000000');
+  assert.equal(claveMemoria('yc:543410000001:543410000009'), claveMemoria('yc:5493410000001:5493410000009'));
+  // Para responder se usa el número tal como vino.
+  assert.equal(idCharla('+543410000001', '+543410000009'), 'yc:543410000001:543410000009');
 });
 
 test('números: con código de país, con o sin espacios; la charla une el número del negocio y el de la persona', () => {
@@ -189,4 +207,52 @@ test('circuito: firma mala, número desconocido o WhatsApp apagado en el negocio
   await n.negocios.guardar(negocio.id, { canales: { instagram: true, whatsapp: false } });
   await avisar(clave, entrante('hola'));
   assert.equal(enviados(ycloud).length, 0);
+});
+
+test('circuito: un webhook de YCloud recibe lo de todos los números de la cuenta, pero solo atiende el suyo', async () => {
+  const { n, negocio, ycloud, admin, avisar } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  await avisar(clave, entrante('hola', { to: '+5493410000555' }));
+  assert.equal(enviados(ycloud).length, 0, 'otro número de la misma cuenta: no responde');
+  // El mismo número escrito sin el 9 sí es el suyo.
+  await avisar(clave, entrante('hola', { to: '+543410000001' }));
+  assert.ok(enviados(ycloud).length > 0);
+  assert.equal(enviados(ycloud)[0].body.from, '+543410000001', 'responde desde el número tal como vino');
+});
+
+test('circuito: el eco con el número escrito distinto (sin el 9) igual pausa esa charla', async () => {
+  const { n, negocio, ycloud, admin, avisar } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  await avisar(clave, entrante('hola'));
+  await avisar(clave, eco('te atiendo yo', { to: '+543410000009' }));
+  const antes = enviados(ycloud).length;
+  await avisar(clave, entrante('¿Tienen facturas?'));
+  assert.equal(enviados(ycloud).length, antes);
+});
+
+test('circuito: si el dueño contesta mientras la IA piensa, no sale la respuesta del asistente', async () => {
+  const { n, d, negocio, ycloud, admin, avisar } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  await avisar(clave, entrante('hola'));
+  const antes = enviados(ycloud).length;
+  // La IA tarda: en el medio llega el eco del dueño.
+  d.preguntarNegocio = () => async () => {
+    await avisar(clave, eco('ya te contesto yo'));
+    return { respuesta: 'Sí, tenemos.', persona: false, fuera_de_tema: false, vacia: false, notas: [] };
+  };
+  const logs = [];
+  const orig = console.log;
+  console.log = (x) => logs.push(String(x));
+  try { await avisar(clave, entrante('¿Tienen facturas?')); } finally { console.log = orig; }
+  assert.equal(enviados(ycloud).length, antes);
+  assert.ok(logs.some((l) => l.includes('contesto_el_duenio')));
+});
+
+test('registro: un aviso que llega justo al desconectar el número no lo revive', async () => {
+  const { n } = await armar();
+  await n.ycloud.put('0123456789abcdef01234567', { ultimo: T0 });
+  assert.equal(await n.ycloud.get('0123456789abcdef01234567'), null);
 });

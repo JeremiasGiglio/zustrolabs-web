@@ -20,9 +20,29 @@ export function numeroE164(s) {
   return /^\+?\d{8,15}$/.test(t) ? `+${digitos(t)}` : null;
 }
 
-/** Quién escribe, para la memoria y para responder: `yc:<número del negocio>:<número de la persona>`. */
+/**
+ * El mismo número escrito siempre igual. Meta a veces escribe distinto un mismo celular según el sentido del mensaje:
+ * Argentina con o sin el 9 (54 341… / 549 341…), México con o sin el 1 (521… / 52…). Se usa la forma con 9 y sin 1,
+ * para que un mensaje y la respuesta del dueño caigan en la misma charla.
+ */
+export function normalizar(numero) {
+  const d = digitos(numero);
+  if (/^54[1-8]\d{9}$/.test(d)) return `549${d.slice(2)}`;
+  if (/^521\d{10}$/.test(d)) return `52${d.slice(3)}`;
+  return d;
+}
+
+/** Quién escribe, para responder: `yc:<número del negocio>:<número de la persona>`, tal como los escribe YCloud. */
 export const idCharla = (negocio, persona) => `yc:${digitos(negocio)}:${digitos(persona)}`;
+
+/** La clave de la charla en la memoria: los dos números normalizados (un mensaje y el eco del dueño caen juntos). */
+export function claveMemoria(id) {
+  const m = /^yc:(\d+):(\d+)$/.exec(String(id ?? ''));
+  return m ? `yc:${normalizar(m[1])}:${normalizar(m[2])}` : String(id ?? '');
+}
 export const esYCloud = (id) => /^yc:\d+:\d+$/.test(String(id ?? ''));
+/** El número del negocio de una charla (`yc:<negocio>:<persona>`). */
+export const numeroDeCharla = (id) => (/^yc:(\d+):\d+$/.exec(String(id ?? '')) ?? [])[1] ?? null;
 
 /** Clave nueva para la ruta del webhook de un número (no adivinable; la firma igual es lo que protege). */
 export const claveNueva = () => [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -35,7 +55,7 @@ export async function firmaYCloud(crudo, cabecera, secreto, now = Date.now()) {
   if (!cabecera || !secreto) return false;
   const partes = Object.fromEntries(String(cabecera).split(',').map((p) => p.trim().split('=')).filter((p) => p.length === 2));
   const t = Number(partes.t);
-  const s = String(partes.s ?? '');
+  const s = String(partes.s ?? '').toLowerCase();
   if (!Number.isFinite(t) || !/^[0-9a-f]{64}$/.test(s)) return false;
   // Un aviso firmado hace más de 5 minutos (o en el futuro) no se acepta: evita que alguien reenvíe uno viejo.
   if (Math.abs(now / 1000 - t) > TOLERANCIA_S) return false;
@@ -62,6 +82,8 @@ export function leerYCloud(payload) {
   if (tipo === ENTRANTE) {
     const m = payload.whatsappInboundMessage;
     if (!m?.from || !m?.to) return [];
+    // Reacciones (👍 a un mensaje del dueño) y avisos del sistema: no son mensajes para contestar.
+    if (['reaction', 'system', 'unsupported', 'request_welcome'].includes(m.type)) return [];
     const base = { id: `yc:${m.wamid ?? m.id ?? payload.id}`, from: idCharla(m.to, m.from), ts: Math.floor(Date.parse(m.sendTime ?? payload.createTime ?? '') / 1000) || 0 };
     const texto = m.type === 'text' ? m.text?.body
       : m.type === 'button' ? m.button?.text
@@ -71,7 +93,8 @@ export function leerYCloud(payload) {
   }
   if (tipo === ECO) {
     const m = payload.whatsappMessage;
-    return m?.from && m?.to ? [{ eco: true, from: idCharla(m.from, m.to) }] : [];
+    if (!m?.from || !m?.to) return [];
+    return [{ eco: true, from: idCharla(m.from, m.to), ts: Math.floor(Date.parse(m.sendTime ?? m.createTime ?? payload.createTime ?? '') / 1000) || 0 }];
   }
   return [];
 }

@@ -30,7 +30,8 @@ param(
 
 . "$PSScriptRoot\comun.ps1"
 
-function Numeros { return @((Llamar GET "/ycloud").numeros) }
+# Siempre una lista, aunque haya un solo número (en PowerShell 5.1, un solo objeto no tiene .Count ni [0]).
+function Numeros { return ,@((Llamar GET "/ycloud").numeros) }
 function Nombre-De($id) {
   $n = @((Llamar GET "/negocios").negocios) | Where-Object { $_.id -eq $id } | Select-Object -First 1
   if ($n) { return $n.nombre } else { return "(negocio $id)" }
@@ -41,7 +42,7 @@ if (-not $DesdeAlta) { Titulo "Zustro Labs · WhatsApp de un cliente" }
 # ── 0. El Worker ──
 Paso 0 "Reviso el Worker ($Worker)"
 $estado = Conectar-Worker
-$conectados = Numeros
+$conectados = @(Numeros)
 foreach ($x in $conectados) {
   $ult = if ($x.ultimo) { "último mensaje: " + ([DateTimeOffset]::FromUnixTimeMilliseconds([int64]$x.ultimo).LocalDateTime.ToString("dd/MM HH:mm")) } else { "todavía sin mensajes" }
   $eco = if ($x.ecos) { "se calla cuando contesta el dueño" } else { "SIN aviso cuando contesta el dueño" }
@@ -70,7 +71,7 @@ if ($Negocio) {
   $neg = @((Llamar GET "/negocios").negocios) | Where-Object { $_.id -eq $Negocio } | Select-Object -First 1
   if (-not $neg) { Falla "No encuentro el negocio $Negocio."; exit 1 }
   Ok "Negocio: $($neg.nombre)"
-} else { $neg = Elegir-Negocio }
+} else { $neg = Elegir-Negocio $false $true }
 $Nombre = $neg.nombre
 
 # ── 2. Lo que el cliente tiene que saber ──
@@ -152,7 +153,7 @@ Write-Host "  Espero el mensaje (hasta 5 minutos)…" -ForegroundColor White
 $fin = (Get-Date).AddMinutes(5); $llego = $false
 while ((Get-Date) -lt $fin) {
   Start-Sleep -Seconds 10
-  try { $x = Numeros | Where-Object { $_.clave -eq $clave } | Select-Object -First 1; if ($x -and $x.ultimo -and [int64]$x.ultimo -ge $desde) { $llego = $true; break } } catch {}
+  try { $x = @(Numeros) | Where-Object { $_.clave -eq $clave } | Select-Object -First 1; if ($x -and $x.ultimo -and [int64]$x.ultimo -ge $desde) { $llego = $true; break } } catch {}
   Write-Host "." -NoNewline
 }
 Write-Host ""

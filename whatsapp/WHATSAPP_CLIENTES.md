@@ -18,8 +18,12 @@ falta que Zustro Labs sea empresa verificada ante Meta.
 3. Cada mensaje llega firmado (`YCloud-Signature`: HMAC-SHA256 de `t.cuerpo` con el secreto de ese número, de hace
    menos de 5 minutos). El Worker lo atiende con la ficha y el catálogo, igual que Instagram, y responde con
    `POST https://api.ycloud.com/v2/whatsapp/messages/sendDirectly` y la clave del negocio.
-4. Cuando el dueño contesta desde su celular, YCloud avisa (`whatsapp.smb.message.echoes`) y el asistente se calla en
-   esa charla las «Horas de pausa» de la ficha. Si la cuenta de YCloud no acepta ese aviso, el script lo dice.
+4. El webhook recibe lo de **todos** los números de esa cuenta de YCloud: solo se atiende el número conectado. Los
+   números se comparan normalizados (Argentina con o sin el 9, México con o sin el 1); para responder se usa el número
+   tal como vino. Las reacciones (👍) no se contestan.
+5. Cuando el dueño contesta desde su celular, YCloud avisa (`whatsapp.smb.message.echoes`) y el asistente se calla en
+   esa charla las «Horas de pausa» de la ficha (y si contesta mientras la IA piensa, la respuesta del asistente no
+   sale). Si la cuenta de YCloud no acepta ese aviso, el script lo dice.
 
 ## Lo que el cliente tiene que saber
 
@@ -56,6 +60,8 @@ Cloudflare → Workers & Pages → `zustrolabs-whatsapp` → Observability, busc
 | `sin_ficha` / `ficha_inactiva` / `ficha_invalida` | La ficha del negocio | Pestaña Asistente: activarla |
 | `canal_apagado` | WhatsApp apagado en el negocio | Administración → marcar WhatsApp |
 | `eco` | El dueño contestó desde su celular: pausa en esa charla | Nada (o BORRAR desde el otro lado) |
+| `contesto_el_duenio` | El dueño contestó mientras la IA pensaba: no salió la respuesta del asistente | Nada |
+| `otro_numero` | Llegó un mensaje para otro número de la misma cuenta de YCloud | Nada: solo se atiende el número conectado |
 | un `error` con `ycloud 401` | La clave de API se borró o cambió | `-Desconectar` y volver a conectar con la nueva |
 | ningún registro | YCloud no está mandando | ¿El número figura en YCloud? ¿Terminó la sincronización? ¿El webhook está activo? |
 

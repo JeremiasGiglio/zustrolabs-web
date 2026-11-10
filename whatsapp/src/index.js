@@ -12,7 +12,7 @@ import { administrar, appNegocios, canalesDe, NEGOCIOS_HOST } from './negocios.j
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
-import { borrarWebhook, claveNueva, claveValida, crearWebhook, enviarYCloud, firmaYCloud, leerYCloud, numeroE164 } from './ycloud.js';
+import { borrarWebhook, claveMemoria, claveNueva, claveValida, crearWebhook, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, numeroE164 } from './ycloud.js';
 
 const MAX_CUERPO = 256_000;
 const MAX_EDAD_MS = 3600_000; // mensajes de más de 1 h se ignoran (reintentos tardíos o reenvíos de un pedido firmado)
@@ -297,29 +297,45 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
   if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); return; }
   const perfil = perfilNegocio(pf.ficha);
   const preguntar = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'WhatsApp');
+  // La memoria guarda cada charla con los números normalizados: así el eco del dueño pausa la misma charla aunque Meta
+  // escriba el número de la persona distinto (con o sin el 9). Para responder se usa el número tal como vino.
+  const memoria = a.memoria && {
+    get: (n) => a.memoria.get(claveMemoria(n)),
+    put: (n, d) => a.memoria.put(claveMemoria(n), d),
+    delete: (n) => a.memoria.delete(claveMemoria(n)),
+    contar: (n) => a.memoria.contar(claveMemoria(n)),
+    visto: (id) => a.memoria.visto(id),
+  };
 
   for (const ev of eventos) {
     const t0 = Date.now();
+    // Un webhook de YCloud recibe lo de TODOS los números de esa cuenta: solo se atiende el número conectado a este negocio.
+    if (normalizar(numeroDeCharla(ev.from)) !== normalizar(reg.numero)) { log({ ok: true, que: 'otro_numero' }); continue; }
+    if (!ev.ts || now - ev.ts * 1000 > MAX_EDAD_MS) { log({ ok: true, que: 'viejo' }); continue; }
     // El dueño contestó desde su app (coexistencia): el asistente se calla en esa charla las horas de pausa de la ficha.
     if (ev.eco) {
-      if (a.memoria) {
-        const estado = await a.memoria.get(ev.from);
-        await a.memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000 });
+      if (memoria) {
+        const estado = await memoria.get(ev.from);
+        await memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000 });
       }
       log({ ok: true, que: 'eco' });
       continue;
     }
-    if (!ev.ts || now - ev.ts * 1000 > MAX_EDAD_MS) { log({ ok: true, que: 'viejo' }); continue; }
     try {
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
       if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria: a.memoria, charlas: null, preguntar, now, cupo, perfil });
+      const r = await atender(ev, { memoria, charlas: null, preguntar, now, cupo, perfil });
+      // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente.
+      if (r.send.length && !['borrar', 'persona', 'humano'].includes(r.metrica) && memoria) {
+        const st = await memoria.get(ev.from);
+        if (st?.humanoHasta && st.humanoHasta > now) { log({ ok: true, que: 'contesto_el_duenio' }); continue; }
+      }
       for (const m of r.send) await mandar(m);
       log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
-      const st = await Promise.resolve(a.memoria?.get(ev.from)).catch(() => null);
+      const st = await Promise.resolve(memoria?.get(ev.from)).catch(() => null);
       await mandar(msgTexto(ev.from, perfil.textos(st?.idioma).falla)).catch(() => {});
     }
   }
@@ -347,7 +363,7 @@ async function adminYCloud(request, env, deps, ruta, url, now) {
     if (!numero) return json({ error: 'el número va con código de país, por ejemplo +5493411234567' }, 400);
     const apiKey = String(b?.apiKey ?? '').trim();
     if (apiKey.length < 16 || /\s/.test(apiKey)) return json({ error: 'la clave de API parece incompleta' }, 400);
-    if ((await a.ycloud.list()).some((r) => r.numero === numero)) return json({ error: 'ese número ya está conectado: para volver a conectarlo, borralo primero' }, 409);
+    if ((await a.ycloud.list()).some((r) => normalizar(r.numero) === normalizar(numero))) return json({ error: 'ese número ya está conectado: para volver a conectarlo, borralo primero' }, 409);
     const clave = claveNueva();
     let wh;
     try {

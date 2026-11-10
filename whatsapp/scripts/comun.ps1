@@ -79,7 +79,8 @@ function Crear-Negocio($nombre, $correos, $instagram, $whatsapp) {
   } catch { Falla "No pude crear el negocio: $(Leer-Error $_)"; exit 1 }
 }
 
-function Elegir-Negocio {
+# $instagram / $whatsapp: los canales con que nace un negocio nuevo (cada script elige el suyo).
+function Elegir-Negocio($instagram = $true, $whatsapp = $false) {
   $lista = @((Llamar GET "/negocios").negocios)
   for ($i = 0; $i -lt $lista.Count; $i++) {
     $n = $lista[$i]
@@ -91,7 +92,7 @@ function Elegir-Negocio {
   if ($r -match '^[nN]$' -or -not $lista.Count) {
     $nombre = Read-Host "  Nombre del negocio (como lo dice el cliente)"
     $correos = Read-Host "  Correos de quienes van a entrar a la app (separados por coma)"
-    return (Crear-Negocio $nombre $correos $true $false)
+    return (Crear-Negocio $nombre $correos $instagram $whatsapp)
   }
   $k = 0; [void][int]::TryParse($r, [ref]$k)
   if ($k -lt 1 -or $k -gt $lista.Count) { Falla "Número inválido."; exit 1 }
