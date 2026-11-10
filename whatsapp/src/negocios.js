@@ -7,6 +7,7 @@
 // No importa nada de Cloudflare: el catálogo y el registro llegan en `deps` (index.js), así se prueba con node.
 
 import { correosDe, emailDeAcceso } from './panel.js';
+import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 
@@ -45,6 +46,49 @@ const delCatalogo = (r) => (r?.ok ? { valor: r.valor } : { resp: error(r?.error 
  * deps: {negocios (registro), cuentas (Instagram conectadas), catalogo(idNegocio) → {ejecutar(op, args)},
  *        probar(ficha, idNegocio, mensajes) → charla simulada, fetch, now}
  */
+// ── WhatsApp por YCloud (ZL-135, ZL-136): lo usan la app (el negocio, con su correo) y el admin del equipo ──
+const sinSecretos = (r) => ({ clave: r.clave, negocio: r.negocio, numero: r.numero, ecos: r.ecos, creado: r.creado, ultimo: r.ultimo || null });
+
+/** Los números de WhatsApp de un negocio (sin la clave de API ni el secreto). */
+export const numerosDe = async (ycloud, negocioId) => (await ycloud.list()).filter((r) => r.negocio === negocioId).map(sinSecretos);
+export const todosLosNumeros = async (ycloud) => (await ycloud.list()).map(sinSecretos);
+
+/**
+ * Conecta el número de WhatsApp Business de un negocio a través de SU cuenta de YCloud: crea en esa cuenta el webhook
+ * hacia este Worker, guarda la clave y el secreto (nunca se devuelven) y enciende WhatsApp en el negocio.
+ * → {status, datos}
+ */
+export async function conectarWhatsApp({ ycloud, negocios, fetch: fetchImpl = fetch }, negocio, cuerpo, host) {
+  const numero = numeroE164(cuerpo?.numero);
+  if (!numero) return { status: 400, datos: { error: 'el número va con código de país, por ejemplo +5493411234567' } };
+  const apiKey = String(cuerpo?.apiKey ?? '').trim();
+  if (apiKey.length < 16 || /\s/.test(apiKey)) return { status: 400, datos: { error: 'la clave de API parece incompleta: copiala entera' } };
+  if ((await ycloud.list()).some((r) => normalizar(r.numero) === normalizar(numero))) {
+    return { status: 409, datos: { error: 'ese número ya está conectado: para volver a conectarlo, desconectalo primero' } };
+  }
+  const clave = claveNueva();
+  let wh;
+  try {
+    wh = await crearWebhook(apiKey, `https://${host}/api/whatsapp/ycloud/${clave}`, fetchImpl);
+  } catch (e) {
+    console.log(JSON.stringify({ canal: 'yc', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 60) }));
+    return { status: 502, datos: { error: String(e?.message ?? 'no se pudo crear el webhook en YCloud') } };
+  }
+  await ycloud.put(clave, { negocio: negocio.id, numero, apiKey, secreto: wh.secreto, endpointId: wh.id, ecos: wh.ecos });
+  await negocios.guardar(negocio.id, { canales: { ...canalesDe(negocio), whatsapp: true } });
+  console.log(JSON.stringify({ canal: 'yc', que: 'numero_conectado', ecos: wh.ecos }));
+  return { status: 200, datos: { ok: true, clave, numero, negocio: negocio.id, ecos: wh.ecos } };
+}
+
+/** Desconecta un número: borra el webhook en YCloud y el registro. `negocioId`: solo si es de ese negocio. */
+export async function desconectarWhatsApp({ ycloud, fetch: fetchImpl = fetch }, clave, negocioId = null) {
+  const reg = await ycloud.get(clave);
+  if (!reg || (negocioId && reg.negocio !== negocioId)) return { status: 404, datos: { error: 'no existe' } };
+  const borrado = await borrarWebhook(reg.apiKey, reg.endpointId, fetchImpl).catch(() => false);
+  await ycloud.delete(clave);
+  return { status: 200, datos: { ok: true, webhookBorrado: borrado } };
+}
+
 export async function appNegocios(request, env, deps) {
   const url = new URL(request.url);
   const now = deps.now ?? Date.now();
@@ -98,6 +142,23 @@ export async function appNegocios(request, env, deps) {
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
     });
+  }
+
+  // WhatsApp del negocio (ZL-136): el negocio conecta su número solo, con su cuenta de YCloud.
+  if (sub === '/whatsapp' || sub.startsWith('/whatsapp/')) {
+    if (!deps.ycloud) return error('sin memoria', 503);
+    if (request.method === 'GET' && sub === '/whatsapp') return json({ numeros: await numerosDe(deps.ycloud, negocio.id), canal: canalesDe(negocio).whatsapp });
+    if (request.method === 'POST' && sub === '/whatsapp') {
+      const b = await request.json().catch(() => null);
+      const r = await conectarWhatsApp(deps, negocio, b, url.host);
+      return json(r.datos, r.status);
+    }
+    const w = /^\/whatsapp\/([0-9a-f]{24})$/.exec(sub);
+    if (request.method === 'DELETE' && w) {
+      const r = await desconectarWhatsApp(deps, w[1], negocio.id);
+      return json(r.datos, r.status);
+    }
+    return error('no existe', 404);
   }
 
   if (request.method === 'GET' && sub === '/productos') {

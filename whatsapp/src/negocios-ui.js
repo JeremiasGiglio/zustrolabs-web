@@ -75,6 +75,8 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .chat{display:grid;gap:.4rem;max-height:26rem;overflow:auto;padding:.5rem;background:var(--fondo);border-radius:10px;margin:.5rem 0}
 .burbuja{max-width:85%;padding:.5rem .7rem;border-radius:12px;white-space:pre-wrap;font-size:.92rem}
 .burbuja.cliente{justify-self:end;background:var(--tinta);color:#fff}.burbuja.asis{justify-self:start;background:#fff;border:1px solid var(--linea)}
+.pasos li{margin:.4rem 0}.wa-num{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.8rem 1rem;margin:.6rem 0}
+.wa-form{display:grid;gap:.35rem;max-width:32rem;margin-top:1rem}details{margin:.8rem 0}summary{cursor:pointer;font-weight:600}
 .vacio{padding:2rem 1rem;text-align:center;color:var(--gris);background:#fff;border:1px dashed var(--linea);border-radius:12px}
 @media (min-width:700px){.prod{grid-template-columns:64px 1fr}.foto{width:64px;height:64px}}`;
 
@@ -151,7 +153,7 @@ function app() {
     }
     return svg;
   }
-  const PESTANAS = () => [['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial']]
+  const PESTANAS = () => [['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['whatsapp', 'WhatsApp']]
     .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Administración']] : []);
 
   function pintar() {
@@ -182,7 +184,7 @@ function app() {
       v.append(estado.yo.admin ? vistaAdmin() : h('div', { class: 'vacio' }, 'Tu correo todavía no está en ningún negocio. Escribinos a contact@zustrolabs.com.'));
       return;
     }
-    const vistas = { productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, asistente: vistaAsistente, admin: vistaAdmin };
+    const vistas = { productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, whatsapp: vistaWhatsapp, asistente: vistaAsistente, admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaProductos)());
   }
 
@@ -466,6 +468,72 @@ function app() {
       if (!r.movimientos.length) cuerpo.append(h('tr', {}, h('td', { colspan: 6 }, 'Todavía no hay cambios.')));
       for (const m of r.movimientos) cuerpo.append(h('tr', {}, h('td', {}, fecha(m.t)), h('td', {}, m.nombre), h('td', {}, (QUE[m.tipo] || m.tipo) + (m.detalle ? ' · ' + m.detalle : '')), h('td', {}, m.antes), h('td', {}, m.despues), h('td', {}, m.quien)));
     })();
+    return caja;
+  }
+
+  // ── WhatsApp (ZL-136): el negocio conecta su número solo, con su cuenta gratis de YCloud ──
+  function vistaWhatsapp() {
+    const enlace = (texto, url) => h('a', { href: url, target: '_blank', rel: 'noopener' }, texto);
+    const lista = h('div', { 'aria-live': 'polite' });
+    const numero = h('input', { type: 'tel', autocomplete: 'off', placeholder: '+54 9 341 123 4567' });
+    const clave = h('input', { type: 'password', autocomplete: 'off', spellcheck: 'false' });
+    const errores = h('p', { class: 'errores', role: 'alert' });
+    const caja = h('section', {},
+      h('h2', {}, 'WhatsApp'),
+      h('p', { class: 'ayuda' }, 'Conectá el WhatsApp Business de tu negocio para que el asistente responda con tus productos. Seguís usando tu app con el mismo número y no perdés tus charlas. Cuando contestás vos desde el celular, el asistente se calla en esa charla.'),
+      estado.datos.asistente.activo ? null : h('p', { class: 'chip alerta' }, 'Tu asistente todavía no está activo: lo activa el equipo de Zustro Labs. Podés conectar el número igual.'),
+      lista,
+      h('h3', {}, 'Conectar un número'),
+      h('ol', { class: 'pasos' },
+        h('li', {}, 'En tu celular: actualizá WhatsApp Business (2.24.17 o más nueva) y hacé una copia de seguridad (Configuración → Chats → Copia de seguridad).'),
+        h('li', {}, 'Creá tu cuenta gratis en ', enlace('YCloud', 'https://www.ycloud.com/console#/entry/register'), ' (no pide tarjeta).'),
+        h('li', {}, 'En YCloud: WhatsApp Manager → WhatsApp accounts → «WhatsApp Business APP Coexistence» → Get started → I\'m ready to start → «Log in with WhatsApp Business app». ',
+          h('strong', {}, 'No elijas «WhatsApp Business API»'), ': ese deja tu app sin el número.'),
+        h('li', {}, 'Nombre del negocio exactamente como en tus papeles, y tu sitio web real (o tu Instagram). Escaneá el QR con WhatsApp Business, autorizá y elegí sincronizar el historial. Dejá la app abierta hasta que termine.'),
+        h('li', {}, 'Cuando tu número aparezca en WhatsApp accounts: Developers → API keys → copiá la clave y pegala acá abajo. No se la mandes a nadie por chat.')),
+      h('details', {}, h('summary', {}, 'Lo que tenés que saber antes'),
+        h('ul', {},
+          h('li', {}, 'En las charlas individuales dejan de andar los mensajes temporales, «ver una vez», la ubicación en tiempo real y las listas de difusión (las que tenés quedan solo para leer).'),
+          h('li', {}, 'Se desvinculan WhatsApp Web y las computadoras: después las volvés a vincular. WhatsApp para Windows no funciona con esto; web.whatsapp.com sí.'),
+          h('li', {}, 'Abrí la app de WhatsApp Business al menos cada 14 días: si no, Meta corta la conexión.'),
+          h('li', {}, 'Meta puede limitar o suspender cuentas con datos que no coinciden con tus papeles o con reclamos de spam. Ni YCloud ni nosotros podemos revertirlo.'))),
+      h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
+        e.preventDefault();
+        errores.textContent = '';
+        const boton = e.target.querySelector('button');
+        boton.disabled = true;
+        try {
+          const r = await api(base() + '/whatsapp', { metodo: 'POST', cuerpo: { numero: numero.value, apiKey: clave.value } });
+          clave.value = ''; numero.value = '';
+          aviso('Conectado: ' + r.numero + '. Probalo: desde otro celular mandale «hola».');
+          cargarLista();
+        } catch (err) {
+          if (err.message === 'sesión') throw err;
+          errores.textContent = err.message;
+        } finally { boton.disabled = false; }
+      }) },
+        etiqueta('Tu número de WhatsApp Business (con código de país)', numero), numero,
+        etiqueta('Clave de API de YCloud', clave), clave,
+        h('p', { class: 'ayuda' }, 'La clave queda guardada en nuestro servidor y no se vuelve a mostrar en ninguna pantalla. Si la cambiás en YCloud, desconectá y conectá de nuevo.'),
+        errores,
+        h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Conectar'))));
+    const cargarLista = conError(async () => {
+      const r = await api(base() + '/whatsapp');
+      if (!r.numeros.length) { poner(lista, h('p', { class: 'vacio' }, 'Todavía no hay un número de WhatsApp conectado.')); return; }
+      poner(lista, ...r.numeros.map((n) => h('div', { class: 'wa-num' },
+        h('strong', {}, n.numero),
+        h('div', { class: 'chips' },
+          h('span', { class: 'chip ok' }, 'Conectado'),
+          h('span', { class: 'chip' }, n.ultimo ? 'Último mensaje: ' + fecha(n.ultimo) : 'Todavía sin mensajes'),
+          h('span', { class: n.ecos ? 'chip' : 'chip alerta' }, n.ecos ? 'Se calla cuando contestás vos' : 'No se entera cuando contestás vos')),
+        h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn peligro', onclick: conError(async (e) => {
+          if (e.target.dataset.seguro !== '1') { e.target.dataset.seguro = '1'; e.target.textContent = '¿Seguro? Tocá de nuevo para desconectar'; return; }
+          await api(base() + '/whatsapp/' + n.clave, { metodo: 'DELETE' });
+          aviso('Desconectado. Tu app de WhatsApp Business sigue igual.');
+          cargarLista();
+        }) }, 'Desconectar')))));
+    });
+    cargarLista();
     return caja;
   }
 
