@@ -125,6 +125,21 @@ export function crearAtencion(storage) {
     async listaAppsIg() {
       return [...(await s.list({ prefix: 'igapp:' })).values()];
     },
+    // ── WhatsApp de negocios por YCloud (ZL-135): un registro por número, con la clave de API y el secreto del webhook ──
+    async numeroYc(clave) {
+      return (await s.get(`ycl:${clave}`)) ?? null;
+    },
+    async guardarNumeroYc(clave, datos, now) {
+      const antes = await s.get(`ycl:${clave}`);
+      const { negocio, numero, apiKey, secreto, endpointId, ecos, ultimo } = { ...antes, ...datos };
+      await s.put(`ycl:${clave}`, { clave: String(clave), negocio: String(negocio), numero: String(numero), apiKey, secreto, endpointId: String(endpointId ?? ''), ecos: Boolean(ecos), ultimo: ultimo ?? 0, creado: antes?.creado ?? now });
+    },
+    async borrarNumeroYc(clave) {
+      await s.delete(`ycl:${clave}`);
+    },
+    async listaNumerosYc() {
+      return [...(await s.list({ prefix: 'ycl:' })).values()];
+    },
     // ── Negocios clientes (ZL-121) ──
     // Los errores que puede ver quien usa la app vuelven como {error}; así cruzan el RPC del Durable Object.
     async negocio(id) {
@@ -316,5 +331,12 @@ export function adaptadores(a, reloj = () => Date.now()) {
       if (n) await a.borrarFichaNegocio(n.id);
     },
   };
-  return { memoria, charlas, cuentas, apps, fichas, negocios };
+  // Números de WhatsApp de negocios conectados por YCloud: {clave, negocio, numero, apiKey, secreto, endpointId, ecos, ultimo, creado}.
+  const ycloud = {
+    get: (clave) => a.numeroYc(clave),
+    put: (clave, d) => a.guardarNumeroYc(clave, d, reloj()),
+    delete: (clave) => a.borrarNumeroYc(clave),
+    list: () => a.listaNumerosYc(),
+  };
+  return { memoria, charlas, cuentas, apps, fichas, negocios, ycloud };
 }

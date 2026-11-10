@@ -2,6 +2,7 @@
 // - zustrolabs.com/api/whatsapp → webhook de la Cloud API de Meta (whatsapp.js).
 // - zustrolabs.com/api/instagram → webhook de los mensajes directos de Instagram (instagram.js);
 //   /api/instagram/conectar → link para que una cuenta (la del estudio o la de un cliente) se conecte con su Instagram.
+// - zustrolabs.com/api/whatsapp/ycloud/<clave> → el WhatsApp de cada negocio, por su cuenta de YCloud (ycloud.js, ZL-135).
 // - equipo.zustrolabs.com → panel de atención humana, detrás de Cloudflare Access (panel.js).
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
@@ -11,6 +12,7 @@ import { administrar, appNegocios, canalesDe, NEGOCIOS_HOST } from './negocios.j
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
+import { borrarWebhook, claveNueva, claveValida, crearWebhook, enviarYCloud, firmaYCloud, leerYCloud, numeroE164 } from './ycloud.js';
 
 const MAX_CUERPO = 256_000;
 const MAX_EDAD_MS = 3600_000; // mensajes de más de 1 h se ignoran (reintentos tardíos o reenvíos de un pedido firmado)
@@ -52,9 +54,9 @@ export const mandarA = (env, m, fetchImpl, cuentas = null) => (esInstagram(m.to)
 /** Memoria, charlas y cuentas de Instagram: el Durable Object ATENCION (una sola instancia), o lo que pasen los tests. */
 function almacen(env, deps) {
   if (deps.memoria !== undefined || deps.charlas !== undefined || deps.cuentas !== undefined) {
-    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null, fichas: deps.fichas ?? null, negocios: deps.negocios ?? null };
+    return { memoria: deps.memoria ?? null, charlas: deps.charlas ?? null, cuentas: deps.cuentas ?? null, apps: deps.apps ?? null, fichas: deps.fichas ?? null, negocios: deps.negocios ?? null, ycloud: deps.ycloud ?? null };
   }
-  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null, fichas: null, negocios: null };
+  if (!env.ATENCION) return { memoria: null, charlas: null, cuentas: null, apps: null, fichas: null, negocios: null, ycloud: null };
   return adaptadores(env.ATENCION.get(env.ATENCION.idFromName('zustrolabs')));
 }
 
@@ -70,6 +72,19 @@ const consultaCatalogo = (env, deps, negocioId, ficha) => {
     return r?.ok ? r.valor : null;
   };
 };
+
+/**
+ * La IA de un negocio: su ficha, sus productos y su tope diario (uno con mucho movimiento no deja sin IA a los demás;
+ * también es lo que se le factura). Lo usan Instagram y WhatsApp por YCloud.
+ */
+function iaDeNegocio(env, deps, a, dueño, ficha, canal) {
+  const catalogo = consultaCatalogo(env, deps, dueño?.id, ficha);
+  const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
+  return async (texto, idioma, opciones) => {
+    if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
+    return ia(texto, idioma, opciones);
+  };
+}
 
 const html = (cuerpo, status = 200) => new Response(cuerpo, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...SEGURIDAD } });
 
@@ -191,13 +206,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       const dueño = await a.negocios?.deCuenta(ev.cuenta);
       // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
-      const catalogo = consultaCatalogo(env, deps, dueño?.id, pf.ficha);
-      const ia = deps.preguntarNegocio ? deps.preguntarNegocio(pf.ficha, catalogo) : preguntadorNegocio(env, pf.ficha, { catalogo });
-      // Tope por negocio: uno con mucho movimiento no deja sin IA a los demás. También es lo que se le factura.
-      preguntarEv = async (texto, idioma, opciones) => {
-        if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
-        return ia(texto, idioma, opciones);
-      };
+      preguntarEv = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'Instagram');
       if (cliente) charlasEv = null;
     }
     try {
@@ -233,6 +242,135 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       await mandar(msgTexto(ev.from, falla)).catch(() => {});
     }
   }
+}
+
+/**
+ * WhatsApp de un negocio por YCloud (ZL-135): un webhook por número (`/api/whatsapp/ycloud/<clave>`), firmado con el
+ * secreto de ESE número. Responde 200 rápido y atiende aparte, con la ficha y los productos del negocio.
+ */
+async function webhookYCloud(request, env, ctx, deps, clave) {
+  const fetchImpl = deps.fetch ?? fetch;
+  const now = deps.now ?? Date.now();
+  const log = (o) => console.log(JSON.stringify({ canal: 'yc', ...o }));
+  if (request.method !== 'POST') return json({ error: 'usá POST' }, 405);
+  if (!claveValida(clave)) return json({ error: 'no existe' }, 404);
+  const a = almacen(env, deps);
+  if (!a.ycloud) return json({ error: 'sin memoria' }, 503);
+  const reg = await a.ycloud.get(clave);
+  if (!reg) { log({ ok: true, que: 'numero_desconocido' }); return json({ error: 'no existe' }, 404); }
+  if (Number(request.headers.get('content-length') ?? 0) > MAX_CUERPO) return json({ error: 'demasiado grande' }, 413);
+  const crudo = await request.text();
+  if (crudo.length > MAX_CUERPO) return json({ error: 'demasiado grande' }, 413);
+  if (!(await firmaYCloud(crudo, request.headers.get('YCloud-Signature'), reg.secreto, now))) {
+    log({ ok: false, que: 'firma' });
+    return json({ error: 'firma inválida' }, 401);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(crudo);
+  } catch {
+    return json({ error: 'pedido inválido' }, 400);
+  }
+  const eventos = leerYCloud(payload);
+  log({ que: 'aviso', tipo: String(payload?.type ?? '').slice(0, 50), eventos: eventos.length });
+  // Para el script: cuándo llegó el último mensaje (se guarda como mucho una vez por minuto).
+  if (eventos.some((e) => !e.eco) && now - (reg.ultimo ?? 0) > 60_000) await a.ycloud.put(clave, { ultimo: now }).catch(() => {});
+  const trabajo = procesarYCloud(eventos, env, fetchImpl, deps, reg);
+  if (ctx?.waitUntil) ctx.waitUntil(trabajo);
+  else await trabajo;
+  return json({ ok: true }, 200);
+}
+
+async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
+  const log = (o) => console.log(JSON.stringify({ canal: 'yc', ...o }));
+  if (!eventos.length) return;
+  const a = almacen(env, deps);
+  const now = deps.now ?? Date.now();
+  const mandar = (m) => enviarYCloud(reg.apiKey, m, fetchImpl);
+  // Igual que una cuenta de Instagram de cliente: sin negocio, sin WhatsApp encendido o sin ficha activa, no responde.
+  const dueño = await a.negocios?.get(reg.negocio);
+  if (!dueño) { log({ ok: true, que: 'sin_negocio' }); return; }
+  if (!canalesDe(dueño).whatsapp) { log({ ok: true, que: 'canal_apagado' }); return; }
+  const f = await a.negocios.ficha(dueño.id);
+  if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); return; }
+  const pf = parsearFicha(f.texto);
+  if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); return; }
+  const perfil = perfilNegocio(pf.ficha);
+  const preguntar = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'WhatsApp');
+
+  for (const ev of eventos) {
+    const t0 = Date.now();
+    // El dueño contestó desde su app (coexistencia): el asistente se calla en esa charla las horas de pausa de la ficha.
+    if (ev.eco) {
+      if (a.memoria) {
+        const estado = await a.memoria.get(ev.from);
+        await a.memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000 });
+      }
+      log({ ok: true, que: 'eco' });
+      continue;
+    }
+    if (!ev.ts || now - ev.ts * 1000 > MAX_EDAD_MS) { log({ ok: true, que: 'viejo' }); continue; }
+    try {
+      if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
+      if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
+      const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
+      const r = await atender(ev, { memoria: a.memoria, charlas: null, preguntar, now, cupo, perfil });
+      for (const m of r.send) await mandar(m);
+      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
+    } catch (e) {
+      log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
+      const st = await Promise.resolve(a.memoria?.get(ev.from)).catch(() => null);
+      await mandar(msgTexto(ev.from, perfil.textos(st?.idioma).falla)).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Números de WhatsApp de negocios por YCloud (lo que usa whatsapp-cliente.ps1):
+ * - GET /ycloud → los números conectados (sin la clave ni el secreto).
+ * - POST /ycloud {negocio, numero, apiKey} → crea el webhook en la cuenta de YCloud del negocio, guarda la clave y el
+ *   secreto (nunca se devuelven) y enciende WhatsApp en ese negocio.
+ * - DELETE /ycloud/<clave> → borra el webhook y el registro.
+ */
+async function adminYCloud(request, env, deps, ruta, url, now) {
+  const fetchImpl = deps.fetch ?? fetch;
+  const a = almacen(env, deps);
+  if (!a.ycloud || !a.negocios) return json({ error: 'sin memoria' }, 503);
+  const sinSecretos = (r) => ({ clave: r.clave, negocio: r.negocio, numero: r.numero, ecos: r.ecos, creado: r.creado, ultimo: r.ultimo || null });
+  if (request.method === 'GET' && ruta === '/ycloud') return json({ ok: true, numeros: (await a.ycloud.list()).map(sinSecretos) }, 200);
+  if (request.method === 'POST' && ruta === '/ycloud') {
+    let b;
+    try { b = await request.json(); } catch { return json({ error: 'pedido inválido' }, 400); }
+    const dueño = await a.negocios.get(String(b?.negocio ?? ''));
+    if (!dueño) return json({ error: 'ese negocio no existe' }, 404);
+    const numero = numeroE164(b?.numero);
+    if (!numero) return json({ error: 'el número va con código de país, por ejemplo +5493411234567' }, 400);
+    const apiKey = String(b?.apiKey ?? '').trim();
+    if (apiKey.length < 16 || /\s/.test(apiKey)) return json({ error: 'la clave de API parece incompleta' }, 400);
+    if ((await a.ycloud.list()).some((r) => r.numero === numero)) return json({ error: 'ese número ya está conectado: para volver a conectarlo, borralo primero' }, 409);
+    const clave = claveNueva();
+    let wh;
+    try {
+      wh = await crearWebhook(apiKey, `https://${url.host}/api/whatsapp/ycloud/${clave}`, fetchImpl);
+    } catch (e) {
+      console.log(JSON.stringify({ canal: 'yc', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 60) }));
+      return json({ error: String(e?.message ?? 'no se pudo crear el webhook en YCloud') }, 502);
+    }
+    await a.ycloud.put(clave, { negocio: dueño.id, numero, apiKey, secreto: wh.secreto, endpointId: wh.id, ecos: wh.ecos });
+    // El negocio queda con WhatsApp encendido (Instagram, como estaba).
+    await a.negocios.guardar(dueño.id, { canales: { ...canalesDe(dueño), whatsapp: true } });
+    console.log(JSON.stringify({ canal: 'yc', que: 'numero_conectado', ecos: wh.ecos }));
+    return json({ ok: true, clave, numero, negocio: dueño.id, ecos: wh.ecos }, 200);
+  }
+  const m = /^\/ycloud\/([0-9a-f]{24})$/.exec(ruta);
+  if (request.method === 'DELETE' && m) {
+    const reg = await a.ycloud.get(m[1]);
+    if (!reg) return json({ error: 'no existe' }, 404);
+    const borrado = await borrarWebhook(reg.apiKey, reg.endpointId, fetchImpl).catch(() => false);
+    await a.ycloud.delete(m[1]);
+    return json({ ok: true, webhookBorrado: borrado }, 200);
+  }
+  return json({ error: 'no existe' }, 404);
 }
 
 /** La cuenta es de un cliente si se conectó con una app que no es la del estudio. */
@@ -328,6 +466,7 @@ async function admin(request, env, deps) {
     if (!a.negocios) return json({ error: 'sin memoria' }, 503);
     return administrar(request, ruta, { ...a, esCliente: (c) => esCliente(env, c) }, now);
   }
+  if (ruta === '/ycloud' || ruta.startsWith('/ycloud/')) return adminYCloud(request, env, deps, ruta, url, now);
   if (request.method === 'GET' && ruta === '/estado') {
     const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, creado: a.creado }));
     const listaCuentas = [];
@@ -434,6 +573,7 @@ export default {
       return panel(request, env, { fetch: fetchImpl, now: deps.now, store: a.memoria, chats: a.charlas, send: (e, m) => mandarA(e, m, fetchImpl, a.cuentas) });
     }
     if (url.pathname === '/api/whatsapp') return webhook(request, env, ctx, deps, CANALES.wa);
+    if (url.pathname.startsWith('/api/whatsapp/ycloud/')) return webhookYCloud(request, env, ctx, deps, url.pathname.slice('/api/whatsapp/ycloud/'.length));
     if (url.pathname === '/api/instagram') return webhook(request, env, ctx, deps, CANALES.ig);
     if (url.pathname === '/api/instagram/conectar' || url.pathname === '/api/instagram/conectar/vuelta') return conectar(request, env, deps);
     if (url.pathname.startsWith('/api/instagram/admin/')) return admin(request, env, deps);

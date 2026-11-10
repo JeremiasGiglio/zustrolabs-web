@@ -203,7 +203,7 @@ function app() {
         h('span', { class: 'chip' }, (d.resumen ? d.resumen.activos : 0) + ' a la venta'),
         d.resumen && d.resumen.agotados ? h('span', { class: 'chip mal' }, d.resumen.agotados + (d.resumen.agotados === 1 ? ' agotado' : ' agotados')) : null,
         h('span', { class: 'chip ' + (as.activo ? 'ok' : 'alerta') }, as.activo ? 'Asistente activo' : as.tiene ? 'Asistente apagado' : 'Asistente sin configurar'),
-        h('span', { class: 'chip' }, 'Canales: ' + ([d.negocio.canales.instagram ? 'Instagram' : '', d.negocio.canales.whatsapp ? 'WhatsApp (en prueba)' : ''].filter(Boolean).join(' y ') || 'ninguno'))));
+        h('span', { class: 'chip' }, 'Canales: ' + ([d.negocio.canales.instagram ? 'Instagram' : '', d.negocio.canales.whatsapp ? 'WhatsApp' : ''].filter(Boolean).join(' y ') || 'ninguno'))));
     const buscar = h('input', { type: 'search', placeholder: 'Buscar por nombre, código o categoría', 'aria-label': 'Buscar', value: estado.q });
     const cats = h('select', { 'aria-label': 'Categoría' }, h('option', { value: '' }, 'Todas las categorías'));
     const pausados = h('input', { type: 'checkbox', checked: estado.pausados });
@@ -560,7 +560,7 @@ function app() {
           etiqueta('Quiénes entran', em), em,
           h('p', { class: 'ayuda' }, 'Canales que contrató (con un canal apagado, el asistente no responde ahí)'),
           h('label', { class: 'check' }, ig, 'Instagram'),
-          h('label', { class: 'check' }, wa, 'WhatsApp (en prueba: todavía no se conecta)'),
+          h('label', { class: 'check' }, wa, 'WhatsApp (el número se conecta con whatsapp-cliente.ps1)'),
           h('p', { class: 'ayuda' }, 'Cuentas de Instagram'), marcas.length ? marcas : h('p', { class: 'ayuda' }, 'No hay cuentas conectadas libres. Conectalas con el script instagram-cliente.ps1.'),
           etiqueta('Tope de respuestas de la IA por día', lim), lim,
           h('div', { class: 'acciones' },

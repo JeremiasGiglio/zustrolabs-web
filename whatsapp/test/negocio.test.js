@@ -334,12 +334,15 @@ test('la plantilla y el script no traen datos de clientes reales', () => {
 
 test('los scripts de Windows se guardan con BOM (PowerShell 5.1 lee los .ps1 sin BOM como ANSI y rompe los acentos)', () => {
   const leer = (n) => readFileSync(new URL(`../scripts/${n}`, import.meta.url));
-  for (const n of ['comun.ps1', 'instagram-cliente.ps1', 'cliente-nuevo.ps1']) assert.deepEqual([...leer(n).subarray(0, 3)], [0xef, 0xbb, 0xbf], n);
+  for (const n of ['comun.ps1', 'instagram-cliente.ps1', 'cliente-nuevo.ps1', 'whatsapp-cliente.ps1']) assert.deepEqual([...leer(n).subarray(0, 3)], [0xef, 0xbb, 0xbf], n);
   const comun = leer('comun.ps1').toString('utf8');
   for (const t of ['/ficha/revisar', '/ficha/probar', '/ficha"', '"/negocios"', 'PLANTILLA.md', 'notepad.exe']) assert.ok(comun.includes(t), t);
   assert.doesNotMatch(comun, /\$args\s*=/, 'no se pisa la variable reservada $args');
   const ig = leer('instagram-cliente.ps1').toString('utf8');
   for (const t of ['. "$PSScriptRoot\\comun.ps1"', '-Ficha', 'Vincular-Cuenta', 'Preparar-Ficha', '[switch]$DesdeAlta']) assert.ok(ig.includes(t), t);
+  const wa = leer('whatsapp-cliente.ps1').toString('utf8');
+  for (const t of ['. "$PSScriptRoot\\comun.ps1"', 'Llamar POST "/ycloud"', '[switch]$DesdeAlta', '[switch]$Desconectar', '$apiKey = $null', 'Paso-Acceso']) assert.ok(wa.includes(t), t);
+  assert.doesNotMatch(wa, /Write-Host[^\n]*\$apiKey/, 'la clave de API nunca se muestra');
   const alta = leer('cliente-nuevo.ps1').toString('utf8');
   for (const t of ['instagram-cliente.ps1', 'whatsapp-cliente.ps1', '[3] Los dos', 'Paso-Acceso', '-DesdeAlta']) assert.ok(alta.includes(t), t);
 });
