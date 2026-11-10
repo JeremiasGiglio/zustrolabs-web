@@ -103,6 +103,20 @@ Columna «Auto»: ✅ ya lo hace el script · 🔧 se puede automatizar (ver sec
 | Se prueba antes de publicar | «Sigue igual» | Esperar `Publicar` | 🔧 |
 | Se da por buena sin probar los tres caminos | Una falla aparece con el primer cliente | Probar: saludo, un número del menú, una pregunta libre sobre un producto, otro idioma y PERSONA | 🔧 (con `/ficha/probar`) |
 
+### H. WhatsApp por YCloud (ZL-135)
+
+| Qué puede fallar | Cómo se nota | Cómo evitarlo | Auto |
+|---|---|---|---|
+| Se elige «WhatsApp Business API» en vez de «Coexistence» | La app deja de funcionar con ese número | Siempre **WhatsApp Business APP Coexistence** | ✋ |
+| WhatsApp Business viejo | El QR no conecta | 2.24.17 o más nueva | ✋ (el script lo pide) |
+| Se cierra la app durante la sincronización | Los mensajes nuevos no llegan a YCloud | App abierta hasta que termine | ✋ |
+| Nombre del negocio distinto al de los papeles | Problemas al verificar en YCloud | Exactamente como en los papeles | ✋ |
+| La clave de API incompleta o de otra cuenta | El Worker dice «YCloud no aceptó la clave» | Copiarla entera de la cuenta del cliente | ✅ |
+| La cuenta no acepta el aviso de respuestas del dueño | El asistente no se calla cuando contesta el dueño | El script avisa; mientras, PERSONA | ✅ (avisa) |
+| El cliente no abre la app en 14 días | Meta corta la conexión: deja de llegar todo | Recordárselo; revisar `-SoloEstado` (último mensaje) | 🔧 |
+| Usa WhatsApp para Windows | Esos mensajes no los ve el asistente | web.whatsapp.com | ✋ |
+| Se recrea el webhook a mano en YCloud | Registro `firma` | `-Desconectar` y volver a conectar | ✅ |
+
 ## 3. Qué dice cada registro
 
 Cloudflare → Workers & Pages → `zustrolabs-whatsapp` → Observability. Buscar por `que`:

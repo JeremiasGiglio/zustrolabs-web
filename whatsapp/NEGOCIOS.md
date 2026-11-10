@@ -96,24 +96,16 @@ la landing, salvo que estén en la ficha).
   (20 minutos al agregar al carrito; hasta el vencimiento que defina cada negocio al confirmar), resumen y total
   calculados por el sistema, alias de la ficha, pago confirmado SOLO por el dueño en el panel, panel de pedidos con
   sonido y contador, avisos al comprador dentro de las 24 h de Meta. La columna `reservado` ya está en la base.
-- **WhatsApp de cada cliente** (YCloud), con el mismo catálogo. Ver abajo.
 - **Fotos por chat** y **planilla de Google en vivo**.
 - **Privacidad:** cuando haya pedidos se guardan datos de los compradores: hace falta una política modelo para cada
   negocio (responsable: el negocio; Zustro Labs procesa por cuenta de él) y el plazo de borrado.
 
-## WhatsApp de cada cliente (cuando lo probemos)
+## WhatsApp de cada cliente (ZL-135)
 
-Decidido el 26/10/2026: cada cliente abre **su propia cuenta gratis en YCloud** y conecta su número de WhatsApp Business
-con un QR («coexistencia»: sigue usando su app como siempre). Así no hace falta que Zustro Labs sea empresa verificada
-ante Meta (Tech Provider), que era el problema. El cliente nos pasa la clave de API y el secreto del webhook de su
-cuenta; se guardan por negocio en el Worker (nunca en el repo ni en el chat). Si YCloud cambia el plan gratis:
-SendSeven o 360dialog.
-
-Lo que va a hacer `scripts\whatsapp-cliente.ps1` (mismo estilo que el de Instagram, con `comun.ps1`): elegir el
-negocio, guiar la cuenta de YCloud del cliente y la conexión del número, registrar su clave y su webhook en el Worker,
-comprobar la firma con un mensaje de prueba, encender el canal WhatsApp del negocio y probar. **Antes:** probarlo con
-un número nuestro (pendiente del 26/10). Hasta entonces, el canal WhatsApp se puede elegir en la app y en
-`cliente-nuevo.ps1`, pero no conecta nada.
+Cada cliente conecta su número de WhatsApp Business a **su propia cuenta gratis de YCloud** con coexistencia (sigue
+usando su app y no pierde las charlas) y `scripts\whatsapp-cliente.ps1` lo conecta al Worker con la clave de API de
+esa cuenta. Responde con la misma ficha y los mismos productos que Instagram, y se calla en una charla cuando el dueño
+contesta desde su celular. Detalle en [`WHATSAPP_CLIENTES.md`](WHATSAPP_CLIENTES.md).
 
 ## Archivos
 

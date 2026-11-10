@@ -36,6 +36,10 @@ export class Atencion extends DurableObject {
   async guardarAppIg(id, datos, now) { await this.#alarma(); return this.a.guardarAppIg(id, datos, now); }
   borrarAppIg(id) { return this.a.borrarAppIg(id); }
   listaAppsIg() { return this.a.listaAppsIg(); }
+  numeroYc(clave) { return this.a.numeroYc(clave); }
+  async guardarNumeroYc(clave, datos, now) { await this.#alarma(); return this.a.guardarNumeroYc(clave, datos, now); }
+  borrarNumeroYc(clave) { return this.a.borrarNumeroYc(clave); }
+  listaNumerosYc() { return this.a.listaNumerosYc(); }
   negocio(id) { return this.a.negocio(id); }
   listaNegocios() { return this.a.listaNegocios(); }
   negociosDeEmail(email) { return this.a.negociosDeEmail(email); }
