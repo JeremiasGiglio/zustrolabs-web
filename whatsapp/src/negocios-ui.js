@@ -10,7 +10,7 @@ export const APP_HTML = `<!doctype html>
 <link rel="stylesheet" href="/app.css"></head>
 <body><div id="app"><p class="cargando">Cargando…</p></div><script src="/app.js"></script></body></html>`;
 
-export const APP_CSS = `:root{--rojo:#C8102E;--tinta:#1B2230;--gris:#5A6270;--linea:#E3E6EB;--fondo:#F6F7F9;--ok:#1E7B4E;--alerta:#B25E00}
+export const APP_CSS = `:root{--rojo:#C8102E;--tinta:#1B2230;--gris:#5A6270;--linea:#E3E6EB;--fondo:#F6F7F9;--ok:#1E7B4E;--alerta:#9A5100}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tinta);background:var(--fondo)}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -153,7 +153,7 @@ function app() {
     }
     return svg;
   }
-  const PESTANAS = () => [['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['whatsapp', 'WhatsApp']]
+  const PESTANAS = () => [['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['instagram', 'Instagram'], ['whatsapp', 'WhatsApp']]
     .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Administración']] : []);
 
   function pintar() {
@@ -184,7 +184,7 @@ function app() {
       v.append(estado.yo.admin ? vistaAdmin() : h('div', { class: 'vacio' }, 'Tu correo todavía no está en ningún negocio. Escribinos a contact@zustrolabs.com.'));
       return;
     }
-    const vistas = { productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, whatsapp: vistaWhatsapp, asistente: vistaAsistente, admin: vistaAdmin };
+    const vistas = { productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, instagram: vistaInstagram, whatsapp: vistaWhatsapp, asistente: vistaAsistente, admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaProductos)());
   }
 
@@ -471,6 +471,65 @@ function app() {
     return caja;
   }
 
+  // ── Instagram (ZL-137): el negocio conecta su cuenta con un botón (app de Zustro Labs para clientes) ──
+  function vistaInstagram() {
+    const enlace = (texto, url) => h('a', { href: url, target: '_blank', rel: 'noopener' }, texto);
+    const lista = h('div', { 'aria-live': 'polite' });
+    const pasos = h('div', {});
+    const caja = h('section', {},
+      h('h2', {}, 'Instagram'),
+      h('p', { class: 'ayuda' }, 'Conectá el Instagram de tu negocio para que el asistente conteste los mensajes directos con tu ficha y tus productos. No hace falta Facebook ni crear nada en Meta.'),
+      estado.datos.asistente.activo ? null : h('p', { class: 'chip alerta' }, 'Tu asistente todavía no está activo: lo activa el equipo de Zustro Labs. Podés conectar la cuenta igual.'),
+      lista, pasos);
+    const pintarPasos = (r) => {
+      const usuario = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'mi.negocio', value: r.invitacion ? r.invitacion.usuario : '' });
+      const errores = h('p', { class: 'errores', role: 'alert' });
+      const conectar = h('button', { type: 'button', class: 'btn prim', disabled: !r.disponible, onclick: conError(async () => {
+        const x = await api(base() + '/instagram/conectar', { metodo: 'POST' });
+        window.location.href = x.url;
+      }) }, 'Conectar Instagram');
+      poner(pasos,
+        h('h3', {}, r.cuentas.length ? 'Conectar otra cuenta' : 'Conectar tu cuenta'),
+        r.disponible ? null : h('p', { class: 'chip alerta' }, 'Todavía no está disponible: escribinos a contact@zustrolabs.com.'),
+        h('ol', { class: 'pasos' },
+          h('li', {}, 'Tu cuenta de Instagram tiene que ser profesional (Empresa o Creador): ', enlace('cómo pasarla', 'https://help.instagram.com/502981923235522'), '.'),
+          h('li', {}, 'En Instagram: Configuración → Mensajes y respuestas a historias → Controles de mensajes → Herramientas conectadas → «Permitir acceso a los mensajes» encendido.'),
+          h('li', {}, 'Pedinos la invitación con el usuario de Instagram del negocio:',
+            h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
+              e.preventDefault();
+              errores.textContent = '';
+              try {
+                await api(base() + '/instagram/invitacion', { metodo: 'POST', cuerpo: { usuario: usuario.value } });
+                aviso('Listo: te avisamos cuando la invitación esté enviada.');
+                cargar();
+              } catch (err) { if (err.message === 'sesión') throw err; errores.textContent = err.message; }
+            }) },
+              etiqueta('Usuario de Instagram del negocio', usuario), usuario, errores,
+              r.invitacion ? h('p', { class: 'ayuda' }, 'Pedida el ' + fecha(r.invitacion.pedido) + ' para @' + r.invitacion.usuario + '. Si te equivocaste, corregilo y pedila de nuevo.') : null,
+              h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn' }, r.invitacion ? 'Pedir de nuevo' : 'Pedir invitación')))),
+          h('li', {}, 'Cuando te avisemos, aceptala: entrá a ', enlace('instagram.com/accounts/manage_access', 'https://www.instagram.com/accounts/manage_access/'), ' con la cuenta del negocio → pestaña «Invitaciones de evaluador» → Aceptar.'),
+          h('li', {}, 'Apretá «Conectar Instagram», entrá con la cuenta del negocio y aceptá los permisos. Al volver, ya queda respondiendo con tu ficha y tus productos.')),
+        h('div', { class: 'acciones' }, conectar));
+    };
+    const cargar = conError(async () => {
+      const r = await api(base() + '/instagram');
+      poner(lista, ...(r.cuentas.length ? r.cuentas.map((c) => h('div', { class: 'wa-num' },
+        h('strong', {}, c.username ? '@' + c.username : 'Cuenta ' + c.id),
+        h('div', { class: 'chips' },
+          h('span', { class: 'chip ' + (c.conectada ? 'ok' : 'mal') }, c.conectada ? 'Conectada' : 'Desconectada: conectala de nuevo'),
+          r.canal ? null : h('span', { class: 'chip alerta' }, 'Instagram está apagado en tu negocio')),
+        h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn peligro', onclick: conError(async (e) => {
+          if (e.target.dataset.seguro !== '1') { e.target.dataset.seguro = '1'; e.target.textContent = '¿Seguro? Tocá de nuevo para desconectar'; return; }
+          await api(base() + '/instagram/' + c.id, { metodo: 'DELETE' });
+          aviso('Desconectada. Tu cuenta de Instagram sigue igual; el asistente deja de responder.');
+          cargar();
+        }) }, 'Desconectar')))) : [h('p', { class: 'vacio' }, 'Todavía no hay una cuenta de Instagram conectada.')]));
+      pintarPasos(r);
+    });
+    cargar();
+    return caja;
+  }
+
   // ── WhatsApp (ZL-136): el negocio conecta su número solo, con su cuenta gratis de YCloud ──
   function vistaWhatsapp() {
     const enlace = (texto, url) => h('a', { href: url, target: '_blank', rel: 'noopener' }, texto);
@@ -624,7 +683,9 @@ function app() {
           h('div', { class: 'chips' },
             h('span', { class: 'chip ' + (n.asistente.activo ? 'ok' : 'alerta') }, n.asistente.activo ? 'Asistente activo' : n.asistente.tiene ? 'Asistente apagado' : 'Sin ficha'),
             h('span', { class: 'chip' }, 'IA hoy: ' + n.usoHoy + ' / ' + n.limiteDia),
-            h('span', { class: 'chip' }, 'IA este mes: ' + n.usoMes)),
+            h('span', { class: 'chip' }, 'IA este mes: ' + n.usoMes),
+            // ZL-137: el negocio pidió que lo agreguemos como evaluador de la app compartida de Instagram.
+            n.invitacionIg ? h('span', { class: 'chip alerta' }, 'Pidió invitación de Instagram: @' + n.invitacionIg.usuario + ' (' + fecha(n.invitacionIg.pedido) + ')') : null),
           etiqueta('Quiénes entran', em), em,
           h('p', { class: 'ayuda' }, 'Canales que contrató (con un canal apagado, el asistente no responde ahí)'),
           h('label', { class: 'check' }, ig, 'Instagram'),

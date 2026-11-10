@@ -6,6 +6,25 @@ Cómo dejar la cuenta de Instagram de un cliente respondiendo con el asistente, 
 
 **Alta completa de un cliente (ZL-122), unos 30 minutos:** `scripts\cliente-nuevo.ps1`. Pregunta nombre, correos y canales (**Instagram, WhatsApp o los dos**), crea el negocio en negocios.zustrolabs.com, corre el script de cada canal y termina con los correos en Access y los productos. Cada canal tiene su script, que también se puede correr solo: `instagram-cliente.ps1` (este documento) y, cuando lo probemos, `whatsapp-cliente.ps1` (ver «WhatsApp de cada cliente» en `NEGOCIOS.md`). Las funciones compartidas están en `scripts\comun.ps1`.
 
+## Desde la app de negocios: el cliente lo hace solo (ZL-137)
+
+**Lo normal desde ZL-137.** El cliente no necesita Facebook ni crear nada en Meta: usa **la app de Meta de Zustro Labs
+para clientes** («Zustro Labs Clientes», acceso estándar, sin revisión ni verificación de empresa). Como la app es
+nuestra y no está revisada, Meta solo deja conectar las cuentas agregadas como **Instagram Tester** (hasta unas 50 por
+app; con más, se registra otra y se usa la más nueva).
+
+| Quién | Qué |
+|---|---|
+| El equipo, **una sola vez** | `scripts\instagram-app-clientes.ps1`: crear la app en el Facebook de Zustro Labs, registrarla en el Worker como compartida (`POST /apps {…, compartida: true}`), Redirect URL `https://zustrolabs.com/api/instagram/conectar/vuelta`, webhook `https://zustrolabs.com/api/instagram` con `IG_VERIFY_TOKEN` y «messages», Live. |
+| El equipo, por cliente | Dar de alta el negocio y sus correos (Administración y la política de Access). |
+| El cliente | `negocios.zustrolabs.com` → pestaña **Instagram**: cuenta profesional, «Permitir acceso a los mensajes», **Pedir invitación** con su usuario. |
+| El equipo | `scripts\instagram-app-clientes.ps1 -Invitaciones` (o el aviso en Administración): App roles → Roles → Add People → **Instagram Tester** → el usuario. |
+| El cliente | Acepta en instagram.com/accounts/manage_access → «Invitaciones de evaluador», y aprieta **Conectar Instagram**. Vuelve a la app con la cuenta ya vinculada a su negocio e Instagram encendido. |
+
+El link de «Conectar Instagram» lleva en el `state` firmado la app y el negocio (vence en una hora): nadie puede cambiar
+el negocio sin romper la firma. «Desconectar» saca la cuenta del negocio y borra su token. La ficha la sigue activando
+el equipo. El camino de abajo (la app de Meta del cliente) queda para quien ya tiene la suya o si la compartida se llena.
+
 | Paso | Minutos (con el cliente al lado) |
 |---|---|
 | Datos del negocio y canales | 3 |

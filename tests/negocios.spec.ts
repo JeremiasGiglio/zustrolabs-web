@@ -13,7 +13,7 @@ import { sqlPrueba } from '../whatsapp/test/sqlite.js';
 
 const TEAM = 'equipo-de-prueba.cloudflareaccess.com';
 const AUD = 'aud-negocios-prueba';
-const ENV = { ACCESS_TEAM_DOMAIN: TEAM, NEGOCIOS_ACCESS_AUD: AUD, PANEL_EMAILS: 'equipo@example.com', IG_APP_ID: '1000000000000001' };
+const ENV = { ACCESS_TEAM_DOMAIN: TEAM, NEGOCIOS_ACCESS_AUD: AUD, PANEL_EMAILS: 'equipo@example.com', IG_APP_ID: '1000000000000001', IG_APP_SECRET: 'secreto-ig-prueba' };
 const FICHA = readFileSync('whatsapp/test/ficha-prueba.md', 'utf8');
 
 let claves: CryptoKeyPair;
@@ -58,7 +58,7 @@ async function montar(page: Page, email: string) {
     await route.fulfill({ status: res.status, headers: Object.fromEntries(res.headers), body: Buffer.from(await res.arrayBuffer()) });
   });
   await page.goto('https://negocios.zustrolabs.com/');
-  return { negocio: r.negocio };
+  return { negocio: r.negocio, n };
 }
 
 // El Worker empaquetado IGUAL que lo hace Wrangler (esbuild con keepNames): así se prueba el código como queda en
@@ -170,6 +170,28 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('button', { name: 'Desconectar' }).click();
     await page.getByRole('button', { name: /¿Seguro\?/ }).click();
     await expect(page.getByText('Todavía no hay un número de WhatsApp conectado.')).toBeVisible();
+  });
+
+  test('Instagram (ZL-137): la dueña pide la invitación y «Conectar Instagram» la lleva a Instagram con la app compartida; la página es accesible', async ({ page }) => {
+    const { n } = await montar(page, 'duena@example.com');
+    await page.getByRole('tab', { name: 'Instagram' }).click();
+    await expect(page.getByText('Todavía no hay una cuenta de Instagram conectada.')).toBeVisible();
+    // Sin la app compartida registrada, el botón no se puede usar.
+    await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toBeDisabled();
+    await page.getByLabel('Usuario de Instagram del negocio').fill('@la.espiga');
+    await page.getByRole('button', { name: 'Pedir invitación' }).click();
+    await expect(page.getByText(/para @la\.espiga/)).toBeVisible();
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    // El equipo registra la app compartida: el botón lleva a Instagram con esa app y vuelve a zustrolabs.com.
+    await n.apps.put('3000000000000003', { secreto: 'secreto-app-compartida', nombre: 'Clientes', compartida: true });
+    await page.reload();
+    await page.getByRole('tab', { name: 'Instagram' }).click();
+    let destino = '';
+    await page.route('https://www.instagram.com/**', async (route) => { destino = route.request().url(); await route.fulfill({ status: 200, body: 'instagram' }); });
+    await page.getByRole('button', { name: 'Conectar Instagram' }).click();
+    await expect.poll(() => destino).toContain('client_id=3000000000000003');
+    expect(new URL(destino).searchParams.get('redirect_uri')).toBe('https://zustrolabs.com/api/instagram/conectar/vuelta');
   });
 
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {

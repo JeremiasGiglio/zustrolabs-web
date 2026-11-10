@@ -325,3 +325,65 @@ test('WhatsApp (ZL-136): el negocio conecta su número solo, con su clave de YCl
   assert.equal(enviados.at(-1).metodo, 'DELETE');
   assert.deepEqual((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/whatsapp`)).datos.numeros, []);
 });
+
+test('Instagram (ZL-137): pedir la invitación, «Conectar Instagram» con la app compartida y, a la vuelta, la cuenta queda en ese negocio', async () => {
+  const { n, d, a, b, pedir } = await armar();
+  const CTA = '17841400000000077';
+  // Sin la app compartida registrada: no está disponible.
+  let r = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/instagram`);
+  assert.equal(r.datos.disponible, false);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/conectar`)).status, 503);
+  // Pedir la invitación: el equipo la ve en Administración.
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/invitacion`, { usuario: 'mal usuario' })).status, 400);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/invitacion`, { usuario: '@la.espiga' })).status, 200);
+  const adm = (await pedir('equipo@example.com', 'GET', '/api/admin/negocios')).datos.negocios.find((x) => x.id === a.id);
+  assert.equal(adm.invitacionIg.usuario, 'la.espiga');
+  // El equipo registra la app compartida.
+  await n.apps.put('3000000000000003', { secreto: 'secreto-app-compartida', nombre: 'Clientes', compartida: true });
+  r = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/instagram`);
+  assert.equal(r.datos.disponible, true);
+  const ida = new URL((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/conectar`)).datos.url);
+  assert.equal(ida.searchParams.get('client_id'), '3000000000000003');
+  assert.equal(ida.searchParams.get('redirect_uri'), 'https://zustrolabs.com/api/instagram/conectar/vuelta');
+  const state = ida.searchParams.get('state');
+  assert.match(state, new RegExp(`\\.3000000000000003\\.${a.id}\\.`), 'el state lleva la app y el negocio');
+  // Otro negocio no puede pedir el link de este.
+  assert.equal((await pedir('otro@example.com', 'POST', `/api/n/${a.id}/instagram/conectar`)).status, 404);
+  // Vuelta de Instagram con esa app: la cuenta queda vinculada a La Espiga, con Instagram encendido y sin el pedido.
+  d.fetch = async (url, o = {}) => {
+    const u = String(url);
+    if (u.startsWith('https://api.instagram.com/oauth/access_token')) return Response.json({ access_token: 'corto', user_id: CTA });
+    if (u.includes('ig_exchange_token')) return Response.json({ access_token: 'largo', expires_in: 5_183_944 });
+    if (u.includes('/me?fields=user_id,username')) return Response.json({ user_id: CTA, username: 'la.espiga' });
+    if (u.includes('/me/subscribed_apps') && (o.method ?? 'GET') === 'GET') return Response.json({ data: [{ subscribed_fields: ['messages'] }] });
+    if (u.includes('/me/subscribed_apps')) return Response.json({ success: true });
+    return Response.json({}, { status: 400 });
+  };
+  const vuelta = await worker.fetch(new Request(`https://zustrolabs.com/api/instagram/conectar/vuelta?code=c&state=${encodeURIComponent(state)}`), { ...ENV, IG_CONECTAR_CLAVE: 'clave-link' }, {}, d);
+  const pagina = await vuelta.text();
+  assert.equal(vuelta.status, 200, pagina);
+  assert.match(pagina, /@la\.espiga[\s\S]*href="https:\/\/negocios\.zustrolabs\.com\/"[^>]*>Volver a mi negocio/);
+  const neg = await n.negocios.get(a.id);
+  assert.ok(neg.cuentas.includes(CTA));
+  assert.equal(neg.canales.instagram, true);
+  assert.equal(neg.invitacionIg, null);
+  assert.equal((await n.cuentas.get(CTA)).app, '3000000000000003');
+  // Un state tocado (otro negocio con la misma firma) no sirve.
+  const tocado = state.replace(a.id, b.id);
+  assert.equal((await worker.fetch(new Request(`https://zustrolabs.com/api/instagram/conectar/vuelta?code=c&state=${encodeURIComponent(tocado)}`), { ...ENV, IG_CONECTAR_CLAVE: 'clave-link' }, {}, d)).status, 400);
+  // La dueña la ve y la desconecta; otro negocio no puede.
+  r = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/instagram`);
+  assert.deepEqual(r.datos.cuentas.map((c) => [c.username, c.conectada]), [['la.espiga', true]]);
+  assert.equal((await pedir('otro@example.com', 'DELETE', `/api/n/${b.id}/instagram/${CTA}`)).status, 404);
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/instagram/${CTA}`)).status, 200);
+  assert.ok(!(await n.negocios.get(a.id)).cuentas.includes(CTA));
+  assert.equal(await n.cuentas.get(CTA), null);
+});
+
+test('Instagram (ZL-137): desconectar la cuenta del estudio desde un negocio la desvincula pero no borra su token', async () => {
+  const { n, pedir } = await armar();
+  const z = (await n.negocios.guardar(null, { nombre: 'ZustroLabs', emails: [], cuentas: [ESTUDIO] })).negocio;
+  assert.equal((await pedir('equipo@example.com', 'DELETE', `/api/n/${z.id}/instagram/${ESTUDIO}`)).status, 200);
+  assert.ok(!(await n.negocios.get(z.id)).cuentas.includes(ESTUDIO));
+  assert.equal((await n.cuentas.get(ESTUDIO)).token, 'tok-estudio');
+});

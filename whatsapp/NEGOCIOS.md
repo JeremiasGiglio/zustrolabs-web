@@ -10,6 +10,7 @@ adelante, por WhatsApp). Vive en el Worker `zustrolabs-whatsapp`, igual que el p
 | Productos | el negocio y el equipo | Alta y edición (nombre, código, categoría, descripción, precio, unidad, stock, foto), a la venta o pausado, stock con − y +, búsqueda, exportar a Excel (CSV con «;», como lo abre Excel en Argentina). |
 | Importar Excel | el negocio y el equipo | .xlsx o .csv leídos en el navegador (sin librerías). Reconoce las columnas por el título, se pueden corregir, **muestra qué va a pasar** antes de guardar, y actualiza por código o por nombre, o reemplaza (lo que no viene se **pausa**, no se borra). Hasta 3.000 filas por vez. Planilla modelo para bajar. |
 | Historial | el negocio y el equipo | Cada cambio de stock, precio o producto, con el correo de quién lo hizo y cuándo. |
+| Instagram | el negocio y el equipo | El negocio pide la invitación con su usuario, la acepta en Instagram y aprieta «Conectar Instagram» (app compartida de Zustro Labs, sin Facebook): vuelve con la cuenta vinculada a su negocio. Ve sus cuentas y las desconecta. El pedido aparece en Administración (ZL-137, `INSTAGRAM_CLIENTES.md`). |
 | WhatsApp | el negocio y el equipo | El negocio conecta su número de WhatsApp Business solo: pasos de YCloud (coexistencia), su número y su clave de API, «Conectar». Ve si está conectado, el último mensaje y si se calla cuando contesta él; «Desconectar». La clave no se vuelve a mostrar (ZL-136). |
 | Asistente | solo el equipo | La ficha del negocio (la misma de `fichas/PLANTILLA.md`), revisarla, activarla y una charla de prueba con los productos cargados. Decisión del 3/11/2026: **el negocio no edita la ficha**. |
 | Administración | solo el equipo | Nuevo negocio, quiénes entran (correos), **qué canales contrató (Instagram, WhatsApp o los dos)**, qué cuentas de Instagram son suyas, tope diario de respuestas de la IA y cuánto usó hoy y en el mes. Con un canal apagado, el asistente no responde por ahí (registro `canal_apagado`). |
@@ -58,7 +59,8 @@ Antes de la primera, leer [`FALLAS_Y_PREVENCION.md`](FALLAS_Y_PREVENCION.md): lo
 
 1. **Administración → Nuevo negocio:** nombre y correos de quienes van a entrar.
 2. **Access:** agregar esos correos a la política de la app «Negocios» (paso 2 de arriba). Sin eso, Access no los deja pasar.
-3. **Instagram:** conectar la cuenta con `scripts/instagram-cliente.ps1` (ver `INSTAGRAM_CLIENTES.md`) y, en
+3. **Instagram:** lo normal, el cliente lo hace desde su pestaña Instagram (ZL-137; nosotros lo agregamos como evaluador
+   con `scripts\instagram-app-clientes.ps1 -Invitaciones`). Si no, conectar la cuenta con `scripts/instagram-cliente.ps1` (ver `INSTAGRAM_CLIENTES.md`) y, en
    Administración, marcar esa cuenta en el negocio → Guardar.
 4. **Productos:** el cliente sube su Excel (Importar Excel) o los carga a mano.
 5. **Asistente:** pegar la ficha completa, Revisar, probar la charla (usa los productos) y Guardar con «Activa».

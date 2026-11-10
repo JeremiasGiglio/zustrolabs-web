@@ -8,6 +8,7 @@
 
 import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
+import { urlAutorizar } from './instagram.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 
@@ -89,6 +90,12 @@ export async function desconectarWhatsApp({ ycloud, fetch: fetchImpl = fetch }, 
   return { status: 200, datos: { ok: true, webhookBorrado: borrado } };
 }
 
+// ── Instagram desde la app (ZL-137): la app de Meta de Zustro Labs para clientes, con cada cliente como evaluador ──
+/** La app compartida (la más nueva marcada como compartida), o null si todavía no se registró. */
+export const appCompartida = async (apps) => ((await apps?.list?.()) ?? []).filter((a) => a.compartida).sort((x, y) => (y.creado ?? 0) - (x.creado ?? 0))[0] ?? null;
+// La vuelta del OAuth es siempre zustrolabs.com (es la Redirect URL registrada en la app de Meta).
+const ORIGEN_IG = 'https://zustrolabs.com';
+
 export async function appNegocios(request, env, deps) {
   const url = new URL(request.url);
   const now = deps.now ?? Date.now();
@@ -142,6 +149,45 @@ export async function appNegocios(request, env, deps) {
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
     });
+  }
+
+  // Instagram del negocio (ZL-137): pedir la invitación, «Conectar Instagram» y desconectar.
+  if (sub === '/instagram' || sub.startsWith('/instagram/')) {
+    if (!deps.cuentas || !deps.apps) return error('sin memoria', 503);
+    const app = await appCompartida(deps.apps);
+    if (request.method === 'GET' && sub === '/instagram') {
+      const cuentas = [];
+      for (const id of negocio.cuentas) {
+        const c = await deps.cuentas.get(id);
+        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null });
+      }
+      return json({ cuentas, disponible: Boolean(app && env.IG_APP_SECRET), invitacion: negocio.invitacionIg ?? null, canal: canalesDe(negocio).instagram });
+    }
+    if (request.method === 'POST' && sub === '/instagram/invitacion') {
+      const b = await request.json().catch(() => null);
+      const usuario = String(b?.usuario ?? '').trim().replace(/^@/, '');
+      if (!/^[A-Za-z0-9._]{1,30}$/.test(usuario)) return error('escribí el usuario de Instagram del negocio, sin espacios (por ejemplo: mi.negocio)', 400);
+      const r = await deps.negocios.guardar(negocio.id, { invitacionIg: { usuario, pedido: now } });
+      if (r?.error) return error(r.error, 400);
+      console.log(JSON.stringify({ canal: 'ig', que: 'invitacion_pedida' }));
+      return json({ ok: true, invitacion: r.negocio.invitacionIg });
+    }
+    if (request.method === 'POST' && sub === '/instagram/conectar') {
+      if (!app || !env.IG_APP_SECRET) return error('todavía no está disponible: escribinos a contact@zustrolabs.com', 503);
+      return json({ url: await urlAutorizar(env, ORIGEN_IG, now, app, negocio.id) });
+    }
+    const c = /^\/instagram\/(\d{6,20})$/.exec(sub);
+    if (request.method === 'DELETE' && c) {
+      if (!negocio.cuentas.includes(c[1])) return error('no existe', 404);
+      const r = await deps.negocios.guardar(negocio.id, { cuentas: negocio.cuentas.filter((x) => x !== c[1]) });
+      if (r?.error) return error(r.error, 400);
+      // La cuenta del estudio (app del estudio) solo se desvincula: su token no se borra desde acá (ZL-137).
+      const cta = await deps.cuentas.get(c[1]);
+      const estudio = Boolean(cta) && String(cta.app ?? env.IG_APP_ID) === String(env.IG_APP_ID);
+      if (!estudio) await deps.cuentas.delete(c[1]);
+      return json({ ok: true, borrada: !estudio });
+    }
+    return error('no existe', 404);
   }
 
   // WhatsApp del negocio (ZL-136): el negocio conecta su número solo, con su cuenta de YCloud.

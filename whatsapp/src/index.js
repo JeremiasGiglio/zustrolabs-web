@@ -109,10 +109,11 @@ async function conectar(request, env, deps) {
     return Response.redirect(await urlAutorizar(env, origen, now, app), 302);
   }
   // Vuelta de Instagram.
+  const volver = `https://${env.NEGOCIOS_HOST || NEGOCIOS_HOST}/`;
   const code = url.searchParams.get('code');
   const estado = await leerEstado(env.IG_APP_SECRET, url.searchParams.get('state'), now);
   if (!code || !estado) {
-    return html(paginaConectado({ ok: false, error: url.searchParams.get('error_reason') ? 'no aceptaste los permisos' : 'vuelta inválida' }), 400);
+    return html(paginaConectado({ ok: false, error: url.searchParams.get('error_reason') ? 'no aceptaste los permisos' : !estado ? 'el link venció o no es válido: volvé a apretar «Conectar Instagram»' : 'vuelta inválida', ...(estado?.negocio && { volver }) }), 400);
   }
   if (!cuentas) return html(paginaConectado({ ok: false, error: 'sin memoria' }), 503);
   const app = await appDe(env, apps, estado.app);
@@ -120,11 +121,19 @@ async function conectar(request, env, deps) {
   try {
     const c = await conectarCuenta(env, { code, origen, now, app }, fetchImpl);
     await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence, app: c.app });
-    console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta, propia: app.id === String(env.IG_APP_ID) }));
-    return html(paginaConectado({ ok: true, username: c.username, suscripta: c.suscripta }));
+    console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta, propia: app.id === String(env.IG_APP_ID), negocio: Boolean(estado.negocio) }));
+    // Desde la app de negocios (ZL-137): la cuenta queda vinculada sola a ese negocio, con Instagram encendido.
+    if (estado.negocio) {
+      const { negocios } = almacen(env, deps);
+      const n = await negocios?.get(estado.negocio);
+      if (!n) return html(paginaConectado({ ok: false, error: 'ese negocio no existe', volver }), 404);
+      const r = await negocios.guardar(n.id, { cuentas: [...new Set([...n.cuentas, c.id])], canales: { ...canalesDe(n), instagram: true }, invitacionIg: null });
+      if (r?.error) return html(paginaConectado({ ok: false, error: r.error, volver }), 409);
+    }
+    return html(paginaConectado({ ok: true, username: c.username, suscripta: c.suscripta, ...(estado.negocio && { volver }) }));
   } catch (e) {
     console.log(JSON.stringify({ canal: 'ig', que: 'conectar', ok: false, error: String(e?.message ?? 'error').slice(0, 40) }));
-    return html(paginaConectado({ ok: false, error: String(e?.message ?? 'error').slice(0, 40) }), 502);
+    return html(paginaConectado({ ok: false, error: String(e?.message ?? 'error').slice(0, 40), ...(estado.negocio && { volver }) }), 502);
   }
 }
 
@@ -464,7 +473,7 @@ async function admin(request, env, deps) {
   }
   if (ruta === '/ycloud' || ruta.startsWith('/ycloud/')) return adminYCloud(request, env, deps, ruta, url, now);
   if (request.method === 'GET' && ruta === '/estado') {
-    const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, creado: a.creado }));
+    const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, compartida: Boolean(a.compartida), creado: a.creado }));
     const listaCuentas = [];
     for (const c of await cuentas.list()) {
       const cli = esCliente(env, c);
@@ -497,7 +506,7 @@ async function admin(request, env, deps) {
     if (secreto.length < 16) return json({ error: 'secreto muy corto' }, 400);
     if (!nombre) return json({ error: 'falta el nombre del cliente' }, 400);
     if (String(env.IG_APP_ID ?? '') === id) return json({ error: 'esa es la app del estudio' }, 400);
-    await apps.put(id, { secreto, nombre });
+    await apps.put(id, { secreto, nombre, compartida: b?.compartida === true });
     console.log(JSON.stringify({ canal: 'ig', que: 'app_registrada' }));
     return json({ ok: true, id, nombre, conectar: `https://${url.host}/api/instagram/conectar?clave=<IG_CONECTAR_CLAVE>&app=${id}` }, 200);
   }
