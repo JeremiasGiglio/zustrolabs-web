@@ -30,6 +30,18 @@ const resp = (cuerpo, status, tipo, extra = {}) => new Response(cuerpo, { status
 const json = (data, status = 200) => resp(JSON.stringify(data), status, 'application/json; charset=utf-8');
 const error = (mensaje, status = 400, campo) => json({ error: mensaje, ...(campo && { campo }) }, status);
 
+/** Lo que se le manda al comprador cuando el negocio cambia el estado de su pedido (texto fijo, sin IA). */
+export function textoEstado(p, estado, motivo, negocio) {
+  const n = `N.º ${p.numero}`;
+  const porque = motivo ? ` (${motivo})` : '';
+  if (estado === 'aceptado') return `Tu pedido ${n} fue aceptado por ${negocio}. En un rato te escriben por acá para coordinar el pago y la entrega.`;
+  if (estado === 'rechazado') return `Lo siento: ${negocio} no puede tomar tu pedido ${n}${porque}.`;
+  if (estado === 'pagado') return `${negocio} recibió el pago de tu pedido ${n}. ¡Gracias!`;
+  if (estado === 'entregado') return `Tu pedido ${n} figura como entregado. ¡Gracias por tu compra!`;
+  if (estado === 'cancelado') return `Tu pedido ${n} fue cancelado${porque}.`;
+  return null;
+}
+
 const leerCanales = (c) => ({ ...(typeof c?.instagram === 'boolean' && { instagram: c.instagram }), ...(typeof c?.whatsapp === 'boolean' && { whatsapp: c.whatsapp }) });
 
 const PAGINA_SIN_CONFIGURAR = `<!doctype html><html lang="es"><meta charset="utf-8"><title>Negocios · Zustro Labs</title><body style="font-family:system-ui;padding:2rem"><h1>Todavía no está configurado</h1><p>Falta la app de Cloudflare Access de negocios.zustrolabs.com (ver whatsapp/NEGOCIOS.md).</p></body></html>`;
@@ -149,7 +161,7 @@ export async function appNegocios(request, env, deps) {
     const cuentas = [];
     for (const c of negocio.cuentas) cuentas.push({ id: c, username: (await deps.cuentas?.get(c))?.username ?? null });
     return json({
-      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
+      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
       resumen: r.valor ?? null,
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
@@ -222,6 +234,27 @@ export async function appNegocios(request, env, deps) {
     if (!b) return error('pedido inválido');
     const r = await ejecutar('crear', [b, email]);
     return r.resp ?? json(r.valor, 201);
+  }
+  // Pedidos (ZL-139): el panel del negocio. Solo el negocio (y el equipo) cambia estados; nunca la IA.
+  if (request.method === 'GET' && sub === '/pedidos') {
+    const r = await ejecutar('pedidos', [{ estado: url.searchParams.get('estado') ?? '', cuantos: Number(url.searchParams.get('cuantos') ?? 100) }]);
+    return r.resp ?? json({ ...r.valor, encendidos: negocio.pedidos === true });
+  }
+  const mo = /^\/pedidos\/(\d{1,9})$/.exec(sub);
+  if (mo && request.method === 'GET') {
+    const r = await ejecutar('pedido', [Number(mo[1])]);
+    return r.resp ?? json(r.valor);
+  }
+  if (mo && request.method === 'POST') {
+    const b = await leerJson(request);
+    if (!b || !['aceptado', 'rechazado', 'pagado', 'entregado', 'cancelado'].includes(b.estado)) return error('estado inválido');
+    const motivo = String(b.motivo ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 200);
+    const r = await ejecutar('cambiarEstado', [Number(mo[1]), b.estado, email, { motivo, horas: b.horas ?? null }]);
+    if (r.resp) return r.resp;
+    // Se le avisa al comprador por el mismo canal (dentro de las 24 h de Meta). Si falla, el estado igual quedó.
+    const texto = textoEstado(r.valor, b.estado, motivo, negocio.nombre);
+    const aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
+    return json({ ...r.valor, aviso });
   }
   let mp = /^\/productos\/(p[a-z0-9]{4,40})$/.exec(sub);
   if (mp && request.method === 'PUT') {
@@ -349,6 +382,7 @@ export async function administrar(request, ruta, deps, now) {
     }
     if (b.limiteDia !== undefined) cambios.limiteDia = b.limiteDia;
     if (b.canales !== undefined) cambios.canales = leerCanales(b.canales);
+    if (typeof b.pedidos === 'boolean') cambios.pedidos = b.pedidos;
     const r = await deps.negocios.guardar(m[1], cambios);
     if (r.error) return error(r.error);
     return json({ ...r.negocio, acceso: cambios.emails && deps.acceso ? await deps.acceso(r.negocio.emails) : null });

@@ -48,7 +48,12 @@ export function crearAtencion(storage) {
     },
     async guardarEstado(num, datos, now) {
       const { idioma, humanoHasta = 0 } = datos ?? {};
-      await s.put(`wa:${num}`, { idioma, humanoHasta, vence: now + RETENCION_MEMORIA_MS });
+      // El paso del pedido en curso (ZL-139), solo con los campos conocidos y cortos.
+      const p = datos?.pedido;
+      const pedido = p && ['confirmar', 'entrega', 'nombre', 'direccion'].includes(p.paso)
+        ? { paso: p.paso, ...(['retiro', 'envio'].includes(p.entrega) && { entrega: p.entrega }), ...(p.nombre && { nombre: String(p.nombre).slice(0, 80) }), ...(p.direccion && { direccion: String(p.direccion).slice(0, 200) }) }
+        : null;
+      await s.put(`wa:${num}`, { idioma, humanoHasta, ...(pedido && { pedido }), vence: now + RETENCION_MEMORIA_MS });
     },
     /** BORRAR: memoria, charla y contador de ese número. */
     async borrar(num) {
@@ -187,7 +192,9 @@ export function crearAtencion(storage) {
       const canales = { instagram: typeof ci.instagram === 'boolean' ? ci.instagram : c0.instagram, whatsapp: typeof ci.whatsapp === 'boolean' ? ci.whatsapp : c0.whatsapp };
       // El pedido de invitación de Instagram (ZL-137): {usuario, pedido} hasta que el equipo lo atiende (null lo borra).
       const invitacionIg = datos?.invitacionIg !== undefined ? datos.invitacionIg : antes?.invitacionIg ?? null;
-      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, invitacionIg, creado: antes?.creado ?? now, actualizado: now };
+      // Pedidos por chat (ZL-139): apagados hasta que el equipo los enciende en Administración.
+      const pedidos = typeof datos?.pedidos === 'boolean' ? datos.pedidos : antes?.pedidos === true;
+      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, invitacionIg, pedidos, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);

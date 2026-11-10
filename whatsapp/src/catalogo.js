@@ -342,7 +342,9 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
      * mensaje), con precio solo si el negocio permite precios, y el stock como «hay stock», «quedan N» o «AGOTADO».
      * Devuelve el texto y los montos que la respuesta puede nombrar (controlarNegocio).
      */
-    paraAsistente(mensaje = '', { precios = false } = {}) {
+    paraAsistente(mensaje = '', { precios = false, refs = false } = {}) {
+      // Lo vencido se libera antes de mostrar el stock (ZL-139).
+      pedidos.vencer();
       const activos = una('SELECT COUNT(*) AS n FROM productos WHERE activo = 1').n;
       let elegidos;
       let resto = 0;
@@ -373,7 +375,8 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
           montos.push(pesos(p.precio).replace(/\D/g, ''), String(p.precio).replace(/\D/g, ''));
         }
         const extra = [p.codigo ? `código ${p.codigo}` : '', p.descripcion].filter(Boolean).join('. ');
-        return `- ${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${precio} · ${stock}${extra ? ` · ${extra}` : ''}`;
+        // Con pedidos (ZL-139), cada producto lleva su ref: es lo único que la IA devuelve para armar el carrito.
+        return `- ${refs ? `[ref ${p.id}] ` : ''}${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${precio} · ${stock}${extra ? ` · ${extra}` : ''}`;
       });
       const nota = resto > 0 ? `\n(Hay ${resto} productos más que no se muestran: si no está lo que busca, pedí más detalles o ofrecé una persona.)` : '';
       return { texto: lineas.length ? lineas.join('\n') + nota : '(El negocio todavía no cargó productos.)', montos: [...new Set(montos.filter(Boolean))], cuantos: elegidos.length, activos };
@@ -401,6 +404,9 @@ export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar'
 export function ejecutarCatalogo(c, op, args = []) {
   if (!OPERACIONES.includes(op)) return { ok: false, error: 'operación desconocida' };
   try {
+    // Antes de leer o cambiar cualquier cosa, se vencen las reservas pasadas de hora (ZL-139): el stock disponible
+    // nunca queda trabado aunque la alarma se atrase.
+    if (op !== 'vencer' && op !== 'proximoVencimiento') c.vencer();
     return { ok: true, valor: c[op](...args) };
   } catch (e) {
     if (e instanceof ErrorCatalogo) return { ok: false, error: e.message, campo: e.campo };

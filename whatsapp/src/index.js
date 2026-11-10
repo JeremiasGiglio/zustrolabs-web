@@ -14,6 +14,7 @@ import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
 import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, webhookDeYCloud } from './ycloud.js';
 import { agregarAAcceso, correosEnAcceso } from './acceso.js';
+import { pedidosDeCharla } from './pedidos-charla.js';
 import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
 const MAX_CUERPO = 256_000;
@@ -69,8 +70,8 @@ const catalogoDe = (env, deps) => deps.catalogo ?? ((id) => (env.CATALOGO ? env.
 const consultaCatalogo = (env, deps, negocioId, ficha) => {
   const cat = negocioId ? catalogoDe(env, deps)(negocioId) : null;
   if (!cat) return null;
-  return async (texto) => {
-    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios }]);
+  return async (texto, { refs = false } = {}) => {
+    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios, refs }]);
     return r?.ok ? r.valor : null;
   };
 };
@@ -86,6 +87,37 @@ function iaDeNegocio(env, deps, a, dueño, ficha, canal) {
     if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
     return ia(texto, idioma, opciones);
   };
+}
+
+/**
+ * Le avisa al comprador por el mismo canal del pedido (ZL-139): Instagram con el token de la cuenta del negocio, o
+ * WhatsApp con la clave de YCloud del número del negocio. Solo cuentas y números de ESE negocio. → true o el motivo.
+ */
+async function avisarComprador(env, a, negocio, charla, texto, fetchImpl = fetch) {
+  const msg = { to: charla, text: { body: String(texto).slice(0, 1000) } };
+  try {
+    if (/^yc:\d+:\d+$/.test(charla)) {
+      const reg = ((await a.ycloud?.list?.()) ?? []).find((r) => r.negocio === negocio.id && normalizar(r.numero) === normalizar(numeroDeCharla(charla)));
+      if (!reg) return 'el número ya no está conectado';
+      await enviarYCloud(reg.apiKey, msg, fetchImpl);
+      return true;
+    }
+    const cuenta = /^ig:(\d+)\./.exec(charla)?.[1];
+    if (cuenta && (negocio.cuentas ?? []).includes(cuenta)) {
+      await enviarIg(env, msg, fetchImpl, a.cuentas);
+      return true;
+    }
+    return 'la cuenta ya no es de este negocio';
+  } catch (e) {
+    return String(e?.message ?? e).slice(0, 80);
+  }
+}
+
+/** Pedidos por chat de un negocio (ZL-139), si los tiene encendidos y una base de productos. */
+function pedidosDe(env, deps, dueño, ficha, charla, canal) {
+  if (!dueño?.pedidos) return null;
+  const cat = catalogoDe(env, deps)(dueño.id);
+  return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios }) : null;
 }
 
 const html = (cuerpo, status = 200) => new Response(cuerpo, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...SEGURIDAD } });
@@ -207,7 +239,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
     const fichaEstudio = !cliente && cuenta ? await fichaDelEstudio(a, ev.cuenta) : null;
     if (fichaEstudio?.motivo) log({ ok: fichaEstudio.motivo !== 'ficha_invalida', que: `estudio_${fichaEstudio.motivo}` });
     const negocio = cliente || Boolean(fichaEstudio?.texto);
-    let perfil, preguntarEv = preguntar, charlasEv = charlas;
+    let perfil, preguntarEv = preguntar, charlasEv = charlas, pedidosEv = null;
     if (negocio) {
       const f = cliente ? await a.fichas?.get(ev.cuenta) : fichaEstudio;
       if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
@@ -218,6 +250,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
       preguntarEv = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'Instagram');
+      pedidosEv = pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'ig');
       if (cliente) charlasEv = null;
     }
     try {
@@ -227,7 +260,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!(await env.LIMITE.limit({ key: esInstagram(ev.from) ? ev.from : `wa:${ev.from}` })).success) { log({ ok: true, que: 'limite' }); continue; }
       // El de toda la cuenta (los dos canales juntos) se mira recién antes de gastar IA (no corta la atención humana ni BORRAR).
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }) });
+      const r = await atender(ev, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv });
       for (const m of r.send) await mandar(m);
       // Aviso por correo (sin número ni texto). Si falla, la charla igual queda en el panel; el motivo va al registro.
       let avisado, avisoError;
@@ -336,14 +369,14 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
       if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas: null, preguntar, now, cupo, perfil });
+      const r = await atender(ev, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa') });
       // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente.
       if (r.send.length && !['borrar', 'persona', 'humano'].includes(r.metrica) && memoria) {
         const st = await memoria.get(ev.from);
         if (st?.humanoHasta && st.humanoHasta > now) { log({ ok: true, que: 'contesto_el_duenio' }); continue; }
       }
       for (const m of r.send) await mandar(m);
-      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
+      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, ...(r.pedido && { pedido: r.pedido }), idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
       const st = await Promise.resolve(memoria?.get(ev.from)).catch(() => null);
@@ -641,6 +674,7 @@ export default {
       return appNegocios(request, env, {
         ...a, fetch: fetchImpl, now: deps.now, catalogo: catalogoDe(env, deps), esCliente: (c) => esCliente(env, c),
         probar: (ficha, negocioId, mensajes, estado) => probarFicha(env, ficha, mensajes, deps, negocioId, estado),
+        avisarComprador: (negocio, charla, texto) => avisarComprador(env, a, negocio, charla, texto, fetchImpl),
       });
     }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {

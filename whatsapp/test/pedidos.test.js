@@ -55,7 +55,8 @@ test('carrito: cambiarlo libera lo anterior y vaciarlo lo borra', () => {
   // Pedir más de lo que hay contando lo propio: con 10 de stock y 1 propio reservado, 10 entran.
   assert.deepEqual(c.carrito(CHARLA, [{ id: pan.id, cantidad: 10 }]).faltantes, []);
   assert.equal(c.carrito(CHARLA, [{ id: pan.id, cantidad: 11 }]).faltantes[0].disponible, 10);
-  assert.deepEqual(stock(c, pan.id), [10, 0], 'si no entra, no queda nada reservado');
+  assert.deepEqual(stock(c, pan.id), [10, 10], 'si el cambio no entra, el carrito queda como estaba');
+  assert.equal(c.carrito(CHARLA, [{ id: 'nada', cantidad: 1 }]).sinCambios, true);
   assert.equal(c.carrito(CHARLA, []).pedido, null);
   assert.equal(c.carritoDe(CHARLA), null);
   assert.throws(() => c.carrito('', []), ErrorCatalogo);

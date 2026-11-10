@@ -21,7 +21,7 @@ let jwk: JsonWebKey & { kid: string };
 // Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
 const FIRMA_FALSA = 'secreto-de-prueba';
 
-async function montar(page: Page, email: string) {
+async function montar(page: Page, email: string, antes?: (n: any, negocio: any, deps: any) => Promise<void>) {
   // Una sola clave por corrida: el Worker empaquetado guarda en memoria las claves de Access que ya bajó.
   if (!claves) {
     claves = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
@@ -47,6 +47,7 @@ async function montar(page: Page, email: string) {
   };
   const r = await n.negocios.guardar(null, { nombre: 'Panadería La Espiga', emails: ['duena@example.com'], cuentas: [] });
   await n.negocios.guardarFicha(r.negocio.id, { texto: FICHA, activa: true });
+  if (antes) await antes(n, r.negocio, deps);
   const tok = await firmarToken(email);
   await page.route('https://negocios.zustrolabs.com/**', async (route) => {
     const req = route.request();
@@ -58,7 +59,7 @@ async function montar(page: Page, email: string) {
     await route.fulfill({ status: res.status, headers: Object.fromEntries(res.headers), body: Buffer.from(await res.arrayBuffer()) });
   });
   await page.goto('https://negocios.zustrolabs.com/');
-  return { negocio: r.negocio, n };
+  return { negocio: r.negocio, n, deps };
 }
 
 // El Worker empaquetado IGUAL que lo hace Wrangler (esbuild con keepNames): así se prueba el código como queda en
@@ -192,6 +193,67 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('button', { name: 'Conectar Instagram' }).click();
     await expect.poll(() => destino).toContain('client_id=3000000000000003');
     expect(new URL(destino).searchParams.get('redirect_uri')).toBe('https://zustrolabs.com/api/instagram/conectar/vuelta');
+  });
+
+  test('pedidos (ZL-139): el negocio ve el pedido nuevo, lo acepta, lo marca pagado y entregado, y el stock baja; la pestaña es accesible', async ({ page }) => {
+    const CHARLA = 'yc:5493410000001:5493410000009';
+    let panId = '';
+    const { negocio, deps } = await montar(page, 'duena@example.com', async (n, neg, d) => {
+      await n.negocios.guardar(neg.id, { pedidos: true });
+      const cat = d.catalogo(neg.id);
+      panId = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'duena@example.com'])).valor.id;
+      await cat.ejecutar('carrito', [CHARLA, [{ id: panId, cantidad: 3 }], { canal: 'wa' }]);
+      await cat.ejecutar('confirmar', [CHARLA, { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 123' }]);
+    });
+    const stock = async () => (await deps.catalogo(negocio.id).ejecutar('obtener', [panId])).valor;
+    await expect(page.getByRole('tab', { name: 'Pedidos' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Pedidos' }).click();
+    const tarjeta = page.locator('article.pedido');
+    await expect(tarjeta.getByRole('heading', { name: 'N.º 1 · Ana' })).toBeVisible();
+    await expect(tarjeta).toContainText('3 × Pan francés — $ 7.500');
+    await expect(tarjeta).toContainText('Total: $ 7.500');
+    await expect(tarjeta).toContainText('Envío: Calle Ficticia 123');
+    await expect(page.getByRole('button', { name: 'Nuevos (1)' })).toBeVisible();
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    expect((await stock()).reservado).toBe(3);
+    await tarjeta.getByLabel('Guardarlo sin pagar').selectOption('48');
+    await tarjeta.getByRole('button', { name: 'Aceptar' }).click();
+    // Sin un número conectado, no se le puede avisar al comprador: lo dice.
+    await expect(page.getByText(/Pedido N\.º 1: aceptado\. No le pudimos avisar/)).toBeVisible();
+    await page.getByRole('button', { name: /Aceptados/ }).click();
+    await expect(tarjeta).toContainText('Se libera en 48 h');
+    await tarjeta.getByRole('button', { name: 'Marcar pagado' }).click();
+    await page.getByRole('button', { name: /Pagados/ }).click();
+    await tarjeta.getByRole('button', { name: 'Entregado' }).click();
+    await expect.poll(async () => { const p = await stock(); return [p.stock, p.reservado]; }).toEqual([7, 0]);
+    await page.getByRole('button', { name: 'Todos' }).click();
+    await expect(tarjeta.getByText('Entregado', { exact: true })).toBeVisible();
+  });
+
+  test('pedidos: rechazar pide confirmación, guarda el motivo y libera el stock', async ({ page }) => {
+    let panId = '';
+    const { negocio, deps } = await montar(page, 'duena@example.com', async (n, neg, d) => {
+      await n.negocios.guardar(neg.id, { pedidos: true });
+      const cat = d.catalogo(neg.id);
+      panId = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'x'])).valor.id;
+      await cat.ejecutar('carrito', ['ig:17841400000000001.900', [{ id: panId, cantidad: 2 }], { canal: 'ig' }]);
+      await cat.ejecutar('confirmar', ['ig:17841400000000001.900', { nombre: 'Beto', entrega: 'retiro' }]);
+    });
+    await page.getByRole('tab', { name: 'Pedidos' }).click();
+    const tarjeta = page.locator('article.pedido');
+    await tarjeta.getByLabel('Motivo del pedido 1').fill('hoy no hay horno');
+    await tarjeta.getByRole('button', { name: 'Rechazar' }).click();
+    await tarjeta.getByRole('button', { name: '¿Seguro? Tocá de nuevo' }).click();
+    await expect(page.getByText(/Pedido N\.º 1: rechazado/)).toBeVisible();
+    expect((await deps.catalogo(negocio.id).ejecutar('obtener', [panId])).valor.reservado).toBe(0);
+    expect((await deps.catalogo(negocio.id).ejecutar('pedido', [1])).valor.eventos.at(-1).detalle).toBe('hoy no hay horno');
+  });
+
+  test('pedidos apagados: el negocio no ve la pestaña Pedidos', async ({ page }) => {
+    await montar(page, 'duena@example.com');
+    await expect(page.getByRole('tab', { name: 'Productos' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Pedidos' })).toHaveCount(0);
   });
 
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {

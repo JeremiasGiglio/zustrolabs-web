@@ -84,6 +84,26 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
   }
 
   const borradorDe = (charla) => una("SELECT * FROM pedidos WHERE charla = ? AND estado = 'borrador'", String(charla));
+
+  /** Vence lo que pasó su hora y libera las reservas. Se corre antes de leer o tocar pedidos (nada queda trabado
+   *  aunque la alarma se atrase) y desde la alarma del Durable Object. → los que vencieron con número (para avisar). */
+  function vencerAhora() {
+    const now = reloj();
+    const out = [];
+    for (const p of filas("SELECT * FROM pedidos WHERE vence IS NOT NULL AND vence < ? AND estado IN ('borrador','pendiente','aceptado')", now)) {
+      liberar(p.id);
+      if (p.estado === 'borrador') {
+        sql.exec('DELETE FROM pedido_items WHERE pedido = ?', p.id);
+        sql.exec('DELETE FROM pedidos WHERE id = ?', p.id);
+        evento(p.id, 'vencido', 'carrito sin confirmar', 'sistema');
+      } else {
+        sql.exec("UPDATE pedidos SET estado = 'vencido', vence = NULL, actualizado = ? WHERE id = ?", now, p.id);
+        evento(p.id, 'vencido', `${p.estado} sin ${p.estado === 'pendiente' ? 'respuesta del negocio' : 'pago'}`, 'sistema');
+        out.push({ numero: p.numero, charla: p.charla, canal: p.canal, antes: p.estado });
+      }
+    }
+    return out;
+  }
   const porNumero = (n) => una('SELECT * FROM pedidos WHERE numero = ?', Number(n));
 
   return {
@@ -98,9 +118,12 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
       if (!Array.isArray(items)) throw new ErrorCatalogo('el carrito tiene que ser una lista');
       if (items.length > MAX_ITEMS) throw new ErrorCatalogo(`un pedido puede tener hasta ${MAX_ITEMS} productos distintos`);
       return transaccion(() => {
+        vencerAhora();
         const now = reloj();
         let p = borradorDe(charla);
-        if (p) liberar(p.id);
+        // Lo que este carrito ya tiene (y reserva): cuenta como disponible para él mismo, y si un cambio no se puede, se
+        // queda como estaba (pedir 50 cuando hay 8 no le borra los 2 que ya tenía).
+        const previo = new Map(p ? filas('SELECT producto, cantidad, reserva FROM pedido_items WHERE pedido = ?', p.id).map((i) => [i.producto, i]) : []);
         // Sumar repetidos (la IA a veces manda el mismo producto dos veces).
         const pedidos = new Map();
         for (const it of items) {
@@ -115,12 +138,25 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
           const prod = porId(id);
           if (!prod) { faltantes.push({ id, motivo: 'no_existe' }); continue; }
           if (!prod.activo) { faltantes.push({ id, nombre: prod.nombre, motivo: 'pausado' }); continue; }
-          if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > MAX_CANTIDAD) { faltantes.push({ id, nombre: prod.nombre, motivo: 'cantidad', pedido: cantidad }); continue; }
+          if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > MAX_CANTIDAD) {
+            faltantes.push({ id, nombre: prod.nombre, motivo: 'cantidad', pedido: cantidad });
+            const antes = previo.get(id);
+            if (antes) entran.push({ prod, cantidad: antes.cantidad, reserva: antes.reserva });
+            continue;
+          }
           const controla = prod.stock !== null && prod.stock !== undefined;
-          const disponible = controla ? prod.stock - (prod.reservado ?? 0) : Infinity;
-          if (cantidad > disponible) { faltantes.push({ id, nombre: prod.nombre, motivo: 'sin_stock', pedido: cantidad, disponible: Math.max(0, disponible) }); continue; }
+          const disponible = controla ? prod.stock - (prod.reservado ?? 0) + (previo.get(id)?.reserva ?? 0) : Infinity;
+          if (cantidad > disponible) {
+            faltantes.push({ id, nombre: prod.nombre, motivo: 'sin_stock', pedido: cantidad, disponible: Math.max(0, disponible) });
+            const antes = previo.get(id);
+            if (antes) entran.push({ prod, cantidad: antes.cantidad, reserva: controla ? antes.cantidad : 0 });
+            continue;
+          }
           entran.push({ prod, cantidad, reserva: controla ? cantidad : 0 });
         }
+        // Nada de lo pedido se pudo y ya había un carrito: queda como estaba.
+        if (!entran.length && faltantes.length && p) return { pedido: armar(p), faltantes, sinCambios: true };
+        if (p) liberar(p.id);
         if (!entran.length) {
           if (p) {
             sql.exec('DELETE FROM pedido_items WHERE pedido = ?', p.id);
@@ -153,7 +189,7 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
 
     /** El borrador de una charla (o null). */
     carritoDe(charla) {
-      return armar(borradorDe(charla));
+      return transaccion(() => { vencerAhora(); return armar(borradorDe(charla)); });
     },
 
     /**
@@ -162,10 +198,11 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
      */
     confirmar(charla, datos = {}, quien = 'comprador') {
       return transaccion(() => {
+        const antes = borradorDe(charla);
+        vencerAhora();
         const p = borradorDe(charla);
-        if (!p) throw new ErrorCatalogo('no hay un carrito para confirmar');
+        if (!p) throw new ErrorCatalogo(antes ? 'el carrito venció: hay que armarlo de nuevo' : 'no hay un carrito para confirmar');
         const now = reloj();
-        if (p.vence && p.vence < now) throw new ErrorCatalogo('el carrito venció: hay que armarlo de nuevo');
         const comprador = datosComprador(datos);
         if (!comprador.nombre) throw new ErrorCatalogo('falta el nombre de quien compra', 'nombre');
         if (!comprador.entrega) throw new ErrorCatalogo('falta si es envío o retiro', 'entrega');
@@ -185,6 +222,7 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
      */
     cambiarEstado(numero, nuevo, quien, { motivo = '', horas = null } = {}) {
       return transaccion(() => {
+        vencerAhora();
         const p = porNumero(numero);
         if (!p) throw new ErrorCatalogo('ese pedido no existe');
         if (!(PASOS[p.estado] ?? []).includes(nuevo)) throw new ErrorCatalogo(`un pedido ${p.estado} no puede pasar a ${nuevo}`);
@@ -218,23 +256,7 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
      * las reservas. Lo llama una alarma del Durable Object. → [{numero, charla, canal, estado anterior}] para avisar.
      */
     vencer() {
-      return transaccion(() => {
-        const now = reloj();
-        const out = [];
-        for (const p of filas("SELECT * FROM pedidos WHERE vence IS NOT NULL AND vence < ? AND estado IN ('borrador','pendiente','aceptado')", now)) {
-          liberar(p.id);
-          if (p.estado === 'borrador') {
-            sql.exec('DELETE FROM pedido_items WHERE pedido = ?', p.id);
-            sql.exec('DELETE FROM pedidos WHERE id = ?', p.id);
-            evento(p.id, 'vencido', 'carrito sin confirmar', 'sistema');
-          } else {
-            sql.exec("UPDATE pedidos SET estado = 'vencido', vence = NULL, actualizado = ? WHERE id = ?", now, p.id);
-            evento(p.id, 'vencido', `${p.estado} sin ${p.estado === 'pendiente' ? 'respuesta del negocio' : 'pago'}`, 'sistema');
-            out.push({ numero: p.numero, charla: p.charla, canal: p.canal, antes: p.estado });
-          }
-        }
-        return out;
-      });
+      return transaccion(() => vencerAhora());
     },
 
     /** Cuándo hay que volver a mirar los vencimientos (para la alarma del Durable Object), o null. */
@@ -244,6 +266,7 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
 
     /** Pedidos para el panel (sin borradores), los más nuevos primero. */
     pedidos({ estado = '', cuantos = 100 } = {}) {
+      transaccion(() => vencerAhora());
       const lim = Math.max(1, Math.min(Number(cuantos) || 100, 500));
       const lista = estado && ESTADOS.includes(estado)
         ? filas('SELECT * FROM pedidos WHERE estado = ? ORDER BY actualizado DESC LIMIT ?', estado, lim)
@@ -254,6 +277,7 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
 
     /** Un pedido con su historia. */
     pedido(numero) {
+      transaccion(() => vencerAhora());
       const p = porNumero(numero);
       if (!p) throw new ErrorCatalogo('ese pedido no existe');
       return { ...armar(p), eventos: filas('SELECT estado, detalle, quien, t FROM pedido_eventos WHERE pedido = ? ORDER BY id', p.id) };
