@@ -148,6 +148,9 @@ Cloudflare → Workers & Pages → `zustrolabs-whatsapp` → Observability. Busc
 
 ## 4. Para automatizar (lo que falta en los scripts)
 
+**Hecho en ZL-138 (`alta.ps1`):** la prueba automática al final (1), el chequeo del estado del negocio (2) y Access por API
+(3) son el semáforo `verificar` y `acceso.js`. Lo que sigue en la lista queda para después.
+
 En orden de cuánto nos ahorra:
 
 1. **Prueba automática al final del alta**, con `POST /api/instagram/admin/ficha/probar` y la cuenta nueva:

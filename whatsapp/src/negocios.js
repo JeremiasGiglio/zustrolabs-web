@@ -9,6 +9,7 @@
 import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { urlAutorizar } from './instagram.js';
+import { agregarAAcceso } from './acceso.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 
@@ -129,7 +130,7 @@ export async function appNegocios(request, env, deps) {
 
   if (ruta.startsWith('/admin/')) {
     if (!admin) return error('solo el equipo de Zustro Labs', 403);
-    return administrar(request, ruta.slice(6), deps, now);
+    return administrar(request, ruta.slice(6), { ...deps, acceso: (emails) => agregarAAcceso(env, deps.fetch ?? fetch, env.NEGOCIOS_HOST || NEGOCIOS_HOST, emails) }, now);
   }
 
   const m = /^\/n\/([a-z0-9]{4,40})(\/.*)?$/.exec(ruta);
@@ -328,7 +329,9 @@ export async function administrar(request, ruta, deps, now) {
   if (request.method === 'POST' && ruta === '/negocios') {
     if (!b) return error('pedido inválido');
     const r = await deps.negocios.guardar(null, { nombre: b.nombre, emails: correosDe(Array.isArray(b.emails) ? b.emails.join(',') : b.emails), cuentas: [], ...(b.canales && { canales: leerCanales(b.canales) }) });
-    return r.error ? error(r.error) : json(r.negocio, 201);
+    if (r.error) return error(r.error);
+    // Los correos van solos a Access (ZL-138): sin esto, al cliente no le llega el código para entrar.
+    return json({ ...r.negocio, acceso: deps.acceso ? await deps.acceso(r.negocio.emails) : null }, 201);
   }
   const m = /^\/negocios\/([a-z0-9]{4,40})$/.exec(ruta);
   if (m && request.method === 'PUT') {
@@ -347,7 +350,8 @@ export async function administrar(request, ruta, deps, now) {
     if (b.limiteDia !== undefined) cambios.limiteDia = b.limiteDia;
     if (b.canales !== undefined) cambios.canales = leerCanales(b.canales);
     const r = await deps.negocios.guardar(m[1], cambios);
-    return r.error ? error(r.error) : json(r.negocio);
+    if (r.error) return error(r.error);
+    return json({ ...r.negocio, acceso: cambios.emails && deps.acceso ? await deps.acceso(r.negocio.emails) : null });
   }
   return error('no existe', 404);
 }

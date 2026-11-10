@@ -472,6 +472,13 @@ function app() {
   }
 
   // ── Instagram (ZL-137): el negocio conecta su cuenta con un botón (app de Zustro Labs para clientes) ──
+  // ZL-138: qué pasó con los correos en Access al guardar.
+  function textoAcceso(a) {
+    if (!a) return '';
+    if (a.ok) return a.agregados && a.agregados.length ? '. Agregados a Access: ' + a.agregados.join(', ') : '';
+    return '. Ojo: agregá a mano en Access (' + a.error + '): ' + (a.faltan || []).join(', ');
+  }
+
   function vistaInstagram() {
     const enlace = (texto, url) => h('a', { href: url, target: '_blank', rel: 'noopener' }, texto);
     const lista = h('div', { 'aria-live': 'polite' });
@@ -661,10 +668,10 @@ function app() {
     const lista = h('div', {});
     caja.append(
       h('div', { class: 'caja' }, h('h3', {}, 'Nuevo negocio'), etiqueta('Nombre', nombre), nombre, etiqueta('Quiénes entran', emails), emails,
-        h('p', { class: 'ayuda' }, 'Además, agregá esos correos en Cloudflare Zero Trust → Access → la app «Negocios» → su política. Sin eso, Access no los deja pasar.'),
+        h('p', { class: 'ayuda' }, 'Los correos se agregan solos a Access (la política de la app «Negocios»). Si no se puede, te avisa cuáles agregar a mano.'),
         h('div', { class: 'acciones' }, h('button', { class: 'btn prim', onclick: conError(async () => {
           const n = await api('/admin/negocios', { metodo: 'POST', cuerpo: { nombre: nombre.value, emails: emails.value } });
-          aviso('Negocio creado'); nombre.value = ''; emails.value = '';
+          aviso('Negocio creado' + textoAcceso(n.acceso)); nombre.value = ''; emails.value = '';
           estado.yo = await api('/yo'); estado.negocio = n.id; estado.tab = 'productos'; recordar(); cargarNegocio();
         }) }, 'Crear'))),
       lista);
@@ -696,8 +703,8 @@ function app() {
             h('button', { class: 'btn', onclick: () => { estado.negocio = n.id; estado.tab = 'productos'; recordar(); cargarNegocio(); } }, 'Abrir'),
             h('button', { class: 'btn prim', onclick: conError(async (e) => {
               const marcadas = [...e.target.closest('.caja').querySelectorAll('input[data-cuenta]:checked')].map((x) => x.value);
-              await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value), canales: { instagram: ig.checked, whatsapp: wa.checked } } });
-              aviso('Guardado');
+              const g = await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value), canales: { instagram: ig.checked, whatsapp: wa.checked } } });
+              aviso('Guardado' + textoAcceso(g.acceso));
             }) }, 'Guardar'))));
       }
     })();
