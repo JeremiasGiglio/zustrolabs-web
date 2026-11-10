@@ -3,6 +3,8 @@
 // desde negocios.zustrolabs.com (negocios.js).
 // No importa nada de Cloudflare: `sql` es ctx.storage.sql del Durable Object, o un adaptador de node:sqlite en los tests.
 
+import { operacionesPedidos } from './pedidos.js';
+
 export const MAX_PRODUCTOS = 5000;
 export const MAX_IMPORTAR = 3000;
 export const MAX_FOTO_BYTES = 600_000;
@@ -137,6 +139,9 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
       const otro = porCodigo(v.codigo);
       if (otro && otro.id !== actual.id) throw new ErrorCatalogo(`ya hay un producto con el código ${v.codigo}`, 'codigo');
     }
+    if (v.stock !== undefined && v.stock !== null && v.stock < (actual.reservado ?? 0)) {
+      throw new ErrorCatalogo(`hay ${actual.reservado} reservadas en pedidos: el stock no puede bajar de eso`, 'stock');
+    }
     const campos = Object.keys(v).filter((k) => v[k] !== (actual[k] ?? (k === 'codigo' || k === 'precio' || k === 'stock' || k === 'foto' ? null : '')));
     if (!campos.length) return { producto: fila(actual), cambio: false };
     const sets = campos.map((k) => `${k} = ?`);
@@ -151,7 +156,11 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
     return { producto: fila(porId(actual.id)), cambio: true };
   }
 
+  const pedidos = operacionesPedidos({ sql, transaccion, reloj, porId, anotar, ErrorCatalogo });
+
   return {
+    ...pedidos,
+
     resumen() {
       const r = una(`SELECT COUNT(*) AS total, SUM(activo) AS activos,
         SUM(CASE WHEN activo = 1 AND stock IS NOT NULL AND stock - reservado <= 0 THEN 1 ELSE 0 END) AS agotados FROM productos`);
@@ -197,6 +206,7 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
       return transaccion(() => {
         const actual = porId(id);
         if (!actual) return false;
+        if ((actual.reservado ?? 0) > 0) throw new ErrorCatalogo(`tiene ${actual.reservado} reservadas en pedidos: pausalo en vez de borrarlo`);
         sql.exec('DELETE FROM productos WHERE id = ?', actual.id);
         if (actual.foto) sql.exec('DELETE FROM fotos WHERE id = ?', actual.foto);
         anotar(actual.id, actual.nombre, 'baja', actual.stock, '', 'borrado', quien);
@@ -380,7 +390,9 @@ export function tipoDeImagen(b) {
 }
 
 /** Operaciones que se pueden pedir al catálogo desde afuera (el Worker, por RPC). */
-export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente'];
+export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
+  // Pedidos (ZL-139): pedidos.js.
+  'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido'];
 
 /**
  * Corre una operación y devuelve {ok: true, valor} o {ok: false, error, campo}: los errores para mostrar cruzan el RPC
