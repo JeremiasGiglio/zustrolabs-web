@@ -367,7 +367,7 @@ async function adminYCloud(request, env, deps, ruta, url, now) {
     try { b = await request.json(); } catch { return json({ error: 'pedido inválido' }, 400); }
     const dueño = await a.negocios.get(String(b?.negocio ?? ''));
     if (!dueño) return json({ error: 'ese negocio no existe' }, 404);
-    const r = await conectarWhatsApp(d, dueño, b, url.host);
+    const r = await conectarWhatsApp(d, dueño, b);
     return json(r.datos, r.status);
   }
   const m = /^\/ycloud\/([0-9a-f]{24})$/.exec(ruta);
