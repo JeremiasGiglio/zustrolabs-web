@@ -208,7 +208,8 @@ const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mand�
  * deps: {memoria, charlas (o null sin panel), preguntar(texto, idioma) → respuesta controlada, now,
  *        cupo() → 'ok' | 'global' (el tope por minuto de toda la cuenta), solo antes de gastar IA}
  */
-export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO }) {
+// `pedidos` (ZL-139): pedidosDeCharla() de pedidos-charla.js, solo para un negocio con pedidos encendidos.
+export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
   const estado = (memoria && (await memoria.get(ev.from))) || null;
   // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
@@ -286,6 +287,16 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu)], metrica: 'menu' };
   if (ev.kind === 'otro') return { send: [msgTexto(ev.from, T.soloTexto)], metrica: 'otro' };
 
+  // Los pasos fijos de un pedido (SÍ, retiro o envío, nombre, dirección, CANCELAR, PEDIDO) van antes que el menú y la
+  // IA: «1» y «2» son retiro y envío mientras se pregunta eso. Sin memoria no hay pedidos (no se recordaría el paso).
+  if (pedidos && memoria && ev.kind === 'text' && conocido) {
+    const p = await pedidos.antes(ev.text, estado?.pedido ?? null, idioma);
+    if (p) {
+      await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, pedido: p.pedido });
+      return { send: [msgTexto(ev.from, p.texto)], metrica: p.metrica, ...(p.numero && { pedido: p.numero }) };
+    }
+  }
+
   // Quien no nos conoce tiene que ver qué ofrecemos desde el primer mensaje: un saludo o «¿qué hacen?» reciben la
   // presentación y el menú, sin gastar IA (también si ya eligió idioma antes y vuelve a escribir otro día).
   const saludo = ev.kind === 'text' ? esSaludo(ev.text) : null;
@@ -340,17 +351,29 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // reconoce, la IA usa el de la charla y dice en cuál respondió. Con varios idiomas, desde ahí los textos fijos (menú,
   // PERSONA) siguen en ese idioma. El estudio sigue como siempre.
   const detectado = perfil === PERFIL_ESTUDIO ? null : idiomaDelTexto(texto);
-  const c = detectado ? await preguntar(texto, detectado, { seguro: true }) : await preguntar(texto, idioma);
+  // Con pedidos, la IA ve el carrito actual para devolverlo completo si el mensaje lo cambia.
+  const carrito = pedidos && memoria ? { carrito: await pedidos.contexto() } : {};
+  const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...carrito }) : await preguntar(texto, idioma, carrito);
   // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
   const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;
   const enIdioma = cambio ?? idioma;
   if (cambio && cambio !== idioma) await guardar({ ...(estado ?? {}), idioma: cambio, humanoHasta: estado?.humanoHasta ?? 0 });
-  const respuesta = perfil.formatear(c, enIdioma);
+  let respuesta = perfil.formatear(c, enIdioma);
+  // La IA propuso cambiar el carrito: el código lo valida, reserva y arma el resumen (ZL-139).
+  let pedido = null;
+  if (pedidos && memoria && c.pedido && !c.tope) {
+    pedido = await pedidos.despues(c.pedido, enIdioma);
+    if (pedido) {
+      respuesta = [c.vacia || pedido.soloSistema ? '' : c.respuesta, pedido.texto].filter(Boolean).join('\n\n');
+      const ahora = (await memoria.get(ev.from)) ?? estado ?? {};
+      await guardar({ ...ahora, idioma: ahora.idioma ?? enIdioma, humanoHasta: ahora.humanoHasta ?? 0, pedido: pedido.pedido });
+    }
+  }
   return {
     send: primerContacto
       ? [msgTexto(ev.from, `${T.hola}\n\n${T.quienes}`), msgTexto(ev.from, `${respuesta}\n\n${T.menuHint}`)]
       : [msgTexto(ev.from, respuesta)],
-    metrica: 'ia',
+    metrica: pedido ? 'ia_pedido' : 'ia',
     idioma,
     fuera: c.fuera_de_tema,
     notas: c.notas,

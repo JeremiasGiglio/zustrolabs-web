@@ -3,6 +3,8 @@
 // desde negocios.zustrolabs.com (negocios.js).
 // No importa nada de Cloudflare: `sql` es ctx.storage.sql del Durable Object, o un adaptador de node:sqlite en los tests.
 
+import { operacionesPedidos } from './pedidos.js';
+
 export const MAX_PRODUCTOS = 5000;
 export const MAX_IMPORTAR = 3000;
 export const MAX_FOTO_BYTES = 600_000;
@@ -137,6 +139,9 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
       const otro = porCodigo(v.codigo);
       if (otro && otro.id !== actual.id) throw new ErrorCatalogo(`ya hay un producto con el código ${v.codigo}`, 'codigo');
     }
+    if (v.stock !== undefined && v.stock !== null && v.stock < (actual.reservado ?? 0)) {
+      throw new ErrorCatalogo(`hay ${actual.reservado} reservadas en pedidos: el stock no puede bajar de eso`, 'stock');
+    }
     const campos = Object.keys(v).filter((k) => v[k] !== (actual[k] ?? (k === 'codigo' || k === 'precio' || k === 'stock' || k === 'foto' ? null : '')));
     if (!campos.length) return { producto: fila(actual), cambio: false };
     const sets = campos.map((k) => `${k} = ?`);
@@ -151,7 +156,11 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
     return { producto: fila(porId(actual.id)), cambio: true };
   }
 
+  const pedidos = operacionesPedidos({ sql, transaccion, reloj, porId, anotar, ErrorCatalogo });
+
   return {
+    ...pedidos,
+
     resumen() {
       const r = una(`SELECT COUNT(*) AS total, SUM(activo) AS activos,
         SUM(CASE WHEN activo = 1 AND stock IS NOT NULL AND stock - reservado <= 0 THEN 1 ELSE 0 END) AS agotados FROM productos`);
@@ -197,6 +206,7 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
       return transaccion(() => {
         const actual = porId(id);
         if (!actual) return false;
+        if ((actual.reservado ?? 0) > 0) throw new ErrorCatalogo(`tiene ${actual.reservado} reservadas en pedidos: pausalo en vez de borrarlo`);
         sql.exec('DELETE FROM productos WHERE id = ?', actual.id);
         if (actual.foto) sql.exec('DELETE FROM fotos WHERE id = ?', actual.foto);
         anotar(actual.id, actual.nombre, 'baja', actual.stock, '', 'borrado', quien);
@@ -332,7 +342,9 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
      * mensaje), con precio solo si el negocio permite precios, y el stock como «hay stock», «quedan N» o «AGOTADO».
      * Devuelve el texto y los montos que la respuesta puede nombrar (controlarNegocio).
      */
-    paraAsistente(mensaje = '', { precios = false } = {}) {
+    paraAsistente(mensaje = '', { precios = false, refs = false } = {}) {
+      // Lo vencido se libera antes de mostrar el stock (ZL-139).
+      pedidos.vencer();
       const activos = una('SELECT COUNT(*) AS n FROM productos WHERE activo = 1').n;
       let elegidos;
       let resto = 0;
@@ -363,7 +375,8 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
           montos.push(pesos(p.precio).replace(/\D/g, ''), String(p.precio).replace(/\D/g, ''));
         }
         const extra = [p.codigo ? `código ${p.codigo}` : '', p.descripcion].filter(Boolean).join('. ');
-        return `- ${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${precio} · ${stock}${extra ? ` · ${extra}` : ''}`;
+        // Con pedidos (ZL-139), cada producto lleva su ref: es lo único que la IA devuelve para armar el carrito.
+        return `- ${refs ? `[ref ${p.id}] ` : ''}${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${precio} · ${stock}${extra ? ` · ${extra}` : ''}`;
       });
       const nota = resto > 0 ? `\n(Hay ${resto} productos más que no se muestran: si no está lo que busca, pedí más detalles o ofrecé una persona.)` : '';
       return { texto: lineas.length ? lineas.join('\n') + nota : '(El negocio todavía no cargó productos.)', montos: [...new Set(montos.filter(Boolean))], cuantos: elegidos.length, activos };
@@ -380,7 +393,9 @@ export function tipoDeImagen(b) {
 }
 
 /** Operaciones que se pueden pedir al catálogo desde afuera (el Worker, por RPC). */
-export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente'];
+export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
+  // Pedidos (ZL-139): pedidos.js.
+  'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido'];
 
 /**
  * Corre una operación y devuelve {ok: true, valor} o {ok: false, error, campo}: los errores para mostrar cruzan el RPC
@@ -389,6 +404,9 @@ export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar'
 export function ejecutarCatalogo(c, op, args = []) {
   if (!OPERACIONES.includes(op)) return { ok: false, error: 'operación desconocida' };
   try {
+    // Antes de leer o cambiar cualquier cosa, se vencen las reservas pasadas de hora (ZL-139): el stock disponible
+    // nunca queda trabado aunque la alarma se atrase.
+    if (op !== 'vencer' && op !== 'proximoVencimiento') c.vencer();
     return { ok: true, valor: c[op](...args) };
   } catch (e) {
     if (e instanceof ErrorCatalogo) return { ok: false, error: e.message, campo: e.campo };

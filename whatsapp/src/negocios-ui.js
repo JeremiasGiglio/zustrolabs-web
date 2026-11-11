@@ -153,7 +153,9 @@ function app() {
     }
     return svg;
   }
-  const PESTANAS = () => [['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['instagram', 'Instagram'], ['whatsapp', 'WhatsApp']]
+  // Pedidos (ZL-139): primero, para el negocio que los tiene encendidos; el equipo la ve siempre.
+  const PESTANAS = () => ((estado.datos && estado.datos.negocio && estado.datos.negocio.pedidos) || estado.yo.admin ? [['pedidos', 'Pedidos']] : [])
+    .concat([['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['instagram', 'Instagram'], ['whatsapp', 'WhatsApp']])
     .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Administración']] : []);
 
   function pintar() {
@@ -184,7 +186,8 @@ function app() {
       v.append(estado.yo.admin ? vistaAdmin() : h('div', { class: 'vacio' }, 'Tu correo todavía no está en ningún negocio. Escribinos a contact@zustrolabs.com.'));
       return;
     }
-    const vistas = { productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, instagram: vistaInstagram, whatsapp: vistaWhatsapp, asistente: vistaAsistente, admin: vistaAdmin };
+    if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
+    const vistas = { pedidos: vistaPedidos, productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, instagram: vistaInstagram, whatsapp: vistaWhatsapp, asistente: vistaAsistente, admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaProductos)());
   }
 
@@ -471,6 +474,96 @@ function app() {
     return caja;
   }
 
+  // ── Pedidos (ZL-139): la bandeja del negocio. El asistente los arma; acá se aceptan, cobran y entregan. ──
+  const ESTADO_PEDIDO = { pendiente: 'Nuevo', aceptado: 'Aceptado', pagado: 'Pagado', entregado: 'Entregado', rechazado: 'Rechazado', cancelado: 'Cancelado', vencido: 'Vencido' };
+  const CANAL_PEDIDO = { wa: 'WhatsApp', ig: 'Instagram' };
+  const plata = (n) => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+  const falta = (t) => {
+    const m = Math.max(0, Math.round((t - Date.now()) / 60000));
+    return m >= 120 ? Math.round(m / 60) + ' h' : m >= 60 ? '1 h ' + (m - 60) + ' min' : m + ' min';
+  };
+  function sonar() {
+    try {
+      const c = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.18].forEach((d) => { const o = c.createOscillator(); const g = c.createGain(); o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(c.destination); o.start(c.currentTime + d); o.stop(c.currentTime + d + 0.12); });
+    } catch (e) { /* sin audio: no pasa nada */ }
+  }
+
+  function vistaPedidos() {
+    const filtro = estado.filtroPedidos || 'pendiente';
+    const lista = h('div', { 'aria-live': 'polite' });
+    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Ver pedidos' });
+    const avisos = h('button', { class: 'btn', onclick: async () => {
+      try { if (window.Notification && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) { /* nada */ }
+      sonar(); aviso('Listo: con esta pestaña abierta, cada pedido nuevo suena' + (window.Notification && Notification.permission === 'granted' ? ' y aparece un aviso.' : '.'));
+    } }, 'Activar sonido y avisos');
+    const caja = h('section', {},
+      h('h2', {}, 'Pedidos'),
+      h('p', { class: 'ayuda' }, 'Los pedidos que arma el asistente por WhatsApp e Instagram. El stock queda reservado mientras el pedido está abierto y se descuenta al marcarlo Entregado. El pago lo marcás vos: el asistente nunca lo da por hecho.'),
+      estado.datos.negocio.pedidos ? null : h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Administración.'),
+      h('div', { class: 'acciones' }, avisos), chips, lista);
+    let ultimos = null;
+
+    const accion = (p, nuevo, extra) => conError(async () => {
+      const r = await api(base() + '/pedidos/' + p.numero, { metodo: 'POST', cuerpo: Object.assign({ estado: nuevo }, extra || {}) });
+      aviso('Pedido N.º ' + p.numero + ': ' + ESTADO_PEDIDO[nuevo].toLowerCase() + (r.aviso === true ? '. Le avisamos al comprador.' : r.aviso ? '. No le pudimos avisar (' + r.aviso + '): escribile vos.' : ''));
+      await cargar();
+    });
+
+    function tarjeta(p) {
+      const motivo = h('input', { type: 'text', maxlength: 200, placeholder: 'Motivo (opcional, lo ve el comprador)', 'aria-label': 'Motivo del pedido ' + p.numero });
+      const horas = h('select', {},
+        [['2', '2 horas'], ['24', '24 horas'], ['48', '48 horas'], ['168', '7 días']].map(([v, t]) => h('option', { value: v, selected: v === '24' }, t)));
+      const dosPasos = (texto, nuevo) => {
+        const b = h('button', { class: 'btn' }, texto);
+        b.onclick = () => {
+          if (b.dataset.seguro) return accion(p, nuevo, { motivo: motivo.value })();
+          b.dataset.seguro = '1'; b.textContent = '¿Seguro? Tocá de nuevo';
+          setTimeout(() => { delete b.dataset.seguro; b.textContent = texto; }, 4000);
+        };
+        return b;
+      };
+      const botones = [];
+      if (p.estado === 'pendiente') {
+        botones.push(etiqueta('Guardarlo sin pagar', horas), horas, h('button', { class: 'btn prim', onclick: () => accion(p, 'aceptado', { horas: Number(horas.value) })() }, 'Aceptar'), dosPasos('Rechazar', 'rechazado'));
+      }
+      if (p.estado === 'aceptado') botones.push(h('button', { class: 'btn prim', onclick: accion(p, 'pagado') }, 'Marcar pagado'), h('button', { class: 'btn', onclick: accion(p, 'entregado') }, 'Entregado'), dosPasos('Cancelar', 'cancelado'));
+      if (p.estado === 'pagado') botones.push(h('button', { class: 'btn prim', onclick: accion(p, 'entregado') }, 'Entregado'), dosPasos('Cancelar', 'cancelado'));
+      const c = p.comprador || {};
+      return h('article', { class: 'caja pedido' },
+        h('h3', {}, 'N.º ' + p.numero + ' · ' + (c.nombre || 'Sin nombre')),
+        h('div', { class: 'chips' },
+          h('span', { class: 'chip ' + (p.estado === 'pendiente' ? 'alerta' : ['pagado', 'entregado'].includes(p.estado) ? 'ok' : '') }, ESTADO_PEDIDO[p.estado] || p.estado),
+          h('span', { class: 'chip' }, CANAL_PEDIDO[p.canal] || p.canal || 'Chat'),
+          h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') : 'Retira en el local'),
+          h('span', { class: 'chip' }, fecha(p.creado)),
+          p.vence ? h('span', { class: 'chip' }, 'Se libera en ' + falta(p.vence) + ' si nadie lo toca') : null),
+        h('ul', {}, p.items.map((i) => h('li', {}, i.cantidad + ' × ' + i.nombre + (i.subtotal !== null ? ' — ' + plata(i.subtotal) : '')))),
+        h('p', {}, h('strong', {}, p.sinPrecio ? 'Total: a confirmar (hay productos sin precio)' : 'Total: ' + plata(p.total))),
+        ['pendiente', 'aceptado', 'pagado'].includes(p.estado) ? motivo : null,
+        botones.length ? h('div', { class: 'acciones' }, botones) : null);
+    }
+
+    async function cargar() {
+      const r = await api(base() + '/pedidos' + (filtro === 'todos' ? '' : '?estado=' + filtro));
+      const cuenta = r.cuenta || {};
+      const nuevos = cuenta.pendiente || 0;
+      if (ultimos !== null && nuevos > ultimos) {
+        sonar();
+        try { if (window.Notification && Notification.permission === 'granted') new Notification('Pedido nuevo', { body: (estado.datos.negocio.nombre || '') + ': ' + nuevos + ' para revisar' }); } catch (e) { /* nada */ }
+      }
+      ultimos = nuevos;
+      document.title = (nuevos ? '(' + nuevos + ') ' : '') + 'Negocios · Zustro Labs';
+      poner(chips, [['pendiente', 'Nuevos'], ['aceptado', 'Aceptados'], ['pagado', 'Pagados'], ['entregado', 'Entregados'], ['todos', 'Todos']].map(([id, t]) =>
+        h('button', { class: 'btn' + (id === filtro ? ' prim' : ''), 'aria-pressed': id === filtro ? 'true' : 'false', onclick: () => { estado.filtroPedidos = id; pintarVista(); } }, t + (id !== 'todos' && cuenta[id] ? ' (' + cuenta[id] + ')' : ''))));
+      poner(lista, r.pedidos.length ? r.pedidos.map(tarjeta) : h('div', { class: 'vacio' }, filtro === 'pendiente' ? 'No hay pedidos nuevos. Cuando el asistente arme uno, aparece acá y suena.' : 'No hay pedidos en esta lista.'));
+    }
+    conError(cargar)();
+    // Mientras la pestaña está abierta, se mira cada 20 segundos.
+    estado.timerPedidos = setInterval(() => { if (!document.hidden) cargar().catch(() => {}); }, 20000);
+    return caja;
+  }
+
   // ── Instagram (ZL-137): el negocio conecta su cuenta con un botón (app de Zustro Labs para clientes) ──
   // ZL-138: qué pasó con los correos en Access al guardar.
   function textoAcceso(a) {
@@ -685,6 +778,7 @@ function app() {
         const marcas = cuentas.filter((c) => !c.negocio || c.negocio === n.id).map((c) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: c.id, 'data-cuenta': '1', checked: n.cuentas.includes(c.id) }), '@' + (c.username || c.id) + (c.estudio ? ' (cuenta del estudio: con la ficha activa responde con ella; si no, con lo de la página)' : '')));
         const ig = h('input', { type: 'checkbox', checked: n.canales.instagram });
         const wa = h('input', { type: 'checkbox', checked: n.canales.whatsapp });
+        const pe = h('input', { type: 'checkbox', checked: n.pedidos === true });
         lista.append(h('div', { class: 'caja' },
           h('h3', {}, n.nombre),
           h('div', { class: 'chips' },
@@ -697,13 +791,14 @@ function app() {
           h('p', { class: 'ayuda' }, 'Canales que contrató (con un canal apagado, el asistente no responde ahí)'),
           h('label', { class: 'check' }, ig, 'Instagram'),
           h('label', { class: 'check' }, wa, 'WhatsApp (el número se conecta con whatsapp-cliente.ps1)'),
+          h('label', { class: 'check' }, pe, 'Pedidos por chat: el asistente arma pedidos y reserva stock (pestaña Pedidos)'),
           h('p', { class: 'ayuda' }, 'Cuentas de Instagram'), marcas.length ? marcas : h('p', { class: 'ayuda' }, 'No hay cuentas conectadas libres. Conectalas con el script instagram-cliente.ps1.'),
           etiqueta('Tope de respuestas de la IA por día', lim), lim,
           h('div', { class: 'acciones' },
             h('button', { class: 'btn', onclick: () => { estado.negocio = n.id; estado.tab = 'productos'; recordar(); cargarNegocio(); } }, 'Abrir'),
             h('button', { class: 'btn prim', onclick: conError(async (e) => {
               const marcadas = [...e.target.closest('.caja').querySelectorAll('input[data-cuenta]:checked')].map((x) => x.value);
-              const g = await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value), canales: { instagram: ig.checked, whatsapp: wa.checked } } });
+              const g = await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value), canales: { instagram: ig.checked, whatsapp: wa.checked }, pedidos: pe.checked } });
               aviso('Guardado' + textoAcceso(g.acceso));
             }) }, 'Guardar'))));
       }

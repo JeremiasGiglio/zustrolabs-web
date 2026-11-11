@@ -7,6 +7,7 @@ adelante, por WhatsApp). Vive en el Worker `zustrolabs-whatsapp`, igual que el p
 
 | Pestaña | Quién | Qué |
 |---|---|---|
+| Pedidos | el negocio (si los tiene encendidos) y el equipo | Los pedidos que arma el asistente por WhatsApp e Instagram: Nuevos, Aceptados, Pagados, Entregados. Aceptar (con cuánto se guarda sin pagar), Rechazar o Cancelar (con motivo, dos toques), Marcar pagado, Entregado. Cada cambio le llega al comprador por su chat. Mira cada 20 segundos; con «Activar sonido y avisos», suena y avisa cuando llega uno nuevo (ZL-139). |
 | Productos | el negocio y el equipo | Alta y edición (nombre, código, categoría, descripción, precio, unidad, stock, foto), a la venta o pausado, stock con − y +, búsqueda, exportar a Excel (CSV con «;», como lo abre Excel en Argentina). |
 | Importar Excel | el negocio y el equipo | .xlsx o .csv leídos en el navegador (sin librerías). Reconoce las columnas por el título, se pueden corregir, **muestra qué va a pasar** antes de guardar, y actualiza por código o por nombre, o reemplaza (lo que no viene se **pausa**, no se borra). Hasta 3.000 filas por vez. Planilla modelo para bajar. |
 | Historial | el negocio y el equipo | Cada cambio de stock, precio o producto, con el correo de quién lo hizo y cuándo. |
@@ -105,12 +106,34 @@ ficha vinculada pero apagada, el registro dice `estudio_ficha_inactiva` (o `estu
 Ojo: con la ficha activa, el asistente sabe **solo** lo que dicen la ficha y el catálogo (no el equipo ni la historia de
 la landing, salvo que estén en la ficha).
 
+## Pedidos por chat (ZL-139)
+
+Se encienden por negocio en **Administración → «Pedidos por chat»** (apagados de entrada). La regla: **la IA propone,
+el código decide**. La IA solo devuelve qué productos (la `ref` de cada uno en el catálogo) y cuántos; el código
+(`src/pedidos.js`, `src/pedidos-charla.js`) valida cada producto, reserva el stock, calcula precios y total, y hace
+las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo el negocio.
+
+| Momento | Stock | Cuánto dura |
+|---|---|---|
+| El comprador arma el carrito | Se **reserva** (no baja: el disponible sí) | **20 minutos** sin confirmar; después se libera solo |
+| Confirma (SÍ → retiro/envío → nombre → dirección) | Sigue reservado, con número de pedido | **2 horas** para que el negocio lo acepte |
+| El negocio lo acepta | Sigue reservado | Lo que elija el negocio: 2 h, 24 h (de entrada), 48 h o 7 días sin pagar |
+| Marca pagado | Sigue reservado | No vence |
+| Marca entregado | **Baja de verdad** (queda en el Historial) | — |
+| Rechazado, cancelado o vencido | Vuelve a estar disponible | — |
+
+- Lo agotado (contando reservas) no entra al carrito y el asistente lo dice («quedan 2», «no queda»). Si un cambio no se
+  puede, el carrito queda como estaba.
+- CANCELAR anula el carrito; PEDIDO lo muestra. Mientras se pregunta retiro o envío, 1 y 2 son eso (no el menú).
+- Con «Precios: no» en la ficha, el resumen no muestra montos («el total te lo confirma el negocio»).
+- El stock no puede bajar de lo reservado, ni se puede borrar un producto reservado (se pausa).
+- Las reservas vencen al consultar cualquier cosa del catálogo y con una alarma del Durable Object.
+- La charla de prueba de la pestaña Asistente no arma pedidos (no reserva stock de verdad).
+
 ## Lo que falta (próximas etapas)
 
-- **Pedidos** (plan del 3/11/2026): memoria corta de la charla, la IA propone y el sistema valida, reserva de stock
-  (20 minutos al agregar al carrito; hasta el vencimiento que defina cada negocio al confirmar), resumen y total
-  calculados por el sistema, alias de la ficha, pago confirmado SOLO por el dueño en el panel, panel de pedidos con
-  sonido y contador, avisos al comprador dentro de las 24 h de Meta. La columna `reservado` ya está en la base.
+- **Pedidos, etapa 2:** avisos al celular con la app cerrada (Web Push), aviso por correo de pedido nuevo, el alias
+  de pago en el mensaje de «aceptado», y avisarle al comprador cuando su pedido vence.
 - **Fotos por chat** y **planilla de Google en vivo**.
 - **Privacidad:** cuando haya pedidos se guardan datos de los compradores: hace falta una política modelo para cada
   negocio (responsable: el negocio; Zustro Labs procesa por cuenta de él) y el plazo de borrado.

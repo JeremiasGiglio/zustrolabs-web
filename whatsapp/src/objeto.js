@@ -62,13 +62,29 @@ export class Catalogo extends DurableObject {
 
   /** op: una de OPERACIONES (catalogo.js). Devuelve {ok, valor} o {ok: false, error}. */
   async ejecutar(op, args) {
-    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + DIA_MS);
-    return ejecutarCatalogo(this.c, op, args);
+    const r = ejecutarCatalogo(this.c, op, args);
+    await this.programar();
+    return r;
   }
 
-  /** Una vez por día: borra las fotos subidas que ningún producto usa (más de un día de viejas). */
+  /** La alarma suena en el próximo vencimiento de una reserva (ZL-139) o, si no hay, una vez por día (fotos sueltas). */
+  async programar(despuesDeSonar = false) {
+    const prox = this.c.proximoVencimiento();
+    const fotos = ((await this.ctx.storage.get('fotos')) ?? Date.now()) + DIA_MS;
+    const quiero = Math.max(Date.now() + 1000, Math.min(prox ? prox + 1000 : Infinity, fotos));
+    const actual = await this.ctx.storage.getAlarm();
+    if (despuesDeSonar || !actual || quiero < actual) await this.ctx.storage.setAlarm(quiero);
+  }
+
+  /** Vence las reservas que pasaron su hora y, una vez por día, borra las fotos subidas que ningún producto usa. */
   async alarm() {
-    this.c.limpiarFotos(Date.now() - DIA_MS);
-    await this.ctx.storage.setAlarm(Date.now() + DIA_MS);
+    const vencidos = this.c.vencer();
+    if (vencidos.length) console.log(JSON.stringify({ canal: 'pedidos', que: 'vencidos', n: vencidos.length }));
+    const ultima = (await this.ctx.storage.get('fotos')) ?? 0;
+    if (Date.now() - ultima >= DIA_MS) {
+      this.c.limpiarFotos(Date.now() - DIA_MS);
+      await this.ctx.storage.put('fotos', Date.now());
+    }
+    await this.programar(true);
   }
 }

@@ -8,6 +8,7 @@ import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
 import { crearCatalogo, ejecutarCatalogo } from '../src/catalogo.js';
 import { _resetCerts } from '../src/panel.js';
 import { firmar } from '../src/whatsapp.js';
+import { firmarYCloud } from '../src/ycloud.js';
 import { sqlPrueba } from './sqlite.js';
 
 const T0 = 1_792_000_000_000;
@@ -36,6 +37,7 @@ async function token(email, { aud = AUD, exp = T0 / 1000 + 3600 } = {}) {
 
 // Valor falso para las pruebas (en una constante: el control de secretos del repo no lo confunde con uno real).
 const FIRMA_FALSA = 'secreto-del-webhook';
+const CLAVE_YC = 'clave-api-ycloud-de-prueba-123';
 
 async function armar() {
   _resetCerts();
@@ -387,4 +389,77 @@ test('Instagram (ZL-137): desconectar la cuenta del estudio desde un negocio la 
   assert.equal((await pedir('equipo@example.com', 'DELETE', `/api/n/${z.id}/instagram/${ESTUDIO}`)).status, 200);
   assert.ok(!(await n.negocios.get(z.id)).cuentas.includes(ESTUDIO));
   assert.equal((await n.cuentas.get(ESTUDIO)).token, 'tok-estudio');
+});
+
+test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo ve, lo acepta, lo cobra y lo entrega; el comprador recibe cada aviso', async () => {
+  const { d, a, b, pedir, enviados } = await armar();
+  const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
+  // El negocio: ficha activa, WhatsApp y pedidos encendidos, un producto con stock.
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { canales: { instagram: true, whatsapp: true }, pedidos: true })).status, 200);
+  const pan = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Pan francés', precio: 2500, stock: 10 })).datos;
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000001', apiKey: CLAVE_YC })).status, 200);
+  const clave = /\/ycloud\/([0-9a-f]{24})$/.exec(enviados.find((e) => e.url.endsWith('/webhookEndpoints')).body.url)[1];
+  // La «IA»: pide el carrito con la ref que ve en el catálogo.
+  const vio = [];
+  d.preguntarNegocio = (f, cat) => async (texto, idioma, opts = {}) => {
+    const c = await cat(texto, { refs: opts.carrito !== undefined });
+    vio.push({ catalogo: c.texto, carrito: opts.carrito });
+    const ref = /\[ref (p[a-z0-9]+)\] Pan francés/.exec(c.texto)?.[1];
+    return { respuesta: '¡Dale!', persona: false, fuera_de_tema: false, vacia: false, notas: [], ...(/pan/.test(texto) && { pedido: { cambia: true, items: [{ ref, cantidad: 3 }] } }) };
+  };
+  let n = 0;
+  const escribir = async (texto) => {
+    const cuerpo = JSON.stringify({ id: `ev${++n}`, type: 'whatsapp.inbound_message.received', createTime: new Date(T0).toISOString(), whatsappInboundMessage: { id: `m${n}`, wamid: `w${n}`, from: '+5493410000009', to: '+5493410000001', type: 'text', text: { body: texto }, sendTime: new Date(T0).toISOString() } });
+    const antes = enviados.length;
+    const r = await worker.fetch(new Request(`https://zustrolabs.com/api/whatsapp/ycloud/${clave}`, { method: 'POST', headers: { 'YCloud-Signature': await firmarYCloud(cuerpo, FIRMA_FALSA, T0 / 1000) }, body: cuerpo }), ENV, {}, d);
+    assert.equal(r.status, 200);
+    return enviados.slice(antes).filter((e) => e.url.endsWith('/sendDirectly')).map((e) => e.body.text.body).join('\n---\n');
+  };
+  await escribir('hola');
+  let t = await escribir('quiero 3 kilos de pan');
+  assert.match(vio.at(-1).catalogo, /\[ref p[a-z0-9]+\] Pan francés/, 'con pedidos, la IA ve la ref de cada producto');
+  assert.match(t, /• 3 × Pan francés — \$ 7\.500\nTotal: \$ 7\.500/);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos[0].reservado, 3);
+  await escribir('sí');
+  await escribir('1');
+  t = await escribir('Ana');
+  assert.match(t, /Tu pedido N\.º 1 quedó registrado/);
+  // El panel del negocio: lo ve; otro negocio no.
+  let lista = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos;
+  assert.deepEqual(lista.cuenta, { pendiente: 1 });
+  assert.equal(lista.encendidos, true);
+  assert.deepEqual(lista.pedidos[0].items.map((i) => [i.nombre, i.cantidad, i.subtotal]), [['Pan francés', 3, 7500]]);
+  assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/pedidos`)).status, 404);
+  assert.equal((await pedir('otro@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'aceptado' })).status, 404);
+  assert.deepEqual((await pedir('otro@example.com', 'GET', `/api/n/${b.id}/pedidos`)).datos.pedidos, []);
+  // Pasos que no se pueden y estados inventados.
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'pagado' })).status, 400);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'borrador' })).status, 400);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'aceptado' }, { sinCabecera: true })).status, 403);
+  // Aceptar, pagar, entregar: cada uno le llega al comprador por su WhatsApp, con la clave del negocio.
+  const avisos = [];
+  for (const estado of ['aceptado', 'pagado', 'entregado']) {
+    const antes = enviados.length;
+    const r = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado, horas: 24 });
+    assert.equal(r.status, 200, JSON.stringify(r.datos));
+    assert.equal(r.datos.estado, estado);
+    assert.equal(r.datos.aviso, true);
+    const e = enviados.slice(antes).find((x) => x.url.endsWith('/sendDirectly'));
+    assert.equal(e.clave, CLAVE_YC);
+    assert.deepEqual([e.body.from, e.body.to], ['+5493410000001', '+5493410000009']);
+    avisos.push(e.body.text.body);
+  }
+  assert.match(avisos[0], /Tu pedido N\.º 1 fue aceptado por Panadería La Espiga/);
+  assert.match(avisos[1], /recibió el pago de tu pedido N\.º 1/);
+  assert.match(avisos[2], /figura como entregado/);
+  const p = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos[0];
+  assert.deepEqual([p.stock, p.reservado], [7, 0], 'entregado: el stock bajó de 10 a 7');
+  const hist = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos/1`)).datos;
+  assert.deepEqual(hist.eventos.map((x) => [x.estado, x.quien]).slice(-3), [['aceptado', 'duena@example.com'], ['pagado', 'duena@example.com'], ['entregado', 'duena@example.com']]);
+  // Con los pedidos apagados, el asistente responde pero no arma pedidos.
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { pedidos: false });
+  t = await escribir('quiero 3 kilos de pan');
+  assert.doesNotMatch(t, /Tu pedido/);
+  assert.equal(vio.at(-1).carrito, undefined);
 });
