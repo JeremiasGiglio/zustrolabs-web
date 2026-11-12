@@ -154,7 +154,10 @@ async function conectar(request, env, deps) {
   if (!app) return html(paginaConectado({ ok: false, error: 'app desconocida' }), 404);
   try {
     const c = await conectarCuenta(env, { code, origen, now, app }, fetchImpl);
-    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence, app: c.app });
+    // Conectada desde la app de negocios (estado con negocio) = cuenta de un cliente, aunque use la app del estudio:
+    // responde solo con la ficha de su negocio, nunca con lo de Zustro Labs (ZL-140).
+    const antes = await cuentas.get(c.id);
+    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence, app: c.app, cliente: Boolean(estado.negocio) || antes?.cliente === true });
     console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta, propia: app.id === String(env.IG_APP_ID), negocio: Boolean(estado.negocio) }));
     // Desde la app de negocios (ZL-137): la cuenta queda vinculada sola a ese negocio, con Instagram encendido.
     if (estado.negocio) {
@@ -413,8 +416,8 @@ async function adminYCloud(request, env, deps, ruta, url, now) {
   return json({ error: 'no existe' }, 404);
 }
 
-/** La cuenta es de un cliente si se conectó con una app que no es la del estudio. */
-export const esCliente = (env, cuenta) => Boolean(cuenta?.app && cuenta.app !== String(env.IG_APP_ID ?? ''));
+/** La cuenta es de un cliente si se conectó con una app que no es la del estudio, o desde la app de negocios (ZL-140). */
+export const esCliente = (env, cuenta) => cuenta?.cliente === true || Boolean(cuenta?.app && cuenta.app !== String(env.IG_APP_ID ?? ''));
 
 /**
  * La ficha que usa la cuenta del estudio (ZL-124): la de su negocio, si está vinculada a uno y la ficha está activa y
@@ -568,7 +571,7 @@ async function admin(request, env, deps) {
     if (mf?.[2] === 'instagram-link' && request.method === 'POST') {
       // El link de «Conectar Instagram» con la app compartida para ese negocio (ZL-137/138), para mandárselo al cliente.
       if (!(await a.negocios.get(mf[1]))) return json({ error: 'no existe ese negocio' }, 404);
-      const app = await appCompartida(apps);
+      const app = await appCompartida(apps, env);
       if (!app || !env.IG_APP_SECRET) return json({ error: 'todavía no hay app compartida: corré instagram-app-clientes.ps1' }, 503);
       return json({ url: await urlAutorizar(env, 'https://zustrolabs.com', now, app, mf[1]), app: app.id }, 200);
     }
@@ -577,6 +580,7 @@ async function admin(request, env, deps) {
   if (ruta === '/ycloud' || ruta.startsWith('/ycloud/')) return adminYCloud(request, env, deps, ruta, url, now);
   if (request.method === 'GET' && ruta === '/estado') {
     const listaApps = (await apps.list()).map((a) => ({ id: a.id, nombre: a.nombre, compartida: Boolean(a.compartida), creado: a.creado }));
+    const compartida = await appCompartida(apps, env);
     const listaCuentas = [];
     for (const c of await cuentas.list()) {
       const cli = esCliente(env, c);
@@ -595,6 +599,8 @@ async function admin(request, env, deps) {
       ok: true,
       configurado: { app_estudio: Boolean(env.IG_APP_ID && env.IG_APP_SECRET), verify: Boolean(env.IG_VERIFY_TOKEN), link: Boolean(env.IG_CONECTAR_CLAVE), ia: Boolean(env.ANTHROPIC_API_KEY), aviso: Boolean(env.AVISO_PARA), panel: panelListo(env) },
       app_estudio: env.IG_APP_ID ? String(env.IG_APP_ID) : null,
+      // La app con la que se conectan los clientes (ZL-140): la compartida registrada o, si no hay, la del estudio.
+      app_clientes: compartida?.id ?? null,
       apps: listaApps,
       cuentas: listaCuentas,
     }, 200);

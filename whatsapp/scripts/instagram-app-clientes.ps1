@@ -27,8 +27,6 @@ $compartidas = @(@($estado.apps) | Where-Object { $_.compartida })
 
 if ($Invitaciones) {
   Paso 1 "Invitaciones pedidas"
-  if (-not $compartidas.Count) { Falla "Todavía no hay app compartida: corré este script sin -Invitaciones."; exit 1 }
-  $app = $compartidas | Sort-Object creado -Descending | Select-Object -First 1
   $pedidas = @(@((Llamar GET "/negocios").negocios) | Where-Object { $_.invitacionIg })
   if (-not $pedidas.Count) { Ok "No hay invitaciones pendientes."; exit 0 }
   foreach ($n in $pedidas) {
@@ -36,13 +34,19 @@ if ($Invitaciones) {
     Nota ("  " + $n.nombre + "  →  @" + $n.invitacionIg.usuario + "  (pedida el " + $fecha + ")")
   }
   Write-Host ""
-  Nota "Para cada una: App roles → Roles → Add People → «Instagram Tester» → el usuario (sin @) → Add."
-  Abrir "https://developers.facebook.com/apps/$($app.id)/roles/roles/"
+  if ($compartidas.Count) { Nota "Para cada una, en la app «Zustro Labs Clientes»:" } else { Nota "Para cada una, en la app de Instagram DEL ESTUDIO (la de @zustrolabs):" }
+  Nota "App roles → Roles → Add People → «Instagram Tester» → el usuario (sin @) → Add."
+  Abrir "https://developers.facebook.com/apps/"
   Nota "Después avisale al negocio que acepte en instagram.com/accounts/manage_access → «Invitaciones de evaluador»"
   Nota "y que apriete «Conectar Instagram» en la app. El pedido se borra solo cuando la cuenta queda conectada."
   exit 0
 }
 
+# ZL-140: desde fines de octubre de 2026, Meta no ofrece «Instagram login» en las apps nuevas («Unified login» pide
+# Facebook y un portafolio). Sin app compartida, los clientes se conectan con la app del estudio, que es anterior.
+Aviso "Ojo: Meta ya no deja crear apps nuevas con «Instagram login». Sin hacer nada, los clientes usan la app del estudio."
+Nota "Seguí solo si tenés OTRA app creada antes de noviembre de 2026 con «API setup with Instagram login»."
+if (-not (SiNo "¿Tenés una app así para registrarla como compartida?")) { exit 0 }
 if ($compartidas.Count) {
   Aviso ("Ya hay una app compartida registrada: " + (($compartidas | ForEach-Object { $_.id + " (" + $_.nombre + ")" }) -join ", ") + ".")
   if (-not (SiNo "¿Registrar otra igual? (por ejemplo, si la primera llegó a 50 evaluadores; se usa la más nueva)")) { exit 0 }

@@ -105,8 +105,10 @@ export function crearAtencion(storage) {
       return (await s.get(`igc:${id}`)) ?? null;
     },
     async guardarCuentaIg(id, datos) {
-      const { username = '', token, tokenVence = 0, app = '' } = datos ?? {};
-      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app) });
+      const { username = '', token, tokenVence = 0, app = '', cliente = false } = datos ?? {};
+      // `cliente`: una cuenta de cliente conectada con la app del estudio (ZL-140); sin esto se la confundiría con la
+      // cuenta del estudio (que responde con lo de la landing).
+      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app), ...(cliente === true && { cliente: true }) });
     },
     async borrarCuentaIg(id) {
       await s.delete(`igc:${id}`);
@@ -296,9 +298,9 @@ export function adaptadores(a, reloj = () => Date.now()) {
   const cuentas = {
     get: async (id) => {
       const c = await a.cuentaIg(id);
-      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' } : null;
+      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true } : null;
     },
-    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app }),
+    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app, cliente: d.cliente }),
     delete: (id) => a.borrarCuentaIg(id),
     list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' })),
   };

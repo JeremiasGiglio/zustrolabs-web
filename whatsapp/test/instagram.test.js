@@ -251,7 +251,8 @@ test('worker: el link de conexión exige la clave y manda a Instagram; la vuelta
   assert.match(cuerpo, /Listo/);
   assert.match(cuerpo, /@zustrolabs/);
   assert.doesNotMatch(cuerpo, /token-/, 'la página no muestra tokens');
-  assert.deepEqual(await cuentas.get(CUENTA), { id: CUENTA, username: 'zustrolabs', token: 'token-largo', vence: T0 + 5_183_944_000, app: ENV.IG_APP_ID });
+  // Conectada con el link del estudio (sin negocio): es la cuenta del estudio, no de un cliente.
+  assert.deepEqual(await cuentas.get(CUENTA), { id: CUENTA, username: 'zustrolabs', token: 'token-largo', vence: T0 + 5_183_944_000, app: ENV.IG_APP_ID, cliente: false });
   // Una vuelta con state inventado o sin configurar no guarda nada.
   assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/conectar/vuelta?code=x&state=1.falso'), ENV, {}, d)).status, 400);
   assert.equal((await worker.fetch(new Request('https://zustrolabs.com/api/instagram/conectar?clave=x'), { ...ENV, IG_CONECTAR_CLAVE: '' }, {}, d)).status, 503);
