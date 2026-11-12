@@ -177,8 +177,8 @@ test.describe('app de negocios (ZL-121)', () => {
     const { n } = await montar(page, 'duena@example.com');
     await page.getByRole('tab', { name: 'Instagram' }).click();
     await expect(page.getByText('Todavía no hay una cuenta de Instagram conectada.')).toBeVisible();
-    // Sin la app compartida registrada, el botón no se puede usar.
-    await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toBeDisabled();
+    // Sin app compartida registrada, se usa la del estudio (ZL-140): el botón ya se puede usar.
+    await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toBeEnabled();
     await page.getByLabel('Usuario de Instagram del negocio').fill('@la.espiga');
     await page.getByRole('button', { name: 'Pedir invitación' }).click();
     await expect(page.getByText(/para @la\.espiga/)).toBeVisible();
