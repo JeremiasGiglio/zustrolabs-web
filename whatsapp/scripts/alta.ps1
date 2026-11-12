@@ -127,16 +127,11 @@ function Ficha-Negocio($neg) {
 
 <# Instagram con la app compartida de Zustro Labs: el cliente no necesita Facebook ni crear nada en Meta. #>
 function Instagram-Compartida($neg) {
+  # ZL-140: Meta ya no da «Instagram login» a las apps nuevas (desde fines de octubre de 2026). Los clientes se conectan
+  # con la app del estudio (la de @zustrolabs), o con una compartida si alguna vez se registra una.
   $estado = Llamar GET "/estado"
-  $app = @($estado.apps) | Where-Object { $_.compartida } | Sort-Object creado -Descending | Select-Object -First 1
-  if (-not $app) {
-    Aviso "Todavía no está creada la app de Instagram para clientes (se hace una sola vez, unos 10 minutos)."
-    if (-not (SiNo "¿La creamos ahora?")) { return $false }
-    & "$PSScriptRoot\instagram-app-clientes.ps1" -Worker $Worker
-    $estado = Llamar GET "/estado"
-    $app = @($estado.apps) | Where-Object { $_.compartida } | Sort-Object creado -Descending | Select-Object -First 1
-    if (-not $app) { Falla "Sigue sin estar registrada."; return $false }
-  }
+  if (-not $estado.app_clientes) { Falla "El Worker no tiene app de Instagram (falta IG_APP_ID / IG_APP_SECRET)."; return $false }
+  $esEstudio = ($estado.app_clientes -eq $estado.app_estudio)
   Nota "Lo que tiene que tener el cliente (si no, lo hace ahora desde su celular):"
   Nota "a) Cuenta de Instagram PROFESIONAL (Empresa o Creador): Configuración → Tipo de cuenta y herramientas."
   Nota "b) Configuración → Mensajes y respuestas a historias → Controles de mensajes → Herramientas conectadas →"
@@ -148,8 +143,10 @@ function Instagram-Compartida($neg) {
   if ($usuario -notmatch '^[A-Za-z0-9._]{1,30}$') { Falla "Ese usuario no parece de Instagram."; return $false }
   Set-Clipboard -Value $usuario
   Write-Host ""
-  Nota "1) Agregalo como evaluador de la app (el usuario quedó copiado): Add People → «Instagram Tester» → pegar → Add."
-  Abrir "https://developers.facebook.com/apps/$($app.id)/roles/roles/"
+  if ($esEstudio) { Nota "1) En Meta, abrí la app de Instagram DEL ESTUDIO (la que usa @zustrolabs) → App roles → Roles →" }
+  else { Nota "1) En Meta, abrí la app «Zustro Labs Clientes» → App roles → Roles →" }
+  Nota "   Add People → «Instagram Tester» → pegá el usuario (quedó copiado) → Add."
+  Abrir "https://developers.facebook.com/apps/"
   Seguir "Apretá Enter cuando esté agregado"
   Nota "2) El cliente acepta, entrado con la cuenta del negocio: instagram.com/accounts/manage_access →"
   Nota "   pestaña «Invitaciones de evaluador» → Aceptar."
@@ -254,8 +251,8 @@ Ficha-Negocio $neg
 # ── 3. Instagram ──
 if ($conIg) {
   Paso 3 "Instagram"
-  Nota "[1] Con la app de Zustro Labs para clientes (recomendado: el cliente no necesita Facebook, unos 5 minutos)"
-  Nota "[2] Con una app de Meta del propio cliente (si ya la tiene, o si la compartida llegó a 50 cuentas; 20 minutos)"
+  Nota "[1] Con la app de Zustro Labs (recomendado: el cliente no necesita Facebook, unos 5 minutos)"
+  Nota "[2] Con una app de Meta del propio cliente (solo si ya la tiene: Meta no deja crear apps nuevas con Instagram login)"
   if ((Read-Host "  Elegí 1 o 2") -eq "2") {
     & "$PSScriptRoot\instagram-cliente.ps1" -Negocio $neg.id -Worker $Worker -DesdeAlta -SinFicha
   } else { [void](Instagram-Compartida $neg) }

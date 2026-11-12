@@ -8,7 +8,7 @@
 
 import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
-import { urlAutorizar } from './instagram.js';
+import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
@@ -109,7 +109,11 @@ export async function desconectarWhatsApp({ ycloud, fetch: fetchImpl = fetch }, 
 
 // ── Instagram desde la app (ZL-137): la app de Meta de Zustro Labs para clientes, con cada cliente como evaluador ──
 /** La app compartida (la más nueva marcada como compartida), o null si todavía no se registró. */
-export const appCompartida = async (apps) => ((await apps?.list?.()) ?? []).filter((a) => a.compartida).sort((x, y) => (y.creado ?? 0) - (x.creado ?? 0))[0] ?? null;
+/**
+ * La app con la que se conectan los clientes: la compartida registrada más nueva o, si no hay, la del estudio (ZL-140).
+ * Desde fines de octubre de 2026, Meta no ofrece «Instagram login» en las apps nuevas: la del estudio (anterior) sí.
+ */
+export const appCompartida = async (apps, env = {}) => ((await apps?.list?.()) ?? []).filter((a) => a.compartida).sort((x, y) => (y.creado ?? 0) - (x.creado ?? 0))[0] ?? appDelEstudio(env);
 // La vuelta del OAuth es siempre zustrolabs.com (es la Redirect URL registrada en la app de Meta).
 const ORIGEN_IG = 'https://zustrolabs.com';
 
@@ -171,7 +175,7 @@ export async function appNegocios(request, env, deps) {
   // Instagram del negocio (ZL-137): pedir la invitación, «Conectar Instagram» y desconectar.
   if (sub === '/instagram' || sub.startsWith('/instagram/')) {
     if (!deps.cuentas || !deps.apps) return error('sin memoria', 503);
-    const app = await appCompartida(deps.apps);
+    const app = await appCompartida(deps.apps, env);
     if (request.method === 'GET' && sub === '/instagram') {
       const cuentas = [];
       for (const id of negocio.cuentas) {

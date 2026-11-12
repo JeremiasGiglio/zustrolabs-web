@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import worker from '../src/index.js';
+import worker, { esCliente } from '../src/index.js';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
 import { crearCatalogo, ejecutarCatalogo } from '../src/catalogo.js';
 import { _resetCerts } from '../src/panel.js';
@@ -334,8 +334,10 @@ test('Instagram (ZL-137): pedir la invitación, «Conectar Instagram» con la ap
   const CTA = '17841400000000077';
   // Sin la app compartida registrada: no está disponible.
   let r = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/instagram`);
-  assert.equal(r.datos.disponible, false);
-  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/conectar`)).status, 503);
+  // Sin app compartida registrada, se usa la del estudio (ZL-140: Meta ya no da «Instagram login» a las apps nuevas).
+  assert.equal(r.datos.disponible, true);
+  const conEstudio = new URL((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/conectar`)).datos.url);
+  assert.equal(conEstudio.searchParams.get('client_id'), ENV.IG_APP_ID);
   // Pedir la invitación: el equipo la ve en Administración.
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/invitacion`, { usuario: 'mal usuario' })).status, 400);
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/invitacion`, { usuario: '@la.espiga' })).status, 200);
@@ -462,4 +464,31 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   t = await escribir('quiero 3 kilos de pan');
   assert.doesNotMatch(t, /Tu pedido/);
   assert.equal(vio.at(-1).carrito, undefined);
+});
+
+test('Instagram (ZL-140): un cliente conectado con la app del estudio desde la app de negocios queda como cliente (nunca responde como Zustro Labs)', async () => {
+  const { n, d, a, pedir } = await armar();
+  const CTA = '17841400000000088';
+  const url = new URL((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/instagram/conectar`)).datos.url);
+  assert.equal(url.searchParams.get('client_id'), ENV.IG_APP_ID, 'sin app compartida, la del estudio');
+  d.fetch = async (u, o = {}) => {
+    const s = String(u);
+    if (s.startsWith('https://api.instagram.com/oauth/access_token')) return Response.json({ access_token: 'corto', user_id: CTA });
+    if (s.includes('ig_exchange_token')) return Response.json({ access_token: 'largo', expires_in: 5_183_944 });
+    if (s.includes('/me?fields=user_id,username')) return Response.json({ user_id: CTA, username: 'somosventro' });
+    if (s.includes('/me/subscribed_apps')) return Response.json((o.method ?? 'GET') === 'GET' ? { data: [{ subscribed_fields: ['messages'] }] } : { success: true });
+    return Response.json({}, { status: 400 });
+  };
+  const r = await worker.fetch(new Request(`https://zustrolabs.com/api/instagram/conectar/vuelta?code=c&state=${encodeURIComponent(url.searchParams.get('state'))}`), { ...ENV, IG_CONECTAR_CLAVE: 'clave-link' }, {}, d);
+  assert.equal(r.status, 200, await r.text());
+  const c = await n.cuentas.get(CTA);
+  assert.equal(c.app, ENV.IG_APP_ID);
+  assert.equal(c.cliente, true);
+  assert.equal(esCliente(ENV, c), true);
+  assert.ok((await n.negocios.get(a.id)).cuentas.includes(CTA));
+  // La renovación del token conserva la marca.
+  await n.cuentas.put(CTA, { ...c, token: 'renovado' });
+  assert.equal((await n.cuentas.get(CTA)).cliente, true);
+  // Una cuenta conectada con el link viejo del estudio (sin negocio) sigue siendo la del estudio.
+  assert.equal(esCliente(ENV, { app: ENV.IG_APP_ID, cliente: false }), false);
 });

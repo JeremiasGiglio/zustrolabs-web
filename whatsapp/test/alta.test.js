@@ -201,7 +201,8 @@ test('alta por el Worker: sin token de Cloudflare el negocio se guarda igual y d
 test('alta por el Worker: el link de «Conectar Instagram» para mandarle al cliente lleva la app compartida y el negocio', async () => {
   const { n, admin } = await armar();
   const alta = await admin('POST', '/negocios', { nombre: 'Con Instagram', emails: 'a@example.com', canales: { instagram: true } });
-  assert.equal((await admin('POST', `/negocios/${alta.datos.id}/instagram-link`)).status, 503);
+  // Sin app compartida registrada: la del estudio (ZL-140).
+  assert.equal(new URL((await admin('POST', `/negocios/${alta.datos.id}/instagram-link`)).datos.url).searchParams.get('client_id'), ENV.IG_APP_ID);
   await n.apps.put('3000000000000003', { secreto: 'secreto-app-compartida', nombre: 'Clientes', compartida: true });
   const r = await admin('POST', `/negocios/${alta.datos.id}/instagram-link`);
   assert.equal(r.status, 200);

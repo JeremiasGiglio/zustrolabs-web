@@ -8,6 +8,11 @@ Cómo dejar la cuenta de Instagram de un cliente respondiendo con el asistente, 
 
 ## Desde la app de negocios: el cliente lo hace solo (ZL-137)
 
+> **Cambio de Meta (ZL-140, 12/11/2026):** las apps creadas desde fines de octubre de 2026 ya no tienen «API setup
+> with Instagram login» (solo «Unified login», con Facebook y portafolio). Por eso los clientes se conectan con la
+> **app del estudio** (la de @zustrolabs, anterior al cambio): el Worker la usa sola si no hay una compartida
+> registrada. Cada cliente se agrega como **Instagram Tester de la app del estudio**. No crear apps nuevas.
+
 **Lo normal desde ZL-137.** El cliente no necesita Facebook ni crear nada en Meta: usa **la app de Meta de Zustro Labs
 para clientes** («Zustro Labs Clientes», acceso estándar, sin revisión ni verificación de empresa). Como la app es
 nuestra y no está revisada, Meta solo deja conectar las cuentas agregadas como **Instagram Tester** (hasta unas 50 por
