@@ -355,3 +355,19 @@ test('los scripts de Windows se guardan con BOM (PowerShell 5.1 lee los .ps1 sin
   const bienvenida = alta.slice(alta.indexOf('function Mensaje-Bienvenida'), alta.indexOf('# ── 0.'));
   assert.doesNotMatch(bienvenida, /precio|empresa|contrat/i);
 });
+
+test('ZL-145: si el saludo de la ficha ya dice «¡Hola!», no se le antepone el saludo fijo (un solo saludo)', async () => {
+  const { yaSaluda, perfilNegocio, parsearFicha } = await import('../src/negocio.js');
+  for (const t of ['¡Hola! Soy el asistente', 'Hola, soy', 'Buenas! Soy', '👋 ¡Hola!', 'Buen día', 'Hi! I am', 'Pozdrav! Ja sam']) assert.equal(yaSaluda(t), true, t);
+  for (const t of ['Soy el asistente de Ventro', 'Somos una panadería', 'Holanda es lindo']) assert.equal(yaSaluda(t), false, t);
+  const ficha = parsearFicha(readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8')).ficha;
+  const conHola = perfilNegocio({ ...ficha, saludo: '¡Hola! Soy el asistente de la panadería.', saludos: { es: '¡Hola! Soy el asistente de la panadería.' } }).textos('es');
+  assert.equal(conHola.hola, '');
+  const sinHola = perfilNegocio({ ...ficha, saludo: 'Soy el asistente de la panadería.', saludos: { es: 'Soy el asistente de la panadería.' } }).textos('es');
+  assert.match(sinHola.hola, /Gracias por escribirnos/);
+  const { atender } = await import('../src/whatsapp.js');
+  const r = await atender({ id: 'x1', from: 'yc:1:2', kind: 'text', text: 'hola' }, { memoria: null, preguntar: async () => assert.fail('sin IA'), perfil: perfilNegocio({ ...ficha, saludo: '¡Hola! Soy el asistente de la panadería.', saludos: { es: '¡Hola! Soy el asistente de la panadería.' } }) });
+  const primero = r.send[0].text.body;
+  assert.equal((primero.match(/hola/gi) ?? []).length, 1, primero);
+  assert.ok(primero.startsWith('¡Hola! Soy el asistente'), primero);
+});
