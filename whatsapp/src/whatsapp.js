@@ -203,6 +203,9 @@ export const PERFIL_ESTUDIO = { idiomas: IDIOMAS, textos, opcion, formatear: (c,
 
 const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mandó algo que no es texto: audio, foto o archivo]');
 
+/** Partes de un mensaje separadas por una línea en blanco, sin las vacías (ZL-145: el saludo fijo puede no ir). */
+const juntar = (...partes) => partes.filter((x) => String(x ?? '').trim()).join('\n\n');
+
 /**
  * Decide qué contestar a un evento. Devuelve los mensajes a mandar y métricas (sin texto ni número).
  * deps: {memoria, charlas (o null sin panel), preguntar(texto, idioma) → respuesta controlada, now,
@@ -276,7 +279,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     await guardar({ ...estado, idioma: nuevo, humanoHasta: 0 });
     // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
     const N = perfil.textos(nuevo);
-    return { send: [msgTexto(ev.from, `${N.bienvenida}\n\n${N.quienes}`), msgTexto(ev.from, N.menu)], metrica: 'idioma', idioma: nuevo };
+    return { send: [msgTexto(ev.from, juntar(N.bienvenida, N.quienes)), msgTexto(ev.from, N.menu)], metrica: 'idioma', idioma: nuevo };
   }
 
   if (cmd === 'idioma') {
@@ -314,7 +317,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
       }
     }
     const P = perfil.textos(en);
-    const primero = saludo ? `${P.hola}\n\n${P.quienes}` : P.quienes;
+    const primero = saludo ? juntar(P.hola, P.quienes) : P.quienes;
     return { send: [msgTexto(ev.from, primero), msgTexto(ev.from, P.menu)], metrica: saludo ? 'saludo' : 'presentacion' };
   }
   // Todavía no eligió idioma: si saluda otra vez se le vuelve a preguntar; si pregunta qué hacemos, se toma el idioma
@@ -371,7 +374,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   }
   return {
     send: primerContacto
-      ? [msgTexto(ev.from, `${T.hola}\n\n${T.quienes}`), msgTexto(ev.from, `${respuesta}\n\n${T.menuHint}`)]
+      ? [msgTexto(ev.from, juntar(T.hola, T.quienes)), msgTexto(ev.from, `${respuesta}\n\n${T.menuHint}`)]
       : [msgTexto(ev.from, respuesta)],
     metrica: pedido ? 'ia_pedido' : 'ia',
     idioma,

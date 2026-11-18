@@ -443,6 +443,15 @@ const BANDERA = { es: ' 🇦🇷', en: ' 🇬🇧', hr: ' 🇭🇷' };
  * y su menú en cada uno, y PERSONA sin panel (el negocio contesta desde su propia app mientras el asistente se calla).
  * Con un solo idioma no se pregunta nada: arranca con el saludo y el menú. Con varios, el primer mensaje pregunta.
  */
+/**
+ * ¿El saludo de la ficha ya arranca saludando («¡Hola!», «Buenas», «Hi», «Pozdrav»…)? Entonces no se le antepone el
+ * «¡Hola! 👋 Gracias por escribirnos» fijo: si no, salen dos saludos seguidos en el mismo mensaje (ZL-145).
+ */
+export function yaSaluda(texto) {
+  const t = String(texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/^[^a-z]+/, '');
+  return /^(hola\b|holi\b|buenas|buen dia|buenos dias|bienvenid|hi\b|hello|hey|welcome|good (morning|afternoon|evening)|pozdrav|bok\b|dobar dan|dobro jutro|dobra vecer|dobrodos)/.test(t);
+}
+
 export function perfilNegocio(ficha) {
   const limpiar = (s) => (ficha.emojis ? s : sinEmojis(s));
   const idiomas = ficha.idiomas?.length ? ficha.idiomas : [ficha.idioma];
@@ -454,7 +463,9 @@ export function perfilNegocio(ficha) {
     const b = base(ficha, i);
     const lineas = menus[i].map((o) => `${ficha.emojis ? NUMEROS[o.n - 1] : `${o.n}.`} ${o.titulo}`);
     const menu = `${b.menuTitulo}\n\n${lineas.join('\n')}\n\n${b.menuPie}`;
-    T[i] = Object.fromEntries(Object.entries({ ...b, bienvenida: b.hola, quienes: saludos[i], menu, personaMail: b.derivar }).map(([k, v]) => [k, limpiar(v)]));
+    // Si el saludo de la ficha ya saluda, el «¡Hola! 👋 Gracias por escribirnos» fijo no va (ZL-145).
+    const hola = yaSaluda(saludos[i]) ? '' : b.hola;
+    T[i] = Object.fromEntries(Object.entries({ ...b, hola, bienvenida: hola, quienes: saludos[i], menu, personaMail: b.derivar }).map(([k, v]) => [k, limpiar(v)]));
     opciones[i] = Object.fromEntries(menus[i].map((o) => [o.n, limpiar(`${o.texto}\n\n${b.alFinal}`)]));
   }
   const de = (i) => (idiomas.includes(i) ? i : idiomas[0]);
