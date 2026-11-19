@@ -266,6 +266,20 @@ test('preguntadorNegocio: pide JSON con el esquema del negocio y controla la sal
   assert.deepEqual(cuerpo.output_config.format.schema.required, ['respuesta', 'persona', 'fuera_de_tema', 'idioma']);
   assert.equal(r.vacia, true, 'el monto inventado se saca');
   assert.deepEqual(r.uso, { entrada: 10, salida: 5 });
+  // ZL-154: el total de un pedido suyo es un monto real: se puede nombrar, y el prompt lleva sus compras.
+  const conCompras = await preguntar('¿cuánto me salió?', null, { compras: { texto: '- Pedido N.º 4 del 10/11 · entregado · [ref p1] 1 × Algo · total $ 99.999', montos: ['99999'] } });
+  assert.equal(conCompras.respuesta, 'Sale $ 99.999.');
+  assert.match(cuerpo.system, /<compras>\n- Pedido N\.º 4 del 10\/11[\s\S]*<\/compras>/);
+  assert.match(cuerpo.system, /11b\. Lo que ya pidió[\s\S]*Nunca hables de pedidos o consultas que no estén ahí/);
+});
+
+test('prompt (ZL-154): sin compras no hay bloque ni regla; con pedidos encendidos, puede repetir uno', () => {
+  const sin = promptNegocio(ficha);
+  assert.doesNotMatch(sin, /<compras>|11b\./);
+  const cat = { texto: '- [ref p1] Pan francés · $ 2.500' };
+  const con = promptNegocio(ficha, 'WhatsApp', cat, null, null, '(vacío)', { compras: { texto: '- Pedido N.º 1 del 01/11 · entregado' } });
+  assert.match(con, /lo mismo que la otra vez/);
+  assert.doesNotMatch(promptNegocio(ficha, 'WhatsApp', null, null, null, null, { compras: { texto: '- Consulta N.º 1' } }), /lo mismo que la otra vez/, 'sin pedidos por chat, no ofrece repetir');
 });
 
 // ——— Worker y administración ———

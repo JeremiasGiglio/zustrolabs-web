@@ -400,7 +400,7 @@ export function tipoDeImagen(b) {
 /** Operaciones que se pueden pedir al catálogo desde afuera (el Worker, por RPC). */
 export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
   // Pedidos (ZL-139): pedidos.js.
-  'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
+  'carrito', 'carritoDe', 'comprasDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
   // Consultas (ZL-146): consultas.js.
   'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta', 'consulta',
   // Números para el dueño (ZL-151).

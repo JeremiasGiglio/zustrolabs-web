@@ -187,6 +187,15 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
       });
     },
 
+    /** ZL-154: los últimos pedidos de una charla (sin el borrador), para que la IA los recuerde. Solo lectura. */
+    comprasDe(charla, cuantos = 3) {
+      return transaccion(() => {
+        vencerAhora();
+        const n = Math.max(1, Math.min(10, Number(cuantos) || 3));
+        return filas("SELECT * FROM pedidos WHERE charla = ? AND estado != 'borrador' ORDER BY creado DESC LIMIT ?", String(charla), n).map(armar);
+      });
+    },
+
     /** El borrador de una charla (o null). */
     carritoDe(charla) {
       return transaccion(() => { vencerAhora(); return armar(borradorDe(charla)); });

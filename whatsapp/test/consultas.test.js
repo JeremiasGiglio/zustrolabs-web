@@ -51,3 +51,16 @@ test('consultasDeCharla: registra con el canal de la charla y, si la base falla,
   const roto = consultasDeCharla({ cat: { ejecutar: async () => { throw new Error('caída'); } }, charla: 'x', canal: 'wa' });
   assert.equal(await roto.registrar({}), null);
 });
+
+test('consultas (ZL-154): la IA ve la consulta abierta de esa persona, en una línea; cerrada, ya no', async () => {
+  const { c, cat } = armar();
+  const k = consultasDeCharla({ cat, charla: 'yc:1:2', canal: 'wa' });
+  assert.equal(await k.abierta(), null);
+  c.crearConsulta('yc:1:2', { tipo: 'consulta', nombre: 'Ana', interes: 'Torta para 20 personas (ficticio)' });
+  c.crearConsulta('yc:1:3', { tipo: 'persona', resumen: 'Reclamo de otra persona' });
+  assert.equal(await k.abierta(), '- Consulta N.º 1 (quiere avanzar; el negocio todavía no la respondió): Torta para 20 personas (ficticio)');
+  c.cambiarConsulta(1, 'atendiendo');
+  assert.match(await k.abierta(), /alguien del negocio la está atendiendo/);
+  c.cambiarConsulta(1, 'ganada');
+  assert.equal(await k.abierta(), null);
+});

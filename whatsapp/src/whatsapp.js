@@ -436,7 +436,9 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // Sin pedidos por chat encendidos (o sin productos), el cierre es una consulta aunque la ficha diga «pedidos» (ZL-147).
   // ZL-153: si la charla ya empezó (el saludo, el menú o una respuesta), la IA no vuelve a saludar.
   const saludado = Boolean(estado?.ultimo || historial(estado, now).length);
-  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), saludado, objetivo: perfil.objetivo === 'pedidos' && !pedidos ? 'consultas' : perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
+  // ZL-154: los pedidos y la consulta abierta de esta persona (solo para leer: la IA nunca los cambia).
+  const compras = neg ? await comprasParaIa(pedidos, consultas, now) : null;
+  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), saludado, ...(compras && { compras }), objetivo: perfil.objetivo === 'pedidos' && !pedidos ? 'consultas' : perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
   const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...contexto }) : await preguntar(texto, idioma, contexto);
   // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
   const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;
@@ -535,6 +537,17 @@ export function nombreDeMensaje(texto) {
 
 /** Los últimos mensajes de la charla (solo los de las últimas 48 h). */
 const historial = (estado, now) => (estado?.histT && now - estado.histT < HISTORIAL_MS && Array.isArray(estado.hist) ? estado.hist : []);
+
+/**
+ * ZL-154: lo que la persona ya pidió o consultó en este negocio, para la IA: los últimos 3 pedidos (qué, cuándo, en qué
+ * estado) y la consulta abierta. Nunca frena la charla si falla. → {texto, montos} o null si no hay nada.
+ */
+export async function comprasParaIa(pedidos, consultas, now) {
+  const p = pedidos?.compras ? await pedidos.compras(now).catch(() => null) : null;
+  const k = consultas?.abierta ? await consultas.abierta().catch(() => null) : null;
+  const texto = [p?.texto, k].filter(Boolean).join('\n');
+  return texto ? { texto, montos: p?.montos ?? [] } : null;
+}
 
 /** Lo que la IA de un negocio sabe de la charla (ZL-146): los últimos mensajes y la persona (nombre, resumen, días). */
 export function memoriaParaIa(estado, now) {
