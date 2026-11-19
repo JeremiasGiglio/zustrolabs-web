@@ -140,7 +140,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('combobox', { name: 'Negocio', exact: true }).locator('option:checked')).toHaveText('Chocolatería Ficticia');
   });
 
-  test('la charla de prueba con una ficha en dos idiomas pregunta el idioma, lo recuerda y se reinicia (ZL-126)', async ({ page }) => {
+  test('la charla de prueba con una ficha en dos idiomas arranca en el idioma del mensaje, lo recuerda y se reinicia (ZL-126, ZL-153)', async ({ page }) => {
     await montar(page, 'equipo@example.com');
     await page.getByRole('tab', { name: 'Asistente' }).click();
     const dos = FICHA.replace('- Idioma: castellano', '- Idioma: castellano, inglés') +
@@ -151,16 +151,17 @@ test.describe('app de negocios (ZL-121)', () => {
       await page.getByLabel('Mensaje de prueba').fill(m);
       await page.getByRole('button', { name: 'Enviar' }).click();
     };
+    // ZL-153: no pregunta el idioma: «hello» ya arranca en inglés con el saludo y el menú.
     await enviar('hello');
-    await expect(page.locator('.burbuja.asis').last()).toContainText('2️⃣ English');
-    await enviar('2');
     await expect(page.locator('.burbuja.asis').last()).toContainText('How can I help?');
+    await expect(page.locator('.burbuja.asis').last()).not.toContainText('English');
     await enviar('2');
     await expect(page.locator('.burbuja.asis').last()).toContainText('To order.');
     await page.getByRole('button', { name: 'Reiniciar charla' }).click();
     await expect(page.locator('.burbuja')).toHaveCount(0);
-    await enviar('2');
-    await expect(page.locator('.burbuja.asis').last()).toContainText('Which language', { timeout: 5000 });
+    // Quien lo pide con IDIOMA igual puede elegir.
+    await enviar('idioma');
+    await expect(page.locator('.burbuja.asis').last()).toContainText('2️⃣ English', { timeout: 5000 });
   });
 
   test('WhatsApp (ZL-136): la dueña conecta su número sola, ve el estado y lo desconecta; la página es accesible', async ({ page }) => {
@@ -227,6 +228,8 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByLabel('Últimos 7 días')).toContainText('1pedidos');
     await expect(page.getByRole('button', { name: 'Avisos en este celular' })).toBeVisible();
     await expect(tarjeta.getByRole('link', { name: 'Responder por WhatsApp' })).toHaveAttribute('href', 'https://wa.me/5493410000009');
+    // ZL-153: por dónde escribió y su número, para encontrarlo rápido.
+    await expect(tarjeta.locator('.contacto')).toHaveText('Te escribió por WhatsApp: +5493410000009 Copiar');
     await expect(tarjeta).toContainText('3 × Pan francés — $ 7.500');
     await expect(tarjeta).toContainText('Total: $ 7.500');
     await expect(tarjeta).toContainText('Envío: Calle Ficticia 123');
@@ -258,8 +261,12 @@ test.describe('app de negocios (ZL-121)', () => {
       panId = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'x'])).valor.id;
       await cat.ejecutar('carrito', ['ig:17841400000000001.900', [{ id: panId, cantidad: 2 }], { canal: 'ig' }]);
       await cat.ejecutar('confirmar', ['ig:17841400000000001.900', { nombre: 'Beto', entrega: 'retiro' }]);
+      await n.memoria.put('ig:17841400000000001.900', { idioma: 'es', humanoHasta: 0, usuario: 'beto.prueba' });
     });
     const tarjeta = page.locator('article.pedido');
+    // ZL-153: en Instagram, el @usuario de quien escribió y el link directo a su charla.
+    await expect(tarjeta.locator('.contacto')).toContainText('Te escribió por Instagram: @beto.prueba');
+    await expect(tarjeta.getByRole('link', { name: 'Responder por Instagram' })).toHaveAttribute('href', 'https://ig.me/m/beto.prueba');
     await tarjeta.getByRole('button', { name: 'Rechazar' }).click();
     await tarjeta.getByLabel('Motivo').fill('hoy no hay horno');
     await tarjeta.getByRole('button', { name: 'Confirmar rechazo' }).click();

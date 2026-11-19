@@ -102,6 +102,8 @@ export function crearAtencion(storage) {
         ...(datos?.seguir && Number.isFinite(datos.seguir.cuando) && ['carrito', 'consulta'].includes(datos.seguir.tipo) && { seguir: { cuando: datos.seguir.cuando, tipo: datos.seguir.tipo, negocio: corto(datos.seguir.negocio, 40), charla: corto(datos.seguir.charla, 80) } }),
         ...(Number.isFinite(datos?.seguidos) && datos.seguidos > 0 && { seguidos: Math.min(9, datos.seguidos) }),
         ...(datos?.baja === true && { baja: true }),
+        // ZL-153: el usuario de Instagram de la persona (para que el negocio la encuentre rápido en la app).
+        ...(/^[\w.]{1,30}$/.test(String(datos?.usuario ?? '')) && { usuario: String(datos.usuario) }),
       };
       // El índice de seguimientos (ZL-151): una clave por recordatorio pendiente, ordenada por hora, para que el cron
       // encuentre los vencidos sin recorrer toda la memoria.

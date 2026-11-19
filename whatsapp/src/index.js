@@ -138,6 +138,11 @@ function pausasDeCharla(a, now) {
       await a.memoria.put(clave(charla), { ...e, humanoHasta: hasta, pase: null });
       return hasta;
     },
+    /** ZL-153: el usuario de Instagram de esa charla, si se guardó (para mostrarlo en la app). */
+    async usuario(charla) {
+      const e = await a.memoria.get(clave(charla));
+      return e?.usuario ?? null;
+    },
     async devolver(charla) {
       const e = await a.memoria.get(clave(charla));
       if (e) await a.memoria.put(clave(charla), { ...e, humanoHasta: 0, pase: null, consulta: null });
@@ -412,6 +417,13 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       const r = await atender(listo, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
       for (const m of r.send) await mandar(m);
       if (negocio && dueñoEv) await despuesDeAtender(env, a, deps, fetchImpl, dueñoEv, antes, listo, r, now, ev.from);
+      // ZL-153: el usuario de Instagram de la persona, una vez (al primer mensaje o cuando deja un pedido o una consulta),
+      // para que el negocio vea en la app quién le escribió. Si Meta no lo da, la charla sigue igual.
+      if (negocio && dueñoEv && memoria && esInstagram(ev.from) && !antes?.usuario && (!antes?.ultimo || r.pedido || r.consulta)) {
+        const usuario = await nombreDe(env, ev.from, fetchImpl, cuentas).catch(() => null);
+        const ahora = usuario ? await memoria.get(ev.from) : null;
+        if (ahora) await memoria.put(ev.from, { ...ahora, usuario });
+      }
       // Aviso por correo (sin número ni texto). Si falla, la charla igual queda en el panel; el motivo va al registro.
       let avisado, avisoError;
       if (r.avisar) {

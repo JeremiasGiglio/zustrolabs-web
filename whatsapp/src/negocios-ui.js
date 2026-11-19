@@ -90,6 +90,8 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .tarjeta{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.9rem 1rem;margin-bottom:.7rem}
 .tarjeta h3{margin:0 0 .4rem}.tarjeta.nuevo{border-left:4px solid var(--rojo)}
 .tarjeta .acciones{margin-top:.6rem}
+.contacto{margin:.4rem 0;font-size:.95rem;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;overflow-wrap:anywhere}
+.btn.chico{padding:.15rem .6rem;font-size:.8rem;min-height:0}
 .pausa{background:#FFF4E5;border:1px solid #F5D3A6;color:var(--alerta);border-radius:8px;padding:.4rem .6rem;font-size:.85rem;margin:.4rem 0}
 @media (max-width:699px){
   .yo{display:none}.top{padding:.5rem .8rem}.top select{max-width:11rem}
@@ -684,7 +686,26 @@ function app() {
   }
 
   /** El botón para responderle a esa persona desde la app del negocio (WhatsApp con su número, o Instagram). */
-  function botonResponder(charla, canal) {
+  /**
+   * ZL-153: por dónde escribió y quién (el número de WhatsApp o el @usuario de Instagram), con un botón para copiarlo:
+   * así se la encuentra rápido en el celular.
+   */
+  function lineaContacto(x) {
+    const k = x.contacto;
+    if (!k) return h('p', { class: 'contacto' }, 'Por ' + (CANAL_PEDIDO[x.canal] || x.canal || 'chat'));
+    const copiar = h('button', { type: 'button', class: 'btn chico', 'aria-label': 'Copiar ' + k.texto }, 'Copiar');
+    copiar.onclick = () => {
+      const listo = () => { copiar.textContent = 'Copiado'; setTimeout(() => { copiar.textContent = 'Copiar'; }, 1500); };
+      try { navigator.clipboard.writeText(k.texto).then(listo, () => {}); } catch (e) { /* nada */ }
+    };
+    const sinUsuario = k.canal === 'instagram' && k.texto.charAt(0) !== '@';
+    return h('p', { class: 'contacto' },
+      h('span', {}, 'Te escribió por ' + (k.canal === 'whatsapp' ? 'WhatsApp' : 'Instagram') + ': '),
+      h('strong', {}, sinUsuario ? 'no sabemos el usuario' : k.texto), ' ',
+      sinUsuario ? null : copiar);
+  }
+  function botonResponder(charla, canal, contacto) {
+    if (contacto && contacto.enlace) return h('a', { class: 'btn', href: contacto.enlace, target: '_blank', rel: 'noopener' }, contacto.canal === 'whatsapp' ? 'Responder por WhatsApp' : contacto.texto.charAt(0) === '@' ? 'Responder por Instagram' : 'Abrir Instagram');
     const m = /^yc:\d+:(\d+)$/.exec(charla || '');
     if (m) return h('a', { class: 'btn', href: 'https://wa.me/' + m[1], target: '_blank', rel: 'noopener' }, 'Responder por WhatsApp');
     if (canal === 'ig' || /^ig:/.test(charla || '')) return h('a', { class: 'btn', href: 'https://www.instagram.com/direct/inbox/', target: '_blank', rel: 'noopener' }, 'Abrir Instagram');
@@ -715,7 +736,7 @@ function app() {
       aviso('Listo: el asistente vuelve a responder en esa charla.');
       await recargar();
     });
-    const botones = [botonResponder(c.charla, c.canal)];
+    const botones = [botonResponder(c.charla, c.canal, c.contacto)];
     if (c.estado === 'nueva') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: pasar('atendiendo') }, 'La atiendo yo'));
     if (c.tipo === 'persona') botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('resuelta') }, 'Resuelto'));
     else botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('ganada') }, 'Ganada'), h('button', { type: 'button', class: 'btn', onclick: pasar('perdida') }, 'Perdida'));
@@ -724,8 +745,8 @@ function app() {
       h('div', { class: 'chips' },
         h('span', { class: 'chip ' + (c.estado === 'nueva' ? 'alerta' : '') }, ESTADO_CONSULTA[c.estado] || c.estado),
         h('span', { class: 'chip' }, TIPO_CONSULTA[c.tipo] || c.tipo),
-        h('span', { class: 'chip' }, CANAL_PEDIDO[c.canal] || c.canal || 'Chat'),
         h('span', { class: 'chip' }, fecha(c.actualizado))),
+      lineaContacto(c),
       c.resumen ? h('p', {}, c.resumen) : h('p', { class: 'ayuda' }, 'Sin resumen: mirá la charla en tu app.'),
       c.pausaHasta ? h('div', { class: 'pausa' }, 'El asistente está callado en esta charla hasta ' + hora(c.pausaHasta) + '. ',
         h('button', { type: 'button', class: 'btn', onclick: devolver }, 'Devolver al asistente')) : null,
@@ -748,13 +769,13 @@ function app() {
       h('h3', {}, 'Pedido N.º ' + p.numero + ' · ' + (c.nombre || 'Sin nombre')),
       h('div', { class: 'chips' },
         h('span', { class: 'chip ' + (p.estado === 'pendiente' ? 'alerta' : ['pagado', 'entregado'].includes(p.estado) ? 'ok' : '') }, ESTADO_PEDIDO[p.estado] || p.estado),
-        h('span', { class: 'chip' }, CANAL_PEDIDO[p.canal] || p.canal || 'Chat'),
         h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') : 'Retira en el local'),
         h('span', { class: 'chip' }, fecha(p.creado))),
+      lineaContacto(p),
       h('ul', {}, p.items.map((i) => h('li', {}, i.cantidad + ' × ' + i.nombre + (i.subtotal !== null ? ' — ' + plata(i.subtotal) : '')))),
       h('p', {}, h('strong', {}, p.sinPrecio ? 'Total: a confirmar (hay productos sin precio)' : 'Total: ' + plata(p.total))),
       vence ? h('p', { class: 'ayuda' }, vence) : null,
-      h('div', { class: 'acciones' }, botonResponder(p.charla, p.canal), botones));
+      h('div', { class: 'acciones' }, botonResponder(p.charla, p.canal, p.contacto), botones));
   }
 
   function vistaPedidos() {

@@ -88,11 +88,11 @@ Deja copiado el mensaje de bienvenida para el cliente. A mano, en la app:
 ## Varios idiomas (ZL-126)
 
 En la ficha, «Idioma: castellano, inglés, croata» (el primero es el principal). Con más de uno, el primer mensaje de
-cada persona pregunta en cuál seguir (1, 2, 3, el nombre o la bandera) y el saludo, el menú y sus respuestas salen en
-ese idioma; por cada idioma que no es el principal van «## Saludo (inglés)» y «## Menú (inglés)» con las mismas
+cada persona arranca en el idioma en que escribió, sin preguntar (ZL-153: preguntar en tres idiomas a quien dijo «hola»
+no es natural); si no se reconoce, en el principal. El saludo, el menú y sus respuestas salen en ese idioma; por cada idioma que no es el principal van «## Saludo (inglés)» y «## Menú (inglés)» con las mismas
 opciones (son textos fijos, sin IA: la plantilla lo explica al final). El idioma del mensaje manda (ZL-127): el sistema lo
 reconoce por sus palabras, sin IA, y le ordena a la IA responder en ese; un saludo en otro idioma también lo cambia.
-IDIOMA vuelve a preguntar. Con un solo idioma no se pregunta nada. La charla de
+IDIOMA pregunta (1, 2, 3, el nombre o la bandera). Con un solo idioma no se pregunta nada. La charla de
 prueba de la pestaña Asistente sigue entre mensajes (idioma, PERSONA) y se reinicia con «Reiniciar charla».
 
 ## La cuenta de Instagram del estudio (ZL-124)
@@ -149,6 +149,15 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   del día: el asistente se calla las horas de pausa y la charla queda en «Pedidos y consultas». Nunca se le pide a la
   persona que escriba PERSONA (la palabra igual funciona).
 - Las consultas viven en la base del negocio (`src/consultas.js`): una abierta por charla, sin el texto de la charla.
+- **Sin «hola» repetido (ZL-153):** a la IA se le dice si la charla ya empezó (`saludado`: hay historial o un saludo
+  anterior, también después de elegir idioma o de ver el menú) y, si igual arranca con «¡Hola!», el código se lo saca
+  (`sinSaludoInicial`). Lo que se vende se nombra por lo que gana la persona («una página para tu heladería»), nunca «el
+  sitio web de X», y no se la manda a la página del negocio si no la pidió.
+- **El nombre (ZL-153):** «Nelson me llamo», «sí, soy Ana» o «dale, me llamo Luis» guardan solo el nombre.
+- **Quién escribió (ZL-153):** cada pedido y cada consulta de la app dice «Te escribió por WhatsApp: +54…» o «por
+  Instagram: @usuario», con «Copiar» y el botón para responder (`wa.me/<número>` o `ig.me/m/<usuario>`). El número sale
+  de la charla y el usuario de Instagram se le pide a Meta una vez y queda en la memoria de la persona. Nunca va en la
+  URL de la app ni en los avisos al celular.
 
 ## Charla completa (ZL-149)
 

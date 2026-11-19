@@ -13,6 +13,7 @@ import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../
 import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { HISTORIAL_MAX, HISTORIAL_MS } from './atencion.js';
 import { agregar } from './panel.js';
+import { sinSaludoInicial } from './negocio.js';
 import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, idiomaDelTexto, idiomasDelSaludo, idiomasQueHacen, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
@@ -214,6 +215,7 @@ export const PERFIL_ESTUDIO = { idiomas: IDIOMAS, textos, opcion, formatear: (c,
 const notaNoTexto = (ev) => (ev.kind === 'idioma' ? '[Eligió idioma]' : '[Mandó algo que no es texto: audio, foto o archivo]');
 
 /** Partes de un mensaje separadas por una línea en blanco, sin las vacías (ZL-145: el saludo fijo puede no ir). */
+const OPCION_IDIOMA_TXT = { es: 'Español', en: 'English', hr: 'Hrvatski' };
 const juntar = (...partes) => partes.filter((x) => String(x ?? '').trim()).join('\n\n');
 
 /**
@@ -228,6 +230,15 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   let estado = (memoria && (await memoria.get(ev.from))) || null;
   // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
   const unico = perfil.idiomas.length === 1 ? perfil.idiomas[0] : null;
+  // ZL-153: un negocio con varios idiomas tampoco pregunta: se toma el idioma del primer mensaje (o el principal si no
+  // se reconoce). Preguntar «¿en qué idioma charlamos?» a alguien que acaba de escribir en castellano no es natural.
+  // Si quiere otro, lo escribe en ese idioma o pide IDIOMA.
+  if (perfil.negocio === true && !unico && memoria && ev.kind === 'text' && !estado?.idioma && !estado?.ultimo && comando(ev.text) !== 'idioma' && !eligeIdioma(ev.text)) {
+    const del = (i) => (i && perfil.idiomas.includes(i) ? i : null);
+    const auto = del(esSaludo(ev.text)) ?? del(idiomaDelTexto(ev.text)) ?? perfil.idiomas[0];
+    estado = { ...(estado ?? {}), idioma: auto, humanoHasta: estado?.humanoHasta ?? 0 };
+    await memoria.put(ev.from, estado);
+  }
   // El nombre o la bandera de un idioma como mensaje entero vale como el botón (en Instagram no hay botones);
   // mientras se espera el idioma (ya saludamos y todavía no eligió), también 1, 2 o 3.
   const num = ev.kind === 'text' ? numeroSolo(ev.text) : null;
@@ -310,6 +321,8 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     const N = perfil.textos(nuevo);
     // Un negocio manda todo en un solo mensaje (Meta cobra cada mensaje desde el 1/10/2026).
     const send = neg ? [msgTexto(ev.from, juntar(N.bienvenida, N.quienes, N.menu), perfil.menuOpciones(nuevo))] : [msgTexto(ev.from, juntar(N.bienvenida, N.quienes)), msgTexto(ev.from, N.menu)];
+    // ZL-153: queda en la memoria corta, así la IA sabe que ya saludamos.
+    if (neg) await recordarCharla(memoria, ev.from, { ...estado, idioma: nuevo }, now, nuevo, neg, String(ev.text ?? OPCION_IDIOMA_TXT[nuevo] ?? nuevo), send[0].text.body);
     return { send, metrica: 'idioma', idioma: nuevo };
   }
 
@@ -318,7 +331,10 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     if (estado) await guardar({ ...estado, idioma: undefined, pedido: null, consulta: null, humanoHasta: estado.humanoHasta ?? 0 });
     return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   }
-  if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu, neg ? perfil.menuOpciones(idioma) : null)], metrica: 'menu' };
+  if (cmd === 'menu') {
+    if (neg) await recordar(ev.text, T.menu);
+    return { send: [msgTexto(ev.from, T.menu, neg ? perfil.menuOpciones(idioma) : null)], metrica: 'menu' };
+  }
   // Un audio: el asistente avisa que no escucha audios; una foto o un sticker, que lo escriba.
   if (ev.kind === 'otro') return { send: [msgTexto(ev.from, ev.audio && T.sinAudio ? T.sinAudio : T.soloTexto)], metrica: ev.audio ? 'audio' : 'otro' };
 
@@ -418,13 +434,17 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   const carrito = pedidos && memoria ? { carrito: await pedidos.contexto() } : {};
   // Un negocio (ZL-146): la IA ve los últimos mensajes y lo que sabemos de la persona, y sabe a qué cierre llevarla.
   // Sin pedidos por chat encendidos (o sin productos), el cierre es una consulta aunque la ficha diga «pedidos» (ZL-147).
-  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), objetivo: perfil.objetivo === 'pedidos' && !pedidos ? 'consultas' : perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
+  // ZL-153: si la charla ya empezó (el saludo, el menú o una respuesta), la IA no vuelve a saludar.
+  const saludado = Boolean(estado?.ultimo || historial(estado, now).length);
+  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), saludado, objetivo: perfil.objetivo === 'pedidos' && !pedidos ? 'consultas' : perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
   const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...contexto }) : await preguntar(texto, idioma, contexto);
   // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
   const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;
   const enIdioma = cambio ?? idioma;
   if (cambio && cambio !== idioma) await guardar({ ...(estado ?? {}), idioma: cambio, humanoHasta: estado?.humanoHasta ?? 0 });
   let respuesta = perfil.formatear(c, enIdioma);
+  // ZL-153: si la charla ya empezó y la persona no saludó, la respuesta no arranca con «¡Hola!» (aunque la IA lo diga).
+  if (neg && saludado && !saludo) respuesta = sinSaludoInicial(respuesta);
   // La IA propuso cambiar el carrito: el código lo valida, reserva y arma el resumen (ZL-139).
   let pedido = null;
   if (pedidos && memoria && c.pedido && !c.tope) {
@@ -499,7 +519,14 @@ const limpiarTexto = (t) => String(t ?? '').replace(CONTROL_RE, ' ').replace(/\s
  * número o un mensaje largo no son un nombre: → '' y la charla sigue normal.
  */
 export function nombreDeMensaje(texto) {
-  let t = limpiarTexto(texto).replace(/^(hola[,!.]?\s*)?(soy|me llamo|mi nombre es|es|i'?m|my name is|ja sam|zovem se)\s+/i, '').replace(/[.!]+$/, '').trim();
+  // ZL-153: «Nelson me llamo», «sí, soy Ana», «dale, me llamo Luis» → el nombre, sin las palabras de alrededor.
+  let t = limpiarTexto(texto)
+    .replace(/[.!,;:]+$/, '')
+    .replace(/^(si|sí|dale|ok|okey|claro|bueno|perfecto|listo|genial|de una)[,.!]?\s+/i, '')
+    .replace(/^(hola|buenas)[,!.]?\s*/i, '')
+    .replace(/^(soy|me llamo|mi nombre es|me dicen|es|i'?m|my name is|ja sam|zovem se)\s+/i, '')
+    .replace(/[,\s]+(me llamo|es mi nombre|soy yo|me dicen)$/i, '')
+    .replace(/[.!]+$/, '').trim();
   if (!t || t.length < 2 || t.length > 60 || /[?¿@\d]|https?:/i.test(t)) return '';
   if (t.split(' ').length > 4) return '';
   if (/^(si|sí|no|ok|dale|gracias|menu|menú|persona|cancelar|hola|buenas)$/i.test(t)) return '';

@@ -286,7 +286,8 @@ async function base() {
   const llamadas = [];
   const d = {
     ...n, now: T0,
-    fetch: async (url, o) => (enviados.push({ url, auth: o?.headers?.authorization, body: JSON.parse(o?.body ?? 'null') }), Response.json({})),
+    // Buscar el usuario de Instagram (ZL-153) es una lectura: no cuenta como mensaje enviado.
+    fetch: async (url, o) => (String(url).includes('?fields=username') ? Response.json({}) : (enviados.push({ url, auth: o?.headers?.authorization, body: JSON.parse(o?.body ?? 'null') }), Response.json({}))),
     preguntar: async () => ({ respuesta: 'Hacemos webs.', secciones: [], enlaces: [], escribirnos: false, fuera_de_tema: false, notas: [] }),
     preguntarNegocio: (f) => async (t) => (llamadas.push([f.nombre, t]), { respuesta: `Respuesta de ${f.nombre}.`, persona: false, fuera_de_tema: false, vacia: false, notas: [] }),
   };
@@ -458,6 +459,12 @@ test('nombreDeMensaje: un nombre sí; una pregunta, un número o un mensaje larg
   assert.equal(nombreDeMensaje('Soy María José López.'), 'María José López');
   assert.equal(nombreDeMensaje('me llamo luis'), 'Luis');
   assert.equal(nombreDeMensaje("I'm John"), 'John');
+  // ZL-153: lo que pasó en una charla real («¡Listo, Nelson Me Llamo!»).
+  assert.equal(nombreDeMensaje('Nelson me llamo'), 'Nelson');
+  assert.equal(nombreDeMensaje('sí, soy Ana'), 'Ana');
+  assert.equal(nombreDeMensaje('dale, me llamo luis'), 'Luis');
+  assert.equal(nombreDeMensaje('Hola, soy Nelson Zalazar!'), 'Nelson Zalazar');
+  assert.equal(nombreDeMensaje('Esteban'), 'Esteban', '«es» al principio de un nombre no se corta');
   for (const no of ['¿La hacen sin TACC?', '3415551234', 'sí', 'quiero saber si tienen torta de limón para mañana', 'a@b.com', '']) assert.equal(nombreDeMensaje(no), '', no);
 });
 

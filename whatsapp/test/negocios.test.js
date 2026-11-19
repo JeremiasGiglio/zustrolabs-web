@@ -62,6 +62,7 @@ async function armar() {
       if (String(url) === `https://${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [jwk] });
       enviados.push({ url: String(url), auth: o?.headers?.authorization, clave: o?.headers?.['X-API-Key'], metodo: o?.method, body: JSON.parse(o?.body ?? 'null') });
       if (String(url).endsWith('/webhookEndpoints')) return Response.json({ id: 'we_1', secret: FIRMA_FALSA });
+      if (String(url).includes('?fields=username')) return Response.json({ username: 'cliente.prueba' });
       return Response.json({});
     },
     preguntarNegocio: (f, cat) => async (texto) => {
@@ -195,17 +196,15 @@ test('la IA consulta el catálogo de SU negocio antes de responder, y el tope di
   const dos = FICHA.replace('- Idioma: castellano', '- Idioma: castellano, inglés') +
     '\n## Saludo (inglés)\n\nHi from the bakery.\n\n## Menú (inglés)\n\n### 1. Bread\nFresh.\n\n### 2. Cakes\nTo order.\n\n### 3. Hours\nMon to Sat.\n';
   const probar = async (m, estado) => (await pedir('equipo@example.com', 'POST', `/api/n/${a.id}/probar`, { texto: dos, mensajes: [m], estado })).datos;
+  // ZL-153: «hello» arranca en inglés sin preguntar el idioma.
   const q1 = await probar('hello', null);
-  assert.equal(q1.charla[0].que, 'pide_idioma');
-  assert.deepEqual(q1.estado, { humanoHasta: 0 });
-  const q2 = await probar('2', q1.estado);
-  assert.equal(q2.charla[0].que, 'idioma');
-  assert.match(q2.charla[0].respuestas.join('\n'), /Hi from the bakery[\s\S]*Bread/);
-  assert.equal(q2.estado.idioma, 'en');
-  const q3 = await probar('2', q2.estado);
+  assert.equal(q1.charla[0].que, 'saludo');
+  assert.match(q1.charla[0].respuestas.join('\n'), /Hi from the bakery[\s\S]*Bread/);
+  assert.equal(q1.estado.idioma, 'en');
+  const q3 = await probar('2', q1.estado);
   assert.match(q3.charla[0].respuestas[0], /To order/, 'con el idioma ya elegido, 2 es la opción del menú');
   // Un estado raro se ignora (no rompe la prueba).
-  assert.equal((await probar('hello', { idioma: 'xx', humanoHasta: 'mucho' })).charla[0].que, 'pide_idioma');
+  assert.equal((await probar('hello', { idioma: 'xx', humanoHasta: 'mucho' })).charla[0].que, 'saludo');
 
   // Un mensaje real de Instagram a la cuenta de La Espiga: consulta su catálogo y responde con su token.
   const mensaje = async (cuenta, text, quien = '17841400000000009') => {
@@ -215,6 +214,18 @@ test('la IA consulta el catálogo de SU negocio antes de responder, y el tope di
   };
   await mensaje(CUENTA_A, '¿Tienen medialunas?');
   assert.equal(ia.at(-1).texto, '¿Tienen medialunas?');
+  // ZL-153: el usuario de Instagram de la persona queda en su memoria (una sola vez) y la app lo muestra.
+  const QUIEN_IG = `ig:${CUENTA_A}.17841400000000009`;
+  assert.equal((await d.memoria.get(QUIEN_IG)).usuario, 'cliente.prueba');
+  const busquedas = () => enviados.filter((e) => e.url.includes('?fields=username')).length;
+  const yaBuscado = busquedas();
+  await mensaje(CUENTA_A, '¿Y a qué hora abren?');
+  assert.equal(busquedas(), yaBuscado, 'con el usuario ya guardado no se vuelve a pedir a Meta');
+  await d.catalogo(a.id).ejecutar('crearConsulta', [QUIEN_IG, { tipo: 'consulta', nombre: 'Ana', canal: 'ig' }]);
+  await d.catalogo(a.id).ejecutar('crearConsulta', [`ig:${CUENTA_A}.17841400000000777`, { tipo: 'persona', canal: 'ig' }]);
+  const cs = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/consultas`)).datos.consultas;
+  assert.deepEqual(cs.find((c) => c.charla === QUIEN_IG).contacto, { canal: 'instagram', texto: '@cliente.prueba', enlace: 'https://ig.me/m/cliente.prueba' });
+  assert.equal(cs.find((c) => c.charla !== QUIEN_IG).contacto.enlace, 'https://www.instagram.com/direct/inbox/', 'sin usuario guardado, la bandeja de Instagram');
   assert.match(ia.at(-1).catalogo, /Medialunas/);
   const r1 = enviados.filter((e) => e.url.endsWith('/me/messages'));
   assert.ok(r1.length && r1.every((e) => e.auth === 'Bearer tok-a'));
@@ -224,7 +235,7 @@ test('la IA consulta el catálogo de SU negocio antes de responder, y el tope di
   assert.doesNotMatch(ia.at(-1).catalogo, /Medialunas/);
 
   // Tope por negocio: con limiteDia 10, la 11.ª respuesta del día de La Espiga ya no usa IA; Otra Tienda sigue.
-  for (let i = 0; i < 9; i++) await mensaje(CUENTA_A, `¿Hay pan número ${i}?`, `1784140000000010${i}`);
+  for (let i = 0; i < 8; i++) await mensaje(CUENTA_A, `¿Hay pan número ${i}?`, `1784140000000010${i}`);
   const antes = ia.length;
   await mensaje(CUENTA_A, '¿Y facturas?', '17841400000000200');
   assert.equal(ia.length, antes, 'pasado el tope no llama a la IA');
@@ -434,6 +445,9 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   assert.deepEqual(lista.cuenta, { pendiente: 1 });
   assert.equal(lista.encendidos, true);
   assert.deepEqual(lista.pedidos[0].items.map((i) => [i.nombre, i.cantidad, i.subtotal]), [['Pan francés', 3, 7500]]);
+  // ZL-153: la tarjeta dice por dónde escribió y su número, para encontrarlo rápido.
+  assert.deepEqual(lista.pedidos[0].contacto, { canal: 'whatsapp', texto: '+5493410000009', enlace: 'https://wa.me/5493410000009' });
+  assert.deepEqual((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos/1`)).datos.contacto, lista.pedidos[0].contacto);
   assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/pedidos`)).status, 404);
   assert.equal((await pedir('otro@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'aceptado' })).status, 404);
   assert.deepEqual((await pedir('otro@example.com', 'GET', `/api/n/${b.id}/pedidos`)).datos.pedidos, []);
