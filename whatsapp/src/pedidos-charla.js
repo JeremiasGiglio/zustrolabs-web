@@ -9,6 +9,17 @@
 
 import { normalizar, pesos } from './catalogo.js';
 
+// ZL-154: cómo se le cuenta a la IA el estado de un pedido de la persona (para responder «¿ya salió mi pedido?»).
+const ESTADO_PARA_IA = {
+  pendiente: 'esperando que el negocio lo confirme',
+  aceptado: 'confirmado por el negocio, todavía sin pagar ni entregar',
+  pagado: 'pagado, falta entregarlo',
+  entregado: 'entregado',
+  rechazado: 'el negocio no lo pudo tomar',
+  cancelado: 'cancelado',
+  vencido: 'se canceló solo porque nadie lo confirmó a tiempo',
+};
+
 const T = {
   es: {
     titulo: (min) => `Tu pedido (lo guardo ${min} minutos):`,
@@ -128,6 +139,33 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
   };
 
   return {
+    /**
+     * ZL-154: los últimos pedidos de esta persona, para que la IA los recuerde (qué pidió, en qué estado está, «lo mismo
+     * que la otra vez»). Solo lectura: la IA nunca los cambia. Sin la dirección ni otros datos de la persona. →
+     * {texto, montos} (los totales pasan a ser montos que puede nombrar) o null si no tiene.
+     */
+    async compras(now = Date.now()) {
+      const lista = await op('comprasDe', [charla, 3]).catch(() => null);
+      if (!lista?.length) return null;
+      const zona = ajustes?.zona || 'America/Argentina/Buenos_Aires';
+      const dia = (t) => { try { return new Intl.DateTimeFormat('es-AR', { timeZone: zona, day: '2-digit', month: '2-digit' }).format(new Date(t)); } catch { return ''; } };
+      const cuando = (t) => { try { return new Intl.DateTimeFormat('es-AR', { timeZone: zona, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t)); } catch { return ''; } };
+      const montos = [];
+      const lineas = lista.map((p) => {
+        const estado = ESTADO_PARA_IA[p.estado] ?? p.estado;
+        const vence = p.vence && p.vence > now && ['pendiente', 'aceptado'].includes(p.estado) ? (p.estado === 'pendiente' ? `; el negocio lo confirma antes del ${cuando(p.vence)}` : `; guardado hasta el ${cuando(p.vence)}`) : '';
+        const entrega = p.comprador?.entrega === 'envio' ? 'con envío' : p.comprador?.entrega === 'retiro' ? 'retira en el local' : '';
+        const items = p.items.map((i) => `[ref ${i.id}] ${i.cantidad} × ${i.nombre}`).join(', ');
+        let total = '';
+        if (precios && !p.sinPrecio && Number.isFinite(p.total)) {
+          total = ` · total ${pesos(p.total)}`;
+          montos.push(pesos(p.total).replace(/\D/g, ''), String(p.total).replace(/\D/g, ''));
+        }
+        return `- Pedido N.º ${p.numero ?? '?'} del ${dia(p.creado)} · ${estado}${vence}${entrega ? ` · ${entrega}` : ''} · ${items}${total}`;
+      });
+      return { texto: lineas.join('\n'), montos: [...new Set(montos.filter(Boolean))] };
+    },
+
     /** Lo que la IA tiene que saber antes de responder: el carrito actual, con la ref de cada producto. */
     async contexto() {
       const p = await op('carritoDe', [charla]).catch(() => null);

@@ -142,6 +142,12 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 - **Memoria corta:** la IA ve los últimos 8 mensajes de las últimas 48 h y, entre `<cliente>`, el nombre y un resumen de
   la persona (90 días). Quien ya conocemos y saluda no recibe el menú fijo: la IA lo saluda y retoma lo que charlaron.
   En un pedido, si ya sabemos el nombre, no se lo vuelve a preguntar. BORRAR lo borra todo.
+- **Lo que ya pidió (ZL-154):** antes de responder, la IA recibe entre `<compras>` los últimos 3 pedidos de esa persona
+  en este negocio (número, día, estado en palabras, retiro o envío, productos con su ref y, con «Precios: sí», el total)
+  y su consulta abierta. Así contesta «¿ya salió mi pedido?» con el estado real y arma «lo mismo que la otra vez» con
+  las refs de antes (el código revisa el stock de hoy). Es solo lectura: nunca cambia ni cancela un pedido (eso pasa a
+  una persona). No lleva la dirección, el nombre del comprador ni el motivo de un rechazo, y nunca pedidos de otra
+  persona. Sale de la base del negocio (`comprasDe` en `src/pedidos.js`, `abierta()` en `src/consultas.js`).
 - **Objetivo de la ficha:** `pedidos` (arma el pedido y el negocio lo confirma) o `consultas` (cuando la persona quiere
   avanzar, la IA marca `avanzar`, el código pide el nombre una sola vez y registra la consulta). **Cómo vendemos**: las
   pautas del negocio para guiar la venta.

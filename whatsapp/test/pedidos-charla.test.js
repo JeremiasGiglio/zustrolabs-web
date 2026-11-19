@@ -27,7 +27,12 @@ function armar({ precios = true, ajustes = null } = {}) {
   const vistos = [];
   // La «IA»: según el mensaje, propone el carrito completo con refs (como lo haría la de verdad).
   const preguntar = async (texto, idioma, opts = {}) => {
-    vistos.push({ texto, carrito: opts.carrito });
+    vistos.push({ texto, carrito: opts.carrito, compras: opts.compras });
+    // ZL-154: «lo mismo que la otra vez» → las refs y cantidades de su último pedido (como lo haría la de verdad).
+    if (/lo mismo/.test(texto) && opts.compras) {
+      const linea = opts.compras.texto.split('\n')[0];
+      return { respuesta: '¡Dale! Te armo lo mismo.', persona: false, fuera_de_tema: false, vacia: false, notas: [], pedido: { cambia: true, items: [...linea.matchAll(/\[ref (p[a-z0-9]+)\] (\d+) ×/g)].map((m) => ({ ref: m[1], cantidad: Number(m[2]) })) } };
+    }
     const r = (pedido, respuesta = '¡Dale! Te lo agrego.') => ({ respuesta, persona: false, fuera_de_tema: false, vacia: false, notas: [], pedido });
     if (/2 kilos de pan/.test(texto)) return r({ cambia: true, items: [{ ref: pan.id, cantidad: 2 }] });
     if (/y la torta/.test(texto)) return r({ cambia: true, items: [{ ref: pan.id, cantidad: 2 }, { ref: torta.id, cantidad: 1 }] });
@@ -217,4 +222,45 @@ test('«Cómo vendés» (ZL-149): con solo retiro no se pregunta la entrega; con
   await caro('quiero 2 kilos de pan');
   assert.equal((await caro('si')).metrica, 'pedido_nombre');
   assert.equal((await caro('Carla')).metrica, 'pedido_direccion', 'solo envío: pide la dirección');
+});
+
+test('ZL-154: la IA ve los últimos 3 pedidos de ESA persona, con su estado y sus refs, y arma «lo mismo que la otra vez»', async () => {
+  const { c, pan, torta, charlar, reloj, vistos, stock } = armar({ ajustes: { zona: 'America/Argentina/Buenos_Aires' } });
+  const pedir = (de, items, datos = { nombre: 'Ana', entrega: 'retiro' }) => { c.carrito(de, items, { canal: 'wa' }); return c.confirmar(de, datos); };
+  pedir(ANA, [{ id: pan.id, cantidad: 1 }]);
+  reloj.t += 3_600_000;
+  const segundo = pedir(ANA, [{ id: pan.id, cantidad: 2 }], { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 123' });
+  c.cambiarEstado(segundo.numero ?? segundo.pedido?.numero ?? 2, 'rechazado', 'duena@example.com', { motivo: 'sin horno' });
+  reloj.t += 3_600_000;
+  pedir(BETO, [{ id: torta.id, cantidad: 1 }], { nombre: 'Beto', entrega: 'retiro' });
+  reloj.t += 3_600_000;
+  pedir(ANA, [{ id: pan.id, cantidad: 2 }]);
+  reloj.t += 3_600_000;
+  const ultimo = pedir(ANA, [{ id: pan.id, cantidad: 3 }]);
+  const n = ultimo.numero ?? ultimo.pedido?.numero;
+  for (const e of ['aceptado', 'entregado']) c.cambiarEstado(n, e, 'duena@example.com', { horas: 24 });
+
+  const h = pedidosDeCharla({ cat: { ejecutar: async (op, args) => ejecutarCatalogo(c, op, args) }, charla: ANA, canal: 'wa', negocio: FICHA.nombre, precios: true, ajustes: { zona: 'America/Argentina/Buenos_Aires' } });
+  const k = await h.compras(reloj.t);
+  const lineas = k.texto.split('\n');
+  assert.equal(lineas.length, 3, 'solo los últimos 3');
+  assert.match(lineas[0], new RegExp(`^- Pedido N\\.º ${n} del \\d\\d/\\d\\d · entregado · retira en el local · \\[ref ${pan.id}\\] 3 × Pan francés · total \\$ 7\\.500$`));
+  assert.match(lineas[1], /esperando que el negocio lo confirme; el negocio lo confirma antes del/);
+  assert.match(lineas[2], /el negocio no lo pudo tomar · con envío/);
+  assert.doesNotMatch(k.texto, /Torta|Beto|Calle|Ana|sin horno/, 'nada de otra persona, ni la dirección, ni el nombre, ni el motivo');
+  assert.ok(k.montos.includes('7500'));
+  // Sin precios en la ficha, no van los totales (ni pasan a ser montos permitidos).
+  const sinPrecios = pedidosDeCharla({ cat: { ejecutar: async (op, args) => ejecutarCatalogo(c, op, args) }, charla: ANA, canal: 'wa', negocio: FICHA.nombre, precios: false });
+  const k2 = await sinPrecios.compras(reloj.t);
+  assert.doesNotMatch(k2.texto, /total|\$/);
+  assert.deepEqual(k2.montos, []);
+  // Quien nunca pidió: nada.
+  assert.equal(await pedidosDeCharla({ cat: { ejecutar: async (op, args) => ejecutarCatalogo(c, op, args) }, charla: 'yc:5493410000001:5493410000007', canal: 'wa', negocio: FICHA.nombre, precios: true }).compras(reloj.t), null);
+
+  // En la charla: la IA lo ve y «lo mismo que la otra vez» arma el carrito con el stock de hoy.
+  const antes = stock(pan).reservado;
+  const r = await charlar(ANA)('quiero lo mismo que la otra vez');
+  assert.match(vistos.at(-1).compras.texto, /Pedido N\.º \d+ del/);
+  assert.match(r.texto, /• 3 × Pan francés — \$ 7\.500/);
+  assert.equal(stock(pan).reservado, antes + 3);
 });

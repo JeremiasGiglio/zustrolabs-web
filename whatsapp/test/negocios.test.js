@@ -419,7 +419,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   const vio = [];
   d.preguntarNegocio = (f, cat) => async (texto, idioma, opts = {}) => {
     const c = await cat(texto, { refs: opts.carrito !== undefined });
-    vio.push({ catalogo: c.texto, carrito: opts.carrito });
+    vio.push({ catalogo: c.texto, carrito: opts.carrito, compras: opts.compras });
     const ref = /\[ref (p[a-z0-9]+)\] Pan francés/.exec(c.texto)?.[1];
     return { respuesta: '¡Dale!', persona: false, fuera_de_tema: false, vacia: false, notas: [], ...(/pan/.test(texto) && { pedido: { cambia: true, items: [{ ref, cantidad: 3 }] } }) };
   };
@@ -440,6 +440,10 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   await escribir('1');
   t = await escribir('Ana');
   assert.match(t, /Tu pedido N\.º 1 quedó registrado/);
+  assert.equal(vio.at(-1).compras, undefined, 'antes de confirmar no había pedidos');
+  // ZL-154: la IA ve lo que pidió esta persona y en qué estado está, para responder «¿ya salió mi pedido?».
+  await escribir('¿ya salió mi pedido?');
+  assert.match(vio.at(-1).compras.texto, /^- Pedido N\.º 1 del \d\d\/\d\d · esperando que el negocio lo confirme; el negocio lo confirma antes del \d\d\/\d\d,? \d\d:\d\d · retira en el local · \[ref p[a-z0-9]+\] 3 × Pan francés · total \$ 7\.500$/);
   // El panel del negocio: lo ve; otro negocio no.
   let lista = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos;
   assert.deepEqual(lista.cuenta, { pendiente: 1 });
@@ -479,6 +483,12 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   assert.deepEqual([p.stock, p.reservado], [7, 0], 'entregado: el stock bajó de 10 a 7');
   const hist = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos/1`)).datos;
   assert.deepEqual(hist.eventos.map((x) => [x.estado, x.quien]).slice(-3), [['aceptado', 'duena@example.com'], ['pagado', 'duena@example.com'], ['entregado', 'duena@example.com']]);
+  // ZL-154: después de entregado, la IA lo sabe (y puede nombrar ese total); nunca ve la dirección ni el número.
+  await escribir('¿me llegó todo bien?');
+  const compras = vio.at(-1).compras;
+  assert.match(compras.texto, /^- Pedido N\.º 1 del \d\d\/\d\d · entregado · retira en el local · \[ref p[a-z0-9]+\] 3 × Pan francés · total \$ 7\.500$/);
+  assert.ok(compras.montos.includes('7500'));
+  assert.doesNotMatch(compras.texto, /Ana|Calle|5493410000009/);
   // Con los pedidos apagados, el asistente responde pero no arma pedidos.
   await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { pedidos: false });
   t = await escribir('quiero 3 kilos de pan');

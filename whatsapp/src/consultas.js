@@ -107,6 +107,15 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
  */
 export function consultasDeCharla({ cat, charla, canal }) {
   return {
+    /** ZL-154: la consulta abierta de esta persona, en una línea para la IA (o null). Solo lectura. */
+    async abierta() {
+      const r = await cat.ejecutar('consultaAbierta', [charla]).catch(() => null);
+      const k = r?.ok ? r.valor : null;
+      if (!k) return null;
+      const estado = k.estado === 'atendiendo' ? 'alguien del negocio la está atendiendo' : 'el negocio todavía no la respondió';
+      const que = k.interes || k.resumen;
+      return `- Consulta N.º ${k.numero} (${k.tipo === 'persona' ? 'pidió hablar con el negocio' : 'quiere avanzar'}; ${estado})${que ? `: ${que}` : ''}`;
+    },
     /** → {numero, nueva} o null si no se pudo (la charla sigue igual: nunca se corta por esto). */
     async registrar(datos) {
       const r = await cat.ejecutar('crearConsulta', [charla, { ...datos, canal }]).catch(() => null);
