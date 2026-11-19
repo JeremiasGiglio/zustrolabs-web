@@ -107,7 +107,7 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .grafico .col{flex:1 1 0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0;position:relative}
 .grafico .barra-dato{width:100%;max-width:24px;background:var(--rojo);border-radius:4px 4px 0 0;min-height:0}
 .grafico .col:hover .barra-dato{opacity:.8}.grafico .valor{position:absolute;top:-1.3rem;font-size:.75rem;font-weight:600;white-space:nowrap}
-.ejes{display:flex;gap:2px;font-size:.72rem;color:var(--gris);margin-top:.25rem}.ejes span{flex:1 1 0;text-align:center;min-width:0;overflow:hidden}
+.ejes{display:flex;gap:2px;font-size:.72rem;color:var(--gris);margin-top:.25rem}.ejes span{flex:1 1 0;text-align:center;min-width:0;overflow:visible;white-space:nowrap;display:flex;justify-content:center}
 .titulo-reporte{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between}
 @media print{.top,.tabs,.no-imprimir,.toast{display:none!important}body{background:#fff}main{max-width:none;padding:0}.caja,.tarjeta,.resumen div{break-inside:avoid}}
 @media (min-width:700px){.prod{grid-template-columns:64px 1fr}.foto{width:64px;height:64px}}`;
@@ -441,7 +441,7 @@ function app() {
         h('div', { class: 'fila' },
           h('span', { class: 'precio' }, p.precio === null ? 'Sin precio' : pesos(p.precio) + (p.unidad ? ' / ' + p.unidad : '')),
           ctrl,
-          p.reservado ? h('span', { class: 'chip alerta' }, p.reservado + ' reservadas') : null,
+          p.reservado ? h('span', { class: 'chip alerta' }, p.reservado + (p.reservado === 1 ? ' reservada' : ' reservadas')) : null,
           disp !== null && disp <= 0 && p.activo ? h('span', { class: 'chip mal' }, 'Agotado') : null)));
   }
 
