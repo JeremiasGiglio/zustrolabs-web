@@ -30,7 +30,7 @@ const T = {
     vencido: (min) => `Tu pedido se venció (lo guardo ${min} minutos sin confirmar). Decime de nuevo qué querés y lo armo.`,
     cancelado: 'Listo, cancelé tu pedido.',
     nada: 'No tenés un pedido armado. Decime qué querés y lo armo.',
-    error: 'No pude registrar el pedido. Probá de nuevo en un rato o escribí PERSONA.',
+    error: 'Uy, no pude registrar el pedido 😓 ¿Probamos de nuevo en un ratito?',
   },
   en: {
     titulo: (min) => `Your order (held for ${min} minutes):`,
@@ -52,7 +52,7 @@ const T = {
     vencido: (min) => `Your order expired (I hold it ${min} minutes without confirmation). Tell me again what you want.`,
     cancelado: 'OK, I cancelled your order.',
     nada: 'You have no order yet. Tell me what you want.',
-    error: 'I could not place the order. Please try again later or write PERSONA.',
+    error: 'Oops, I could not place the order 😓 Shall we try again in a moment?',
   },
   hr: {
     titulo: (min) => `Vaša narudžba (čuvam je ${min} minuta):`,
@@ -74,7 +74,7 @@ const T = {
     vencido: (min) => `Narudžba je istekla (čuvam je ${min} minuta bez potvrde). Recite mi ponovno što želite.`,
     cancelado: 'U redu, otkazao sam narudžbu.',
     nada: 'Još nemate narudžbu. Recite mi što želite.',
-    error: 'Nisam mogao zaprimiti narudžbu. Pokušajte kasnije ili napišite PERSONA.',
+    error: 'Ups, nisam mogao zaprimiti narudžbu 😓 Pokušamo ponovno za koji trenutak?',
   },
 };
 export const textosPedido = (idioma) => T[idioma] ?? T.es;
@@ -127,7 +127,7 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios }) {
      * Antes de la IA: los pasos fijos del pedido. Devuelve {texto, pedido (el nuevo estado de la charla), metrica,
      * numero?} o null si el mensaje no es parte del pedido (sigue la IA).
      */
-    async antes(texto, estadoPedido, idioma) {
+    async antes(texto, estadoPedido, idioma, { nombre = '' } = {}) {
       const t = textosPedido(idioma);
       const m = normalizar(texto);
       const paso = estadoPedido?.paso ?? null;
@@ -153,6 +153,12 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios }) {
       if (paso === 'entrega') {
         const entrega = RETIRO.test(m) ? 'retiro' : ENVIO.test(m) ? 'envio' : null;
         if (!entrega) return { texto: t.entregaOtraVez, pedido: estadoPedido, metrica: 'pedido_entrega' };
+        // Si ya sabemos su nombre (memoria del contacto, ZL-146), no se lo volvemos a preguntar.
+        const conocido = String(nombre ?? '').trim().slice(0, 80);
+        if (conocido) {
+          if (entrega === 'envio') return { texto: t.direccion, pedido: { paso: 'direccion', entrega, nombre: conocido }, metrica: 'pedido_direccion' };
+          return this.cerrar({ entrega, nombre: conocido }, idioma);
+        }
         return { texto: t.nombre, pedido: { paso: 'nombre', entrega }, metrica: 'pedido_nombre' };
       }
       const limpio = String(texto ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim();

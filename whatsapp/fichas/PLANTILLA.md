@@ -5,8 +5,10 @@
 > - Las líneas que empiezan con «>» como esta son ayuda: el asistente no las lee. Podés dejarlas o borrarlas.
 > - Todo lo que diga **[COMPLETAR …]** hay que reemplazarlo. Mientras quede alguno, la ficha se puede revisar y probar,
 >   pero no activar.
-> - El asistente responde **solo** con lo que está acá. Lo que no esté escrito, no lo sabe: dice que no sabe y ofrece
->   hablar con una persona. Si querés que sepa algo, escribilo.
+> - El asistente responde **solo** con lo que está acá. Lo que no esté escrito, no lo sabe: lo consulta con el equipo
+>   del negocio (le pasa la charla solo). Si querés que sepa algo, escribilo.
+> - El asistente guía cada charla hasta el cierre (el pedido o la consulta) y nunca le pide a la persona que escriba
+>   PERSONA: el negocio solo recibe lo que tiene que confirmar o responder, en «Pedidos y consultas».
 > - Precios, teléfonos, links y correos: el asistente solo puede decir los que estén escritos en esta ficha, tal cual.
 >   Si inventa uno, el sistema saca esa oración antes de mandarla.
 > - Cargarla: `.\instagram-cliente.ps1 -Ficha .\fichas\clientes\<archivo>.md` (revisa, te deja probar y la sube).
@@ -17,7 +19,10 @@
 > inglés»): el primero es el principal y, con varios, el primer mensaje pregunta en cuál seguir (ver «Varios idiomas»
 > al final). Trato: vos, tú o usted (para el castellano).
 > Emojis: sí o no. Precios: «sí» si el asistente puede decir los precios escritos en esta ficha; «no» si nunca.
-> Horas de pausa: cuánto se calla el asistente después de que alguien escribe PERSONA (de 1 a 72).
+> Horas de pausa: cuánto se calla el asistente después de pasarle la charla a alguien del negocio (de 1 a 72).
+> Objetivo: a qué cierre lleva la charla. «pedidos» si vende productos del catálogo por chat (arma el pedido y el
+> negocio lo confirma); «consultas» si vende servicios, turnos o presupuestos (junta lo que hace falta y le deja la
+> consulta al negocio con el nombre y un resumen).
 > Cuándo responde una persona: aparece en el mensaje que recibe quien pide una persona. Con varios idiomas, una línea
 > por idioma: «- Cuándo responde una persona (inglés): Monday to Saturday, 9 to 19» (sin ella, ese idioma no lo dice).
 
@@ -27,6 +32,7 @@
 - Emojis: sí
 - Precios: no
 - Horas de pausa: 12
+- Objetivo: consultas
 - Cuándo responde una persona: [COMPLETAR por ejemplo «de lunes a sábado de 9 a 19»]
 
 ## Saludo
@@ -51,6 +57,13 @@
 
 ### 3. 📍 [COMPLETAR título, por ejemplo «Horarios y dirección»]
 [COMPLETAR respuesta]
+
+## Cómo vendemos
+
+> Opcional, pero es lo que más mejora las ventas. Cómo atendería el mejor vendedor del negocio: qué preguntar primero
+> para entender qué necesita la persona, qué recomendar en cada caso y qué ofrecer además. Frases cortas, una por línea.
+> Ejemplo: «Antes de recomendar una torta, preguntá para cuántas personas y para qué día.» «Si lleva pan, ofrecé las
+> facturas del día.»
 
 ## Lo que sabe el asistente
 
@@ -79,9 +92,9 @@
 
 ## Pasar a una persona cuando
 
-> Además de cuando la persona lo pide o hay un reclamo (eso ya lo hace siempre).
+> Además de cuando la persona lo pide, hay un reclamo o el asistente no tiene la respuesta (eso ya lo hace siempre).
+> Pedidos y consultas NO van acá: el asistente los cierra solo y te los deja para confirmar.
 
-- Quiere hacer un pedido o una reserva.
 - Pregunta por pedidos grandes, eventos o mayoristas.
 
 <!--

@@ -4,6 +4,7 @@
 // No importa nada de Cloudflare: `sql` es ctx.storage.sql del Durable Object, o un adaptador de node:sqlite en los tests.
 
 import { operacionesPedidos } from './pedidos.js';
+import { operacionesConsultas } from './consultas.js';
 
 export const MAX_PRODUCTOS = 5000;
 export const MAX_IMPORTAR = 3000;
@@ -157,9 +158,11 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
   }
 
   const pedidos = operacionesPedidos({ sql, transaccion, reloj, porId, anotar, ErrorCatalogo });
+  const consultas = operacionesConsultas({ sql, reloj, ErrorCatalogo });
 
   return {
     ...pedidos,
+    ...consultas,
 
     resumen() {
       const r = una(`SELECT COUNT(*) AS total, SUM(activo) AS activos,
@@ -395,7 +398,9 @@ export function tipoDeImagen(b) {
 /** Operaciones que se pueden pedir al catálogo desde afuera (el Worker, por RPC). */
 export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
   // Pedidos (ZL-139): pedidos.js.
-  'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido'];
+  'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
+  // Consultas (ZL-146): consultas.js.
+  'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta'];
 
 /**
  * Corre una operación y devuelve {ok: true, valor} o {ok: false, error, campo}: los errores para mostrar cruzan el RPC

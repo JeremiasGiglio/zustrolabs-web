@@ -7,7 +7,7 @@ adelante, por WhatsApp). Vive en el Worker `zustrolabs-whatsapp`, igual que el p
 
 | Pestaña | Quién | Qué |
 |---|---|---|
-| Pedidos | el negocio (si los tiene encendidos) y el equipo | Los pedidos que arma el asistente por WhatsApp e Instagram: Nuevos, Aceptados, Pagados, Entregados. Aceptar (con cuánto se guarda sin pagar), Rechazar o Cancelar (con motivo, dos toques), Marcar pagado, Entregado. Cada cambio le llega al comprador por su chat. Mira cada 20 segundos; con «Activar sonido y avisos», suena y avisa cuando llega uno nuevo (ZL-139). |
+| Pedidos y consultas | el negocio y el equipo | **Consultas** (ZL-146): lo que el asistente le pasa al negocio cuando la persona quiere avanzar (presupuesto, contratar, agendar) o necesita a alguien (lo pidió, un reclamo o algo que la ficha no dice), con el nombre, un resumen y dónde responder; La atiendo, Ganada, Perdida. **Pedidos** (si están encendidos): los pedidos que arma el asistente por WhatsApp e Instagram: Nuevos, Aceptados, Pagados, Entregados. Aceptar (con cuánto se guarda sin pagar), Rechazar o Cancelar (con motivo, dos toques), Marcar pagado, Entregado. Cada cambio le llega al comprador por su chat. Mira cada 20 segundos; con «Activar sonido y avisos», suena y avisa cuando llega uno nuevo (ZL-139). |
 | Productos | el negocio y el equipo | Alta y edición (nombre, código, categoría, descripción, precio, unidad, stock, foto), a la venta o pausado, stock con − y +, búsqueda, exportar a Excel (CSV con «;», como lo abre Excel en Argentina). |
 | Importar Excel | el negocio y el equipo | .xlsx o .csv leídos en el navegador (sin librerías). Reconoce las columnas por el título, se pueden corregir, **muestra qué va a pasar** antes de guardar, y actualiza por código o por nombre, o reemplaza (lo que no viene se **pausa**, no se borra). Hasta 3.000 filas por vez. Planilla modelo para bajar. |
 | Historial | el negocio y el equipo | Cada cambio de stock, precio o producto, con el correo de quién lo hizo y cuándo. |
@@ -129,6 +129,20 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 - El stock no puede bajar de lo reservado, ni se puede borrar un producto reservado (se pausa).
 - Las reservas vencen al consultar cualquier cosa del catálogo y con una alarma del Durable Object.
 - La charla de prueba de la pestaña Asistente no arma pedidos (no reserva stock de verdad).
+
+## Charla natural y cierre (ZL-146)
+
+- **Un mensaje por respuesta** (Meta cobra cada mensaje): saludo, presentación y menú van juntos.
+- **Memoria corta:** la IA ve los últimos 8 mensajes de las últimas 48 h y, entre `<cliente>`, el nombre y un resumen de
+  la persona (90 días). Quien ya conocemos y saluda no recibe el menú fijo: la IA lo saluda y retoma lo que charlaron.
+  En un pedido, si ya sabemos el nombre, no se lo vuelve a preguntar. BORRAR lo borra todo.
+- **Objetivo de la ficha:** `pedidos` (arma el pedido y el negocio lo confirma) o `consultas` (cuando la persona quiere
+  avanzar, la IA marca `avanzar`, el código pide el nombre una sola vez y registra la consulta). **Cómo vendemos**: las
+  pautas del negocio para guiar la venta.
+- **La persona del negocio entra sola** cuando la pide, hay un reclamo, la IA no tiene la respuesta o se llegó al tope
+  del día: el asistente se calla las horas de pausa y la charla queda en «Pedidos y consultas». Nunca se le pide a la
+  persona que escriba PERSONA (la palabra igual funciona).
+- Las consultas viven en la base del negocio (`src/consultas.js`): una abierta por charla, sin el texto de la charla.
 
 ## Lo que falta (próximas etapas)
 

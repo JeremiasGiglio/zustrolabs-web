@@ -66,15 +66,19 @@ test('perfil: saludo, presentación y menú del negocio; trato de usted y sin em
   assert.equal(T.quienes, ficha.saludo);
   assert.match(T.menu, /1️⃣ 🥖 Pan y facturas\n2️⃣ 🎂 Tortas por encargo\n3️⃣ 📍 Horarios y dirección/);
   assert.match(T.persona, /Panadería La Espiga.*de lunes a sábado de 8 a 20/);
-  assert.match(perfil.opcion('es', 2), /dos días de anticipación[\s\S]*PERSONA/);
+  assert.match(perfil.opcion('es', 2), /dos días de anticipación/);
+  assert.doesNotMatch(perfil.opcion('es', 2), /PERSONA/, 'ZL-146: las opciones no empujan a pedir una persona');
   assert.equal(perfil.opcion('es', 4), null);
   const usted = perfilNegocio(parsearFicha(FICHA.replace('Trato: vos', 'Trato: usted').replace('Emojis: sí', 'Emojis: no')).ficha).textos();
   assert.match(usted.menuPie ?? usted.menu, /Responda con un número o cuénteme qué necesita/);
-  assert.match(usted.derivar, /Si quiere hablar con una persona de Panadería La Espiga, escriba PERSONA/);
+  assert.match(usted.consultaNombre, /¿me dice su nombre\?/);
+  assert.match(usted.consultaLista('Ana'), /^¡Listo, Ana!.*le responden por acá/);
   assert.doesNotMatch(usted.menu + usted.hola + usted.persona, /\p{Extended_Pictographic}/u);
   assert.match(usted.menu, /^1\. /m);
   const en = perfilNegocio(parsearFicha(FICHA.replace('Idioma: castellano', 'Idioma: inglés')).ficha).textos();
-  assert.match(en.derivar, /type PERSON/);
+  assert.match(en.consultaLista(''), /^All set! 🙌/);
+  // Ningún texto fijo le pide a la persona que escriba PERSONA (ZL-146).
+  for (const t of [perfil.textos(), usted, en]) assert.doesNotMatch(Object.values(t).filter((v) => typeof v === 'string').join(' '), /PERSONA|PERSON\b/);
 });
 
 // ——— La charla ———
@@ -84,7 +88,8 @@ test('charla: «hola» → saludo, presentación y menú, sin preguntar el idiom
   const { llamadas, preguntar } = preguntas();
   const r = await atender(ev('Hola, ¿cómo va?'), { memoria: m, preguntar, now: T0, perfil });
   assert.equal(r.metrica, 'saludo');
-  assert.deepEqual(r.send.map((x) => x.text.body), [`${perfil.textos().hola}\n\n${ficha.saludo}`, perfil.textos().menu]);
+  // ZL-146: un solo mensaje (Meta cobra cada uno).
+  assert.deepEqual(r.send.map((x) => x.text.body), [`${perfil.textos().hola}\n\n${ficha.saludo}\n\n${perfil.textos().menu}`]);
   const o = await atender(ev('2'), { memoria: m, preguntar, now: T0, perfil });
   assert.equal(o.send[0].text.body, perfil.opcion('es', 2));
   assert.equal((await atender(ev('menú'), { memoria: m, preguntar, now: T0, perfil })).send[0].text.body, perfil.textos().menu);
@@ -92,17 +97,22 @@ test('charla: «hola» → saludo, presentación y menú, sin preguntar el idiom
   assert.equal(llamadas.length, 1);
 });
 
-test('charla: el primer mensaje con una pregunta concreta recibe el saludo y además la respuesta, con la pista del menú', async () => {
+test('charla: el primer mensaje con una pregunta concreta recibe UNA respuesta de la IA (que saluda), sin pistas fijas', async () => {
   const m = memoria();
-  const { llamadas, preguntar } = preguntas();
+  const vistos = [];
+  const preguntar = async (texto, idioma, o) => (vistos.push({ texto, ...o }), { respuesta: '¡Hola! El pan francés sale $ 2.500 el kilo 🥖 ¿Cuánto querés?', persona: false, fuera_de_tema: false, vacia: false, notas: [], memoria: { nombre: '', resumen: 'Pregunta por pan francés.' } });
   const r = await atender(ev('¿Cuánto sale el pan francés?'), { memoria: m, preguntar, now: T0, perfil });
   assert.equal(r.metrica, 'ia');
-  assert.equal(r.send.length, 2);
-  assert.match(r.send[0].text.body, /Gracias por escribirnos[\s\S]*Panadería La Espiga/);
-  assert.match(r.send[1].text.body, /\$ 2\.500[\s\S]*MENÚ/);
-  assert.deepEqual(llamadas, ['¿Cuánto sale el pan francés?']);
-  // El segundo ya no repite el saludo.
-  assert.equal((await atender(ev('¿Y las facturas?'), { memoria: m, preguntar, now: T0, perfil })).send.length, 1);
+  assert.equal(r.send.length, 1);
+  assert.match(r.send[0].text.body, /^¡Hola! El pan francés sale \$ 2\.500/);
+  assert.doesNotMatch(r.send[0].text.body, /MENÚ|PERSONA/);
+  assert.deepEqual(vistos[0].historial, [], 'la primera vez no hay historial');
+  assert.equal(vistos[0].cliente, null);
+  // El segundo ve la charla anterior y lo que aprendió (memoria corta).
+  await atender(ev('¿Y las facturas?'), { memoria: m, preguntar, now: T0 + 60_000, perfil });
+  assert.deepEqual(vistos[1].historial.map((x) => x.r), ['u', 'a']);
+  assert.match(vistos[1].historial[0].t, /pan francés/);
+  assert.equal(vistos[1].cliente.resumen, 'Pregunta por pan francés.');
 });
 
 test('charla: PERSONA pausa al asistente las horas de la ficha, sin panel ni correo; el negocio contesta desde su app', async () => {
@@ -120,13 +130,66 @@ test('charla: PERSONA pausa al asistente las horas de la ficha, sin panel ni cor
   assert.equal((await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0, perfil })).send[0].text.body, perfil.textos().borrado);
 });
 
-test('charla: si la IA marca persona, se suma cómo pedirla; si no sabe, el texto fijo', async () => {
+test('charla: si la IA marca persona, pasa sola al equipo (pausa y consulta registrada); si no sabe, también', async () => {
   const m = memoria();
-  await m.put('ig:17841400000000002.17841400000000009', { idioma: 'es', humanoHasta: 0 });
-  const con = await atender(ev('Quiero encargar una torta'), { memoria: m, preguntar: async () => ({ respuesta: '¡Qué lindo! 🎂', persona: true, fuera_de_tema: false, vacia: false, notas: [] }), now: T0, perfil });
-  assert.equal(con.send[0].text.body, `¡Qué lindo! 🎂\n\n${perfil.textos().derivar}`);
-  const nada = await atender(ev('¿Tienen sushi?'), { memoria: m, preguntar: async () => controlarNegocio({ respuesta: 'Visitá otro-sitio.com', persona: false, fuera_de_tema: false }, ficha), now: T0, perfil });
+  const DE = 'ig:17841400000000002.17841400000000009';
+  const registradas = [];
+  const consultas = { registrar: async (d) => (registradas.push(d), { numero: registradas.length, nueva: true }) };
+  await m.put(DE, { idioma: 'es', humanoHasta: 0, nombre: 'Ana' });
+  const con = await atender(ev('Quiero encargar una torta'), { memoria: m, preguntar: async () => ({ respuesta: 'Eso lo veo con el equipo.', persona: true, fuera_de_tema: false, vacia: false, notas: [], memoria: { nombre: '', resumen: 'Quiere una torta.' } }), now: T0, perfil, consultas });
+  assert.equal(con.send[0].text.body, `Eso lo veo con el equipo.\n\n${perfil.textos().persona}`);
+  assert.equal(con.metrica, 'persona_auto');
+  assert.equal(con.handoff, true);
+  assert.deepEqual(registradas[0], { tipo: 'persona', nombre: 'Ana', interes: '', resumen: 'Quiere una torta.', idioma: 'es' });
+  assert.ok((await m.get(DE)).humanoHasta > T0, 'el asistente queda en pausa');
+  await m.put(DE, { idioma: 'es', humanoHasta: 0 });
+  const nada = await atender(ev('¿Tienen sushi?'), { memoria: m, preguntar: async () => controlarNegocio({ respuesta: 'Visitá otro-sitio.com', persona: false, fuera_de_tema: false }, ficha), now: T0, perfil, consultas });
   assert.equal(nada.send[0].text.body, perfil.textos().sinRespuesta);
+  assert.equal(registradas.length, 2);
+  // Fuera de tema no molesta al negocio.
+  await m.put(DE, { idioma: 'es', humanoHasta: 0 });
+  await atender(ev('¿Quién gana el clásico?'), { memoria: m, preguntar: async () => ({ respuesta: 'De eso no sé 😅', persona: true, fuera_de_tema: true, vacia: false, notas: [] }), now: T0, perfil, consultas });
+  assert.equal(registradas.length, 2);
+});
+
+test('charla: quiere avanzar y el cierre es una consulta → pide el nombre una vez y la registra; si ya lo sabe, no lo pide', async () => {
+  const m = memoria();
+  const DE = 'ig:17841400000000002.17841400000000009';
+  const registradas = [];
+  const consultas = { registrar: async (d) => (registradas.push(d), { numero: 7, nueva: true }) };
+  await m.put(DE, { idioma: 'es', humanoHasta: 0 });
+  const ia = async () => ({ respuesta: '¡Buenísimo! Te armamos la torta para el sábado.', persona: false, fuera_de_tema: false, vacia: false, notas: [], memoria: { nombre: '', resumen: 'Torta de cumpleaños para 20 personas, sábado.' }, avanzar: 'consulta' });
+  const r1 = await atender(ev('Dale, quiero encargarla'), { memoria: m, preguntar: ia, now: T0, perfil, consultas });
+  assert.equal(r1.metrica, 'consulta_nombre');
+  assert.match(r1.send[0].text.body, /¿me decís tu nombre\?$/);
+  assert.equal(registradas.length, 0);
+  // Una pregunta en vez del nombre: sigue la charla normal.
+  const nada = { respuesta: 'Sí, sin TACC también.', persona: false, fuera_de_tema: false, vacia: false, notas: [] };
+  assert.equal((await atender(ev('¿La hacen sin TACC?'), { memoria: m, preguntar: async () => nada, now: T0 + 1, perfil, consultas })).metrica, 'ia');
+  await atender(ev('Dale, quiero encargarla'), { memoria: m, preguntar: ia, now: T0 + 2, perfil, consultas });
+  const r2 = await atender(ev('soy ana pérez'), { memoria: m, preguntar: ia, now: T0 + 3, perfil, consultas });
+  assert.equal(r2.metrica, 'consulta');
+  assert.equal(r2.consulta, 7);
+  assert.match(r2.send[0].text.body, /^¡Listo, Ana Pérez! 🙌 Ya le pasé tu consulta al equipo de Panadería La Espiga/);
+  assert.equal(registradas[0].nombre, 'Ana Pérez');
+  assert.equal(registradas[0].tipo, 'consulta');
+  assert.equal((await m.get(DE)).nombre, 'Ana Pérez');
+  assert.equal((await m.get(DE)).humanoHasta, 0, 'una consulta no pausa al asistente');
+  // Ya sabemos el nombre: la próxima vez registra directo.
+  const r3 = await atender(ev('Y también quiero una docena de facturas para ese día'), { memoria: m, preguntar: ia, now: T0 + 4, perfil, consultas });
+  assert.equal(r3.metrica, 'consulta');
+  assert.match(r3.send[0].text.body, /¡Listo, Ana Pérez!/);
+});
+
+test('charla: un saludo de alguien que ya conocemos lo responde la IA (retoma la charla) en vez del menú fijo', async () => {
+  const m = memoria();
+  const DE = 'ig:17841400000000002.17841400000000009';
+  await m.put(DE, { idioma: 'es', humanoHasta: 0, nombre: 'Ana', resumen: 'Quería una torta para el sábado.', ultimo: T0 - 3 * 86_400_000 });
+  const vistos = [];
+  const r = await atender(ev('Hola!'), { memoria: m, preguntar: async (t, i, o) => (vistos.push(o), { respuesta: '¡Hola de nuevo, Ana! ¿Seguimos con la torta del sábado?', persona: false, fuera_de_tema: false, vacia: false, notas: [] }), now: T0, perfil });
+  assert.equal(r.metrica, 'ia');
+  assert.deepEqual(vistos[0].cliente, { nombre: 'Ana', resumen: 'Quería una torta para el sábado.', dias: 3 });
+  assert.equal(vistos[0].historial.length, 0, 'pasadas 48 h, los mensajes viejos no van');
 });
 
 // ——— Controles (no dependen de que el modelo obedezca) ———
@@ -241,7 +304,8 @@ test('worker: la cuenta de un cliente sin ficha, o con la ficha apagada, no resp
   await mensaje(d, CLIENTE, '¿Tienen facturas?', APP.secreto);
   assert.deepEqual(llamadas, [['Panadería La Espiga', '¿Tienen facturas?']]);
   assert.ok(enviados.every((e) => e.auth === 'Bearer tok-cliente'));
-  assert.match(enviados.map((e) => e.body.message.text).join('\n'), /Gracias por escribirnos[\s\S]*Respuesta de Panadería La Espiga/);
+  // ZL-146: el primer mensaje con una pregunta recibe una sola respuesta de la IA (que saluda en nombre del negocio).
+  assert.equal(enviados.at(-1).body.message.text, 'Respuesta de Panadería La Espiga.');
   // La cuenta del estudio sigue con lo de Zustro Labs (pregunta el idioma).
   await mensaje(d, ESTUDIO, 'hola', ENV.IG_APP_SECRET);
   assert.match(enviados.at(-1).body.message.text, /Zustro Labs|idioma/);
@@ -370,4 +434,56 @@ test('ZL-145: si el saludo de la ficha ya dice «¡Hola!», no se le antepone el
   const primero = r.send[0].text.body;
   assert.equal((primero.match(/hola/gi) ?? []).length, 1, primero);
   assert.ok(primero.startsWith('¡Hola! Soy el asistente'), primero);
+});
+
+// ——— Memoria corta y cierre (ZL-146) ———
+
+test('nombreDeMensaje: un nombre sí; una pregunta, un número o un mensaje largo no', async () => {
+  const { nombreDeMensaje } = await import('../src/whatsapp.js');
+  assert.equal(nombreDeMensaje('ana'), 'Ana');
+  assert.equal(nombreDeMensaje('Soy María José López.'), 'María José López');
+  assert.equal(nombreDeMensaje('me llamo luis'), 'Luis');
+  assert.equal(nombreDeMensaje("I'm John"), 'John');
+  for (const no of ['¿La hacen sin TACC?', '3415551234', 'sí', 'quiero saber si tienen torta de limón para mañana', 'a@b.com', '']) assert.equal(nombreDeMensaje(no), '', no);
+});
+
+test('mensajesConHistorial: alterna persona y asistente, empieza por la persona y termina con el mensaje nuevo', async () => {
+  const { mensajesConHistorial } = await import('../src/negocio.js');
+  assert.deepEqual(mensajesConHistorial([], 'hola'), [{ role: 'user', content: 'hola' }]);
+  const m = mensajesConHistorial([{ r: 'a', t: 'saludo suelto' }, { r: 'u', t: 'a' }, { r: 'a', t: 'b' }, { r: 'a', t: 'c' }, { r: 'x', t: 'raro' }], 'd');
+  assert.deepEqual(m, [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b\nc' }, { role: 'user', content: 'd' }]);
+  // La IA recibe la charla en el pedido a la API.
+  const cuerpos = [];
+  const llamar = async (c) => (cuerpos.push(c), { salida: { respuesta: 'ok', persona: false, fuera_de_tema: false, idioma: 'es' }, uso: {} });
+  await preguntadorNegocio({}, ficha, { llamar })('¿y facturas?', 'es', { historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: '¡Hola!' }], cliente: { nombre: 'Ana', resumen: 'Quiere pan.', dias: 2 }, objetivo: 'consultas' });
+  assert.equal(cuerpos[0].messages.length, 3);
+  assert.match(cuerpos[0].system, /<cliente>\nNombre: Ana\nLo que sabemos: Quiere pan\.\nÚltima charla: hace 2 día\(s\)\n<\/cliente>/);
+  assert.match(cuerpos[0].system, /avanzar = «consulta»/);
+});
+
+test('prompt: guía al cierre, no empuja a PERSONA y usa «Cómo vendemos» y el objetivo de la ficha', () => {
+  const conVender = parsearFicha(FICHA.replace('## Lo que sabe', '## Cómo vendemos\n- Preguntá para cuántas personas es antes de recomendar una torta.\n\n## Lo que sabe').replace('- Horas de pausa: 6', '- Horas de pausa: 6\n- Objetivo: consultas'));
+  assert.ok(conVender.ok, conVender.errores.join(' | '));
+  assert.equal(conVender.ficha.objetivo, 'consultas');
+  const p = promptNegocio(conVender.ficha, 'WhatsApp', null, null, null, null, { objetivo: 'consultas' });
+  assert.match(p, /## Cómo vende el negocio[\s\S]*para cuántas personas/);
+  assert.match(p, /Nunca ofrezcas una persona por tu cuenta ni sugieras escribir PERSONA/);
+  assert.match(p, /<cliente>\n\(primera vez\)\n<\/cliente>/);
+  assert.match(promptNegocio(ficha, 'WhatsApp', null, null, null, '(vacío)', { objetivo: 'pedidos' }), /arme su pedido acá mismo/);
+  assert.match(parsearFicha(FICHA.replace('- Horas de pausa: 6', '- Horas de pausa: 6\n- Objetivo: vender humo')).errores.join(), /Objetivo/);
+});
+
+test('memoria: guarda solo lo conocido; los mensajes se olvidan a las 48 h, el nombre y el resumen quedan', async () => {
+  const m = memoria();
+  const DE = 'ig:1.2';
+  await m.put(DE, { idioma: 'es', humanoHasta: 0, hist: [{ r: 'u', t: 'hola' }, { r: 'z', t: 'raro' }], histT: T0, nombre: 'Ana', resumen: 'Quiere pan.', ultimo: T0, consulta: { paso: 'nombre', tipo: 'otro', interes: 'x' }, otraCosa: 'no' });
+  const e = await m.get(DE);
+  assert.deepEqual(e.hist, [{ r: 'u', t: 'hola' }]);
+  assert.deepEqual(e.consulta, { paso: 'nombre', tipo: 'consulta', interes: 'x' });
+  assert.equal(e.otraCosa, undefined);
+  const viejo = adaptadores(crearAtencion(almacenPrueba()), () => T0 + 49 * 3600_000).memoria;
+  await viejo.put(DE, e);
+  const v = await viejo.get(DE);
+  assert.equal(v.hist, undefined, 'pasadas 48 h, sin mensajes');
+  assert.deepEqual([v.nombre, v.resumen], ['Ana', 'Quiere pan.']);
 });

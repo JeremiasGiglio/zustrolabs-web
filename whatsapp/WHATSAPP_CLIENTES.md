@@ -40,8 +40,8 @@ formas y termina con el semáforo, que avisa si el webhook no apunta a zustrolab
 - WhatsApp Business 2.24.17 o más nueva. Antes de conectar, una copia de seguridad de las charlas.
 - En su app: Configuración → Herramientas para la empresa → **apagar «Mensaje de bienvenida» y «Mensaje de ausencia»**
   (y cualquier bot o respuesta automática): con coexistencia siguen funcionando y se cruzan con el asistente (ZL-145).
-- Los mensajes que manda desde la app siguen siendo gratis. Las respuestas del asistente dentro de las 24 horas de
-  un mensaje del cliente son de servicio (Meta no las cobra hoy; revisar los precios de Meta si cambian).
+- Desde el 1/10/2026 Meta cobra cada mensaje que manda el negocio, también las respuestas de servicio dentro de las
+  24 horas (revisar la tarifa vigente de Meta). Por eso el asistente manda **un solo mensaje por respuesta** (ZL-146).
 - YCloud puede pedir verificar el negocio con sus papeles: por eso el nombre va exactamente como en los papeles.
 
 ## Comandos

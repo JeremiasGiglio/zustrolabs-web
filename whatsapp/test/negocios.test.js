@@ -226,7 +226,7 @@ test('la IA consulta el catálogo de SU negocio antes de responder, y el tope di
   const antes = ia.length;
   await mensaje(CUENTA_A, '¿Y facturas?', '17841400000000200');
   assert.equal(ia.length, antes, 'pasado el tope no llama a la IA');
-  assert.match(enviados.filter((e) => e.url.endsWith('/me/messages')).at(-1).body.message.text, /Mañana seguimos/);
+  assert.match(enviados.filter((e) => e.url.endsWith('/me/messages')).at(-1).body.message.text, /Eso lo consulto con el equipo de Panadería La Espiga/, 'ZL-146: pasado el tope, la charla pasa al negocio');
   await mensaje(CUENTA_B, '¿Siguen abiertos?', '17841400000000201');
   assert.equal(ia.length, antes + 1, 'el otro negocio no se ve afectado');
   const uso = (await pedir('equipo@example.com', 'GET', '/api/admin/negocios')).datos.negocios;
@@ -491,4 +491,17 @@ test('Instagram (ZL-140): un cliente conectado con la app del estudio desde la a
   assert.equal((await n.cuentas.get(CTA)).cliente, true);
   // Una cuenta conectada con el link viejo del estudio (sin negocio) sigue siendo la del estudio.
   assert.equal(esCliente(ENV, { app: ENV.IG_APP_ID, cliente: false }), false);
+});
+
+test('consultas (ZL-146): cada negocio ve las suyas, las mueve de estado y no puede tocar las de otro', async () => {
+  const { pedir, a, b, d } = await armar();
+  await d.catalogo(a.id).ejecutar('crearConsulta', ['yc:1:2', { tipo: 'consulta', nombre: 'Ana', resumen: 'Torta para el sábado (ficticio).', canal: 'wa' }]);
+  const l = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/consultas`)).datos;
+  assert.equal(l.nuevas, 1);
+  assert.equal(l.consultas[0].nombre, 'Ana');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1`, { estado: 'atendiendo' })).datos.estado, 'atendiendo');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1`, { estado: 'borrada' })).status, 400);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1`, { estado: 'ganada' }, { sinCabecera: true })).status, 403, 'sin la cabecera del mismo origen no se cambia');
+  assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/consultas`)).status, 404);
+  assert.deepEqual((await pedir('otro@example.com', 'GET', `/api/n/${b.id}/consultas`)).datos.consultas, []);
 });
