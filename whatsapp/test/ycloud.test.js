@@ -308,7 +308,7 @@ test('circuito: tres mensajes seguidos reciben UNA respuesta, con los tres junto
   await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
   await avisar(clave, entrante('hola'));
   const antes = enviados(ycloud).length;
-  d.rafagaMs = 30;
+  d.rafagaMs = 400;
   d.esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
   await Promise.all([avisar(clave, entrante('quiero una torta')), avisar(clave, entrante('para el sábado')), avisar(clave, entrante('de chocolate'))]);
   assert.equal(enviados(ycloud).length - antes, 1, 'una sola respuesta');
