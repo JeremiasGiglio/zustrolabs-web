@@ -400,7 +400,7 @@ export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar'
   // Pedidos (ZL-139): pedidos.js.
   'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
   // Consultas (ZL-146): consultas.js.
-  'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta'];
+  'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta', 'consulta'];
 
 /**
  * Corre una operación y devuelve {ok: true, valor} o {ok: false, error, campo}: los errores para mostrar cruzan el RPC

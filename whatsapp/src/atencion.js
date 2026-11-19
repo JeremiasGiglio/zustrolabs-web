@@ -18,6 +18,23 @@
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
 export const DIA_MS = 24 * 3600_000;
+
+/**
+ * Los ajustes de venta que carga el propio negocio (ZL-148): cuánto se guarda un pedido aceptado sin pagar, si hace
+ * retiro, envío o los dos, dónde y cuándo se retira, zonas y costo de envío, y cómo se paga. Solo campos conocidos y
+ * cortos; lo que no se entiende vuelve al valor de siempre.
+ */
+export const RESERVAS_HORAS = [2, 24, 48, 168];
+export function ajustesDeVenta(a) {
+  const corto = (v, n) => String(v ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+  return {
+    reservaHoras: RESERVAS_HORAS.includes(Number(a?.reservaHoras)) ? Number(a.reservaHoras) : 24,
+    entrega: ['ambos', 'retiro', 'envio'].includes(a?.entrega) ? a.entrega : 'ambos',
+    retiro: corto(a?.retiro, 300),
+    envio: corto(a?.envio, 300),
+    pago: corto(a?.pago, 300),
+  };
+}
 export const RETENCION_MEMORIA_MS = 90 * DIA_MS;
 /** La memoria corta de la charla (ZL-146): los últimos mensajes, que se olvidan pasadas 48 h sin escribir. */
 export const HISTORIAL_MS = 2 * DIA_MS;
@@ -216,7 +233,8 @@ export function crearAtencion(storage) {
       const invitacionIg = datos?.invitacionIg !== undefined ? datos.invitacionIg : antes?.invitacionIg ?? null;
       // Pedidos por chat (ZL-139): apagados hasta que el equipo los enciende en Administración.
       const pedidos = typeof datos?.pedidos === 'boolean' ? datos.pedidos : antes?.pedidos === true;
-      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, invitacionIg, pedidos, creado: antes?.creado ?? now, actualizado: now };
+      const ajustes = ajustesDeVenta({ ...(antes?.ajustes ?? {}), ...(datos?.ajustes ?? {}) });
+      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);

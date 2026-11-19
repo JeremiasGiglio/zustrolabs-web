@@ -114,6 +114,32 @@ async function avisarComprador(env, a, negocio, charla, texto, fetchImpl = fetch
   }
 }
 
+/**
+ * La pausa del asistente en una charla, desde la app de negocios (ZL-148): cuánto falta, «La atiendo» (se calla las
+ * horas de la ficha) y «Devolver al asistente» (vuelve ya). La memoria de WhatsApp por YCloud usa la clave normalizada.
+ */
+function pausasDeCharla(a, now) {
+  if (!a.memoria) return null;
+  const clave = (charla) => claveMemoria(charla);
+  const reloj = () => now ?? Date.now();
+  return {
+    async pausa(charla) {
+      const e = await a.memoria.get(clave(charla));
+      return e?.humanoHasta && e.humanoHasta > reloj() ? e.humanoHasta : 0;
+    },
+    async pausar(charla, horas) {
+      const e = (await a.memoria.get(clave(charla))) ?? {};
+      const hasta = reloj() + horas * 3600_000;
+      await a.memoria.put(clave(charla), { ...e, humanoHasta: hasta, pase: null });
+      return hasta;
+    },
+    async devolver(charla) {
+      const e = await a.memoria.get(clave(charla));
+      if (e) await a.memoria.put(clave(charla), { ...e, humanoHasta: 0, pase: null, consulta: null });
+    },
+  };
+}
+
 /** Pedidos por chat de un negocio (ZL-139), si los tiene encendidos y una base de productos. */
 function pedidosDe(env, deps, dueño, ficha, charla, canal) {
   if (!dueño?.pedidos) return null;
@@ -694,6 +720,7 @@ export default {
         ...a, fetch: fetchImpl, now: deps.now, catalogo: catalogoDe(env, deps), esCliente: (c) => esCliente(env, c),
         probar: (ficha, negocioId, mensajes, estado) => probarFicha(env, ficha, mensajes, deps, negocioId, estado),
         avisarComprador: (negocio, charla, texto) => avisarComprador(env, a, negocio, charla, texto, fetchImpl),
+        charlasNegocio: pausasDeCharla(a, deps.now),
       });
     }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
