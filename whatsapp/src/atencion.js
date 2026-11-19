@@ -19,6 +19,9 @@
 
 export const DIA_MS = 24 * 3600_000;
 export const RETENCION_MEMORIA_MS = 90 * DIA_MS;
+/** La memoria corta de la charla (ZL-146): los últimos mensajes, que se olvidan pasadas 48 h sin escribir. */
+export const HISTORIAL_MS = 2 * DIA_MS;
+export const HISTORIAL_MAX = 8;
 export const RETENCION_CHARLA_MS = 30 * DIA_MS;
 const RETENCION_ID_MS = 3600_000;
 const MAX_MENSAJES = 200;
@@ -53,7 +56,24 @@ export function crearAtencion(storage) {
       const pedido = p && ['confirmar', 'entrega', 'nombre', 'direccion'].includes(p.paso)
         ? { paso: p.paso, ...(['retiro', 'envio'].includes(p.entrega) && { entrega: p.entrega }), ...(p.nombre && { nombre: String(p.nombre).slice(0, 80) }), ...(p.direccion && { direccion: String(p.direccion).slice(0, 200) }) }
         : null;
-      await s.put(`wa:${num}`, { idioma, humanoHasta, ...(pedido && { pedido }), vence: now + RETENCION_MEMORIA_MS });
+      // La memoria corta de un negocio (ZL-146), solo con campos conocidos y cortos: los últimos mensajes (48 h), el
+      // nombre, el resumen y el interés de la persona, la última charla y el paso de la consulta en curso.
+      const corto = (v, n) => String(v ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, n);
+      const histT = Number.isFinite(datos?.histT) && now - datos.histT < HISTORIAL_MS ? datos.histT : 0;
+      const hist = histT && Array.isArray(datos?.hist)
+        ? datos.hist.filter((m) => m && (m.r === 'u' || m.r === 'a') && corto(m.t, 500)).slice(-HISTORIAL_MAX).map((m) => ({ r: m.r, t: corto(m.t, 500) }))
+        : [];
+      const k = datos?.consulta;
+      const consulta = k && k.paso === 'nombre' ? { paso: 'nombre', tipo: k.tipo === 'persona' ? 'persona' : 'consulta', interes: corto(k.interes, 120) } : null;
+      const contacto = {
+        ...(hist.length && { hist, histT }),
+        ...(corto(datos?.nombre, 60) && { nombre: corto(datos.nombre, 60) }),
+        ...(corto(datos?.resumen, 300) && { resumen: corto(datos.resumen, 300) }),
+        ...(corto(datos?.interes, 120) && { interes: corto(datos.interes, 120) }),
+        ...(Number.isFinite(datos?.ultimo) && { ultimo: datos.ultimo }),
+        ...(consulta && { consulta }),
+      };
+      await s.put(`wa:${num}`, { idioma, humanoHasta, ...(pedido && { pedido }), ...contacto, vence: now + RETENCION_MEMORIA_MS });
     },
     /** BORRAR: memoria, charla y contador de ese número. */
     async borrar(num) {

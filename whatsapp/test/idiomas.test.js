@@ -90,32 +90,34 @@ test('charla: el primer mensaje pregunta el idioma; el número elige; el menú y
   // Mientras elige, 2 es el idioma (no la opción 2 del menú).
   const r2 = await decir('2');
   assert.equal(r2.metrica, 'idioma');
-  assert.match(r2.textos[0], /^Hi! 👋[\s\S]*virtual assistant of Panadería La Espiga/);
-  assert.match(r2.textos[1], /How can I help\?[\s\S]*Bread and pastries[\s\S]*Reply with a number/);
+  // ZL-146: saludo, presentación y menú en un solo mensaje (Meta cobra cada mensaje).
+  assert.equal(r2.textos.length, 1);
+  assert.match(r2.textos[0], /^Hi! 👋[\s\S]*virtual assistant of Panadería La Espiga[\s\S]*How can I help\?[\s\S]*Bread and pastries[\s\S]*Reply with a number/);
   // Ya eligió: 2 es la opción del menú, en inglés.
   const r3 = await decir('2');
   assert.equal(r3.metrica, 'opcion');
-  assert.match(r3.textos[0], /Order two days ahead[\s\S]*type PERSON/);
+  assert.match(r3.textos[0], /Order two days ahead/);
+  assert.doesNotMatch(r3.textos[0], /PERSON/, 'ZL-146: las opciones no empujan a pedir una persona');
   // La IA recibe el idioma elegido, y el pie va en ese idioma.
   const r4 = await decir('Do you have gluten free bread?');
   assert.equal(r4.metrica, 'ia');
   assert.deepEqual(preguntas, [['Do you have gluten free bread?', 'en']]);
   assert.equal(r4.textos[0], 'IA (en)');
   // ZL-127: saludar en otro idioma lo cambia (el idioma del mensaje manda); un mensaje que vale en varios («info») no.
-  assert.match((await decir('hello')).textos[1], /How can I help\?/);
-  assert.match((await decir('info')).textos[1], /How can I help\?/, '«info» vale en inglés y en castellano: sigue en inglés');
-  assert.match((await decir('hola')).textos[1], /¿En qué te puedo ayudar\?/);
-  assert.match((await decir('info')).textos[1], /¿En qué te puedo ayudar\?/, '«info» vale en castellano y en inglés: sigue en castellano');
-  assert.match((await decir('bok')).textos[1], /Kako vam mogu pomoći\?/);
-  assert.match((await decir('hi')).textos[1], /How can I help\?/);
+  assert.match((await decir('hello')).textos[0], /How can I help\?/);
+  assert.match((await decir('info')).textos[0], /How can I help\?/, '«info» vale en inglés y en castellano: sigue en inglés');
+  assert.match((await decir('hola')).textos[0], /¿En qué te puedo ayudar\?/);
+  assert.match((await decir('info')).textos[0], /¿En qué te puedo ayudar\?/, '«info» vale en castellano y en inglés: sigue en castellano');
+  assert.match((await decir('bok')).textos[0], /Kako vam mogu pomoći\?/);
+  assert.match((await decir('hi')).textos[0], /How can I help\?/);
   // Pedir otro idioma por su nombre lo cambia y vuelve a mostrar el saludo y el menú.
   const r5 = await decir('español');
   assert.equal(r5.metrica, 'idioma');
-  assert.match(r5.textos[1], /¿En qué te puedo ayudar\?[\s\S]*Pan y facturas/);
+  assert.match(r5.textos[0], /¿En qué te puedo ayudar\?[\s\S]*Pan y facturas/);
   // IDIOMA vuelve a preguntar.
   assert.equal((await decir('idioma')).metrica, 'pide_idioma');
   const r6 = await decir('3');
-  assert.match(r6.textos[1], /Kako vam mogu pomoći\?[\s\S]*Kruh i peciva/);
+  assert.match(r6.textos[0], /Kako vam mogu pomoći\?[\s\S]*Kruh i peciva/);
 });
 
 test('charla: una pregunta antes de elegir idioma recibe la pregunta del idioma; un idioma que la ficha no tiene no se elige', async () => {
@@ -165,7 +167,7 @@ test('PERSONA: el horario va en el idioma de la charla, y sin traducción no se 
   assert.equal(ficha.horarios.en, 'Monday to Saturday');
   await decir('hello');
   await decir('2');
-  assert.match((await decir('person')).textos[0], /someone will reply to you here \(Monday to Saturday\)\./);
+  assert.match((await decir('person')).textos[0], /someone will reply to you right here \(Monday to Saturday\)\./);
   const otra = charla(texto);
   await otra.decir('hola');
   await otra.decir('3');
@@ -179,13 +181,14 @@ test('charla: la IA responde en el idioma del mensaje y desde ahí el menú sigu
   const perfil = perfilNegocio(pf.ficha);
   const memoria = adaptadores(crearAtencion(almacenPrueba()), () => T0).memoria;
   // La IA de mentira contesta en inglés si el mensaje está en inglés.
-  const preguntar = async (texto) => ({ respuesta: /how/i.test(texto) ? 'Fine, thanks!' : 'Bien, ¡gracias!', persona: true, fuera_de_tema: false, vacia: false, notas: [], idioma: /how/i.test(texto) ? 'en' : 'es' });
+  const preguntar = async (texto) => ({ respuesta: /how/i.test(texto) ? 'Fine, thanks!' : 'Bien, ¡gracias!', persona: false, fuera_de_tema: false, vacia: false, notas: [], idioma: /how/i.test(texto) ? 'en' : 'es' });
   let k = 0;
   const decir = async (text) => (await atender({ id: `x${++k}`, from: 'ig:9.9', ts: T0 / 1000, kind: 'text', text }, { memoria, charlas: null, preguntar, now: T0 + k, perfil })).send.map((m) => m.text.body);
   await decir('hola');
   await decir('1');
   const r = await decir('Hellooo how are u');
-  assert.match(r[0], /^Fine, thanks!\n\n🙋 If you’d like to talk to someone at Panadería La Espiga, type PERSON\.$/, 'el pie de PERSONA en inglés');
+  // ZL-146: sin pies que empujen a escribir PERSON.
+  assert.equal(r[0], 'Fine, thanks!');
   assert.equal((await memoria.get('ig:9.9')).idioma, 'en');
   assert.match((await decir('menu')).at(-1), /How can I help\?/);
 });

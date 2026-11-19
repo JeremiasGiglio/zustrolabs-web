@@ -15,6 +15,7 @@ import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verif
 import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, webhookDeYCloud } from './ycloud.js';
 import { agregarAAcceso, correosEnAcceso } from './acceso.js';
 import { pedidosDeCharla } from './pedidos-charla.js';
+import { consultasDeCharla } from './consultas.js';
 import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
 const MAX_CUERPO = 256_000;
@@ -118,6 +119,13 @@ function pedidosDe(env, deps, dueño, ficha, charla, canal) {
   if (!dueño?.pedidos) return null;
   const cat = catalogoDe(env, deps)(dueño.id);
   return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios }) : null;
+}
+
+/** Consultas y pases al equipo de un negocio (ZL-146): siempre que el negocio tenga su base. */
+function consultasDe(env, deps, dueño, charla, canal) {
+  if (!dueño?.id) return null;
+  const cat = catalogoDe(env, deps)(dueño.id);
+  return cat ? consultasDeCharla({ cat, charla, canal }) : null;
 }
 
 const html = (cuerpo, status = 200) => new Response(cuerpo, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...SEGURIDAD } });
@@ -242,7 +250,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
     const fichaEstudio = !cliente && cuenta ? await fichaDelEstudio(a, ev.cuenta) : null;
     if (fichaEstudio?.motivo) log({ ok: fichaEstudio.motivo !== 'ficha_invalida', que: `estudio_${fichaEstudio.motivo}` });
     const negocio = cliente || Boolean(fichaEstudio?.texto);
-    let perfil, preguntarEv = preguntar, charlasEv = charlas, pedidosEv = null;
+    let perfil, preguntarEv = preguntar, charlasEv = charlas, pedidosEv = null, consultasEv = null;
     if (negocio) {
       const f = cliente ? await a.fichas?.get(ev.cuenta) : fichaEstudio;
       if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
@@ -254,6 +262,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
       preguntarEv = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'Instagram');
       pedidosEv = pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'ig');
+      consultasEv = consultasDe(env, deps, dueño, ev.from, 'ig');
       if (cliente) charlasEv = null;
     }
     try {
@@ -263,7 +272,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!(await env.LIMITE.limit({ key: esInstagram(ev.from) ? ev.from : `wa:${ev.from}` })).success) { log({ ok: true, que: 'limite' }); continue; }
       // El de toda la cuenta (los dos canales juntos) se mira recién antes de gastar IA (no corta la atención humana ni BORRAR).
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv });
+      const r = await atender(ev, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
       for (const m of r.send) await mandar(m);
       // Aviso por correo (sin número ni texto). Si falla, la charla igual queda en el panel; el motivo va al registro.
       let avisado, avisoError;
@@ -372,14 +381,15 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
       if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa') });
-      // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente.
-      if (r.send.length && !['borrar', 'persona', 'humano'].includes(r.metrica) && memoria) {
+      const r = await atender(ev, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa') });
+      // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente. (Un pase al equipo
+      // también pausa, pero ese aviso sí va: lo puso el propio asistente.)
+      if (r.send.length && !['borrar', 'persona', 'humano'].includes(r.metrica) && !r.handoff && memoria) {
         const st = await memoria.get(ev.from);
         if (st?.humanoHasta && st.humanoHasta > now) { log({ ok: true, que: 'contesto_el_duenio' }); continue; }
       }
       for (const m of r.send) await mandar(m);
-      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, ...(r.pedido && { pedido: r.pedido }), idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
+      log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, ...(r.pedido && { pedido: r.pedido }), ...(r.consulta && { consulta: r.consulta }), idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
       const st = await Promise.resolve(memoria?.get(ev.from)).catch(() => null);
@@ -463,12 +473,15 @@ async function probarFicha(env, ficha, mensajes, deps, negocioId = null, estado 
   return { charla, estado: estadoDePrueba(await memoria.get(DE)) };
 }
 
-/** Lo único que se guarda entre mensajes de la charla de prueba: el idioma elegido y la pausa de PERSONA. */
+/** Lo que se guarda entre mensajes de la charla de prueba: el idioma, la pausa y la memoria corta (ZL-146). */
 function estadoDePrueba(e) {
   if (!e || typeof e !== 'object') return null;
   const idioma = ['es', 'en', 'hr'].includes(e.idioma) ? e.idioma : undefined;
   const humanoHasta = Number.isFinite(e.humanoHasta) ? e.humanoHasta : 0;
-  return { ...(idioma && { idioma }), humanoHasta };
+  // ZL-146: también la memoria corta, para que la charla de prueba se comporte como la real (la memoria la vuelve a
+  // filtrar al guardarla: solo campos conocidos y cortos).
+  const { hist, histT, nombre, resumen, interes, ultimo, consulta } = e;
+  return { ...(idioma && { idioma }), humanoHasta, ...(Array.isArray(hist) && { hist: hist.slice(-8), histT }), ...(nombre && { nombre }), ...(resumen && { resumen }), ...(interes && { interes }), ...(ultimo && { ultimo }), ...(consulta && { consulta }) };
 }
 
 const leerFicha = async (request) => {

@@ -164,15 +164,18 @@ test('tiempos: el carrito se guarda 20 minutos; confirmado, 2 horas para que el 
   assert.equal(c.pedido(n).estado, 'vencido', 'sin respuesta del negocio en 2 horas, vence');
   assert.equal(stock(pan).reservado, 0);
   // Aceptado con 24 h: a las 23 h sigue; a las 25 h sin pagar, vence; pagado no vence nunca.
-  await ana('quiero 2 kilos de pan'); await ana('sí'); await ana('1');
-  const m = (await ana('Ana')).pedido;
+  // ZL-146: ya sabemos que se llama Ana: con retiro, el pedido se cierra sin volver a preguntar el nombre.
+  await ana('quiero 2 kilos de pan'); await ana('sí');
+  const conocida = await ana('1');
+  assert.equal(conocida.metrica, 'pedido_nuevo');
+  const m = conocida.pedido;
   c.cambiarEstado(m, 'aceptado', 'duena@example.com', { horas: 24 });
   reloj.t += 23 * 60 * MIN;
   assert.equal(c.pedido(m).estado, 'aceptado');
   reloj.t += 2 * 60 * MIN;
   assert.equal(c.pedido(m).estado, 'vencido');
-  await ana('quiero 2 kilos de pan'); await ana('sí'); await ana('1');
-  const k = (await ana('Ana')).pedido;
+  await ana('quiero 2 kilos de pan'); await ana('sí');
+  const k = (await ana('1')).pedido;
   c.cambiarEstado(k, 'aceptado', 'duena@example.com', { horas: 1 });
   c.cambiarEstado(k, 'pagado', 'duena@example.com');
   reloj.t += 30 * 24 * 60 * MIN;

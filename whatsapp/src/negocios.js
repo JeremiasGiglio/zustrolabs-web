@@ -260,6 +260,18 @@ export async function appNegocios(request, env, deps) {
     const aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
     return json({ ...r.valor, aviso });
   }
+  // Consultas (ZL-146): lo que el asistente le pasa al negocio cuando el cierre no es un pedido o hace falta alguien.
+  if (request.method === 'GET' && sub === '/consultas') {
+    const r = await ejecutar('consultas', [{ estado: url.searchParams.get('estado') ?? '', cuantos: Number(url.searchParams.get('cuantos') ?? 100) }]);
+    return r.resp ?? json(r.valor);
+  }
+  const mc = /^\/consultas\/(\d{1,9})$/.exec(sub);
+  if (mc && request.method === 'POST') {
+    const b = await leerJson(request);
+    if (!b || !['nueva', 'atendiendo', 'ganada', 'perdida'].includes(b.estado)) return error('estado inválido');
+    const r = await ejecutar('cambiarConsulta', [Number(mc[1]), b.estado, String(b.nota ?? '')]);
+    return r.resp ?? json(r.valor);
+  }
   let mp = /^\/productos\/(p[a-z0-9]{4,40})$/.exec(sub);
   if (mp && request.method === 'PUT') {
     const b = await leerJson(request);

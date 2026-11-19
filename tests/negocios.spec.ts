@@ -250,10 +250,24 @@ test.describe('app de negocios (ZL-121)', () => {
     expect((await deps.catalogo(negocio.id).ejecutar('pedido', [1])).valor.eventos.at(-1).detalle).toBe('hoy no hay horno');
   });
 
-  test('pedidos apagados: el negocio no ve la pestaña Pedidos', async ({ page }) => {
-    await montar(page, 'duena@example.com');
-    await expect(page.getByRole('tab', { name: 'Productos' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Pedidos' })).toHaveCount(0);
+  test('consultas (ZL-146): con pedidos apagados, el negocio igual ve las consultas que le pasa el asistente y las atiende; accesible', async ({ page }) => {
+    const CHARLA = 'yc:5493410000001:5493410000009';
+    await montar(page, 'duena@example.com', async (n, neg, d) => {
+      await d.catalogo(neg.id).ejecutar('crearConsulta', [CHARLA, { tipo: 'consulta', nombre: 'Ana Pérez', resumen: 'Torta para 20 personas el sábado (dato ficticio).', canal: 'wa' }]);
+    });
+    await page.getByRole('tab', { name: 'Pedidos y consultas' }).click();
+    const tarjeta = page.locator('article.consulta');
+    await expect(tarjeta.getByRole('heading', { name: 'Consulta N.º 1 · Ana Pérez' })).toBeVisible();
+    await expect(tarjeta).toContainText('Quiere avanzar');
+    await expect(tarjeta).toContainText('Torta para 20 personas');
+    await expect(tarjeta).toContainText('Respondé desde el WhatsApp del negocio al +5493410000009.');
+    await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toHaveCount(0);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    await tarjeta.getByRole('button', { name: 'La atiendo' }).click();
+    await expect(page.getByText('Consulta N.º 1: la estoy atendiendo.')).toBeVisible();
+    await tarjeta.getByRole('button', { name: 'Ganada' }).click();
+    await expect(page.getByText('No hay consultas para responder.')).toBeVisible();
   });
 
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {

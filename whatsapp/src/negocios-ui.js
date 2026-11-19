@@ -153,8 +153,9 @@ function app() {
     }
     return svg;
   }
-  // Pedidos (ZL-139): primero, para el negocio que los tiene encendidos; el equipo la ve siempre.
-  const PESTANAS = () => ((estado.datos && estado.datos.negocio && estado.datos.negocio.pedidos) || estado.yo.admin ? [['pedidos', 'Pedidos']] : [])
+  // Pedidos y consultas (ZL-139, ZL-146): siempre primero. Es lo único que el negocio tiene que mirar: lo que el
+  // asistente le deja listo para confirmar o responder.
+  const PESTANAS = () => [['pedidos', 'Pedidos y consultas']]
     .concat([['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['instagram', 'Instagram'], ['whatsapp', 'WhatsApp']])
     .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Administración']] : []);
 
@@ -489,19 +490,60 @@ function app() {
     } catch (e) { /* sin audio: no pasa nada */ }
   }
 
+  // ── Consultas (ZL-146): el asistente guía la charla y, cuando la persona quiere avanzar o hace falta alguien del
+  // negocio, la deja acá con su nombre y un resumen. El negocio responde desde su WhatsApp o su Instagram. ──
+  const ESTADO_CONSULTA = { nueva: 'Nueva', atendiendo: 'La estoy atendiendo', ganada: 'Ganada', perdida: 'Perdida' };
+  const TIPO_CONSULTA = { consulta: 'Quiere avanzar', persona: 'Necesita a alguien del negocio' };
+  function dondeResponder(c) {
+    const m = /^yc:\d+:(\d+)$/.exec(c.charla || '');
+    if (m) return 'Respondé desde el WhatsApp del negocio al +' + m[1] + '.';
+    return c.canal === 'ig' || /^ig:/.test(c.charla || '') ? 'Respondé desde los mensajes directos de Instagram del negocio.' : 'Respondé por el mismo chat.';
+  }
+  function tarjetaConsulta(c, recargar) {
+    const nota = h('input', { type: 'text', maxlength: 300, value: c.nota || '', placeholder: 'Nota interna (opcional)', 'aria-label': 'Nota de la consulta ' + c.numero });
+    const pasar = (nuevo) => conError(async () => {
+      await api(base() + '/consultas/' + c.numero, { metodo: 'POST', cuerpo: { estado: nuevo, nota: nota.value } });
+      aviso('Consulta N.º ' + c.numero + ': ' + ESTADO_CONSULTA[nuevo].toLowerCase() + '.');
+      await recargar();
+    });
+    const botones = [];
+    if (c.estado === 'nueva') botones.push(h('button', { class: 'btn prim', onclick: pasar('atendiendo') }, 'La atiendo'));
+    if (['nueva', 'atendiendo'].includes(c.estado)) botones.push(h('button', { class: 'btn', onclick: pasar('ganada') }, 'Ganada'), h('button', { class: 'btn', onclick: pasar('perdida') }, 'Perdida'));
+    else botones.push(h('button', { class: 'btn', onclick: pasar('atendiendo') }, 'Reabrir'));
+    return h('article', { class: 'caja consulta' },
+      h('h3', {}, 'Consulta N.º ' + c.numero + ' · ' + (c.nombre || 'Sin nombre')),
+      h('div', { class: 'chips' },
+        h('span', { class: 'chip ' + (c.estado === 'nueva' ? 'alerta' : c.estado === 'ganada' ? 'ok' : '') }, ESTADO_CONSULTA[c.estado] || c.estado),
+        h('span', { class: 'chip' }, TIPO_CONSULTA[c.tipo] || c.tipo),
+        h('span', { class: 'chip' }, CANAL_PEDIDO[c.canal] || c.canal || 'Chat'),
+        h('span', { class: 'chip' }, fecha(c.actualizado))),
+      c.resumen ? h('p', {}, c.resumen) : null,
+      c.interes && c.interes !== c.resumen ? h('p', { class: 'ayuda' }, 'Le interesa: ' + c.interes) : null,
+      h('p', { class: 'ayuda' }, dondeResponder(c)),
+      nota,
+      h('div', { class: 'acciones' }, botones));
+  }
+
   function vistaPedidos() {
     const filtro = estado.filtroPedidos || 'pendiente';
+    const conPedidos = estado.datos.negocio.pedidos || estado.yo.admin;
+    const listaConsultas = h('div', { 'aria-live': 'polite' });
     const lista = h('div', { 'aria-live': 'polite' });
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Ver pedidos' });
     const avisos = h('button', { class: 'btn', onclick: async () => {
       try { if (window.Notification && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) { /* nada */ }
-      sonar(); aviso('Listo: con esta pestaña abierta, cada pedido nuevo suena' + (window.Notification && Notification.permission === 'granted' ? ' y aparece un aviso.' : '.'));
+      sonar(); aviso('Listo: con esta pestaña abierta, cada pedido o consulta nueva suena' + (window.Notification && Notification.permission === 'granted' ? ' y aparece un aviso.' : '.'));
     } }, 'Activar sonido y avisos');
     const caja = h('section', {},
-      h('h2', {}, 'Pedidos'),
-      h('p', { class: 'ayuda' }, 'Los pedidos que arma el asistente por WhatsApp e Instagram. El stock queda reservado mientras el pedido está abierto y se descuenta al marcarlo Entregado. El pago lo marcás vos: el asistente nunca lo da por hecho.'),
-      estado.datos.negocio.pedidos ? null : h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Administración.'),
-      h('div', { class: 'acciones' }, avisos), chips, lista);
+      h('h2', {}, 'Pedidos y consultas'),
+      h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos: los pedidos para confirmar y las consultas para responder.'),
+      h('div', { class: 'acciones' }, avisos),
+      h('h3', {}, 'Consultas'),
+      listaConsultas,
+      conPedidos ? h('h3', {}, 'Pedidos') : null,
+      conPedidos ? h('p', { class: 'ayuda' }, 'El stock queda reservado mientras el pedido está abierto y se descuenta al marcarlo Entregado. El pago lo marcás vos: el asistente nunca lo da por hecho.') : null,
+      conPedidos && !estado.datos.negocio.pedidos ? h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Administración.') : null,
+      conPedidos ? chips : null, conPedidos ? lista : null);
     let ultimos = null;
 
     const accion = (p, nuevo, extra) => conError(async () => {
@@ -545,12 +587,15 @@ function app() {
     }
 
     async function cargar() {
-      const r = await api(base() + '/pedidos' + (filtro === 'todos' ? '' : '?estado=' + filtro));
+      const k = await api(base() + '/consultas');
+      const abiertas = k.consultas.filter((c) => ['nueva', 'atendiendo'].includes(c.estado));
+      poner(listaConsultas, abiertas.length ? abiertas.map((c) => tarjetaConsulta(c, cargar)) : h('div', { class: 'vacio' }, 'No hay consultas para responder. Cuando alguien quiera avanzar o necesite a alguien del negocio, aparece acá y suena.'));
+      const r = conPedidos ? await api(base() + '/pedidos' + (filtro === 'todos' ? '' : '?estado=' + filtro)) : { pedidos: [], cuenta: {} };
       const cuenta = r.cuenta || {};
-      const nuevos = cuenta.pendiente || 0;
+      const nuevos = (cuenta.pendiente || 0) + (k.nuevas || 0);
       if (ultimos !== null && nuevos > ultimos) {
         sonar();
-        try { if (window.Notification && Notification.permission === 'granted') new Notification('Pedido nuevo', { body: (estado.datos.negocio.nombre || '') + ': ' + nuevos + ' para revisar' }); } catch (e) { /* nada */ }
+        try { if (window.Notification && Notification.permission === 'granted') new Notification('Algo nuevo para revisar', { body: (estado.datos.negocio.nombre || '') + ': ' + nuevos + ' entre pedidos y consultas' }); } catch (e) { /* nada */ }
       }
       ultimos = nuevos;
       document.title = (nuevos ? '(' + nuevos + ') ' : '') + 'Negocios · Zustro Labs';
@@ -791,7 +836,7 @@ function app() {
           h('p', { class: 'ayuda' }, 'Canales que contrató (con un canal apagado, el asistente no responde ahí)'),
           h('label', { class: 'check' }, ig, 'Instagram'),
           h('label', { class: 'check' }, wa, 'WhatsApp (el número se conecta con whatsapp-cliente.ps1)'),
-          h('label', { class: 'check' }, pe, 'Pedidos por chat: el asistente arma pedidos y reserva stock (pestaña Pedidos)'),
+          h('label', { class: 'check' }, pe, 'Pedidos por chat: el asistente arma pedidos y reserva stock (pestaña Pedidos y consultas)'),
           h('p', { class: 'ayuda' }, 'Cuentas de Instagram'), marcas.length ? marcas : h('p', { class: 'ayuda' }, 'No hay cuentas conectadas libres. Conectalas con el script instagram-cliente.ps1.'),
           etiqueta('Tope de respuestas de la IA por día', lim), lim,
           h('div', { class: 'acciones' },

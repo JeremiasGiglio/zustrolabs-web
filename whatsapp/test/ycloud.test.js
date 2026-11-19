@@ -170,7 +170,7 @@ test('circuito: sin ficha activa no responde; con la ficha, saluda, contesta con
   await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
   await avisar(clave, entrante('hola'));
   const saludo = enviados(ycloud);
-  assert.ok(saludo.length >= 2);
+  assert.equal(saludo.length, 1, 'ZL-146: un solo mensaje');
   assert.ok(saludo.every((p) => p.clave === CLAVE_API && p.body.from === NEGOCIO_TEL && p.body.to === PERSONA_TEL));
   assert.match(saludo.map((p) => p.body.text.body).join('\n'), /Panadería La Espiga[\s\S]*Pan y facturas/);
   await avisar(clave, entrante('¿Tienen facturas sin TACC?'));

@@ -11,6 +11,7 @@
 
 import { armarPedidoApi, controlar, llamarClaude, LIMITES, MODELO } from '../../asistente/src/asistente.js';
 import { ENLACES } from '../../asistente/src/conocimiento.js';
+import { HISTORIAL_MAX, HISTORIAL_MS } from './atencion.js';
 import { agregar } from './panel.js';
 import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, idiomaDelTexto, idiomasDelSaludo, idiomasQueHacen, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
 
@@ -212,7 +213,8 @@ const juntar = (...partes) => partes.filter((x) => String(x ?? '').trim()).join(
  *        cupo() → 'ok' | 'global' (el tope por minuto de toda la cuenta), solo antes de gastar IA}
  */
 // `pedidos` (ZL-139): pedidosDeCharla() de pedidos-charla.js, solo para un negocio con pedidos encendidos.
-export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null }) {
+// `consultas` (ZL-146): consultasDeCharla() de consultas.js, para registrar consultas y pases al equipo de un negocio.
+export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
   const estado = (memoria && (await memoria.get(ev.from))) || null;
   // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
@@ -234,6 +236,11 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   const conocido = unico ?? estado?.idioma ?? null;
   const T = perfil.textos(idioma);
   const horas = perfil.horasPausa ?? HORAS_PERSONA;
+  // Un negocio (ZL-146): memoria corta (los últimos mensajes de las últimas 48 h y lo que sabemos de la persona), un
+  // mensaje por respuesta y la persona del negocio solo cuando hace falta.
+  const neg = perfil.negocio === true;
+  const recordar = (entrada, salida, extra = {}) => recordarCharla(memoria, ev.from, estado, now, idioma, neg, entrada, salida, extra);
+  const pasarAlEquipo = (tipo, extra = {}) => pase(memoria, consultas, ev.from, estado, now, horas, idioma, tipo, extra);
 
   if (cmd === 'borrar') {
     await memoria?.delete(ev.from);
@@ -257,10 +264,12 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     // Sin panel o sin memoria nadie vería el pedido: se deriva al correo y el asistente no se calla.
     if (memoria && !charlas && perfil.pausaSinPanel) {
       await guardar({ ...estado, idioma, humanoHasta: now + horas * 3600_000 });
-      return { send: [msgTexto(ev.from, T.persona)], metrica: 'persona', handoff: true };
+      const reg = neg ? await pasarAlEquipo('persona') : null;
+      return { send: [msgTexto(ev.from, T.persona)], metrica: 'persona', handoff: true, ...(reg && { consulta: reg.numero }) };
     }
     if (!charlas || !memoria) return { send: [msgTexto(ev.from, T.personaMail)], metrica: 'persona', handoff: true };
     await guardar({ ...estado, idioma, humanoHasta: now + horas * 3600_000 });
+    if (neg) await pasarAlEquipo('persona');
     await agregar(
       charlas,
       ev.from,
@@ -279,12 +288,14 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     await guardar({ ...estado, idioma: nuevo, humanoHasta: 0 });
     // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
     const N = perfil.textos(nuevo);
-    return { send: [msgTexto(ev.from, juntar(N.bienvenida, N.quienes)), msgTexto(ev.from, N.menu)], metrica: 'idioma', idioma: nuevo };
+    // Un negocio manda todo en un solo mensaje (Meta cobra cada mensaje desde el 1/10/2026).
+    const send = neg ? [msgTexto(ev.from, juntar(N.bienvenida, N.quienes, N.menu))] : [msgTexto(ev.from, juntar(N.bienvenida, N.quienes)), msgTexto(ev.from, N.menu)];
+    return { send, metrica: 'idioma', idioma: nuevo };
   }
 
   if (cmd === 'idioma') {
     // Mientras elige, los números 1 a 3 son idiomas (no opciones del menú).
-    if (estado) await guardar({ humanoHasta: estado.humanoHasta ?? 0 });
+    if (estado) await guardar({ ...estado, idioma: undefined, pedido: null, consulta: null, humanoHasta: estado.humanoHasta ?? 0 });
     return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   }
   if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu)], metrica: 'menu' };
@@ -293,18 +304,37 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // Los pasos fijos de un pedido (SÍ, retiro o envío, nombre, dirección, CANCELAR, PEDIDO) van antes que el menú y la
   // IA: «1» y «2» son retiro y envío mientras se pregunta eso. Sin memoria no hay pedidos (no se recordaría el paso).
   if (pedidos && memoria && ev.kind === 'text' && conocido) {
-    const p = await pedidos.antes(ev.text, estado?.pedido ?? null, idioma);
+    // Si ya sabemos su nombre, no se lo volvemos a preguntar (ZL-146).
+    const p = await pedidos.antes(ev.text, estado?.pedido ?? null, idioma, { nombre: estado?.nombre ?? '' });
     if (p) {
-      await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, pedido: p.pedido });
+      const nombre = p.pedido?.nombre || (estado?.pedido?.paso === 'nombre' && p.metrica !== 'pedido_nombre' ? limpiarTexto(ev.text).slice(0, 60) : '') || estado?.nombre;
+      await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, pedido: p.pedido, ...(nombre && { nombre }) });
+      await recordar(ev.text, p.texto);
       return { send: [msgTexto(ev.from, p.texto)], metrica: p.metrica, ...(p.numero && { pedido: p.numero }) };
     }
+  }
+
+  // El paso de una consulta (ZL-146): el asistente le pidió el nombre para pasarla al equipo. Si en vez del nombre
+  // escribe otra cosa (una pregunta), sigue la charla normal y la consulta queda para cuando quiera avanzar.
+  if (neg && memoria && ev.kind === 'text' && estado?.consulta?.paso === 'nombre') {
+    const nombre = nombreDeMensaje(ev.text);
+    if (nombre) {
+      const tipo = estado.consulta.tipo;
+      const reg = await pasarAlEquipo(tipo, { nombre, interes: estado.consulta.interes, pausa: tipo === 'persona' });
+      const texto = (tipo === 'persona' ? T.persona : T.consultaLista(nombre));
+      await recordar(ev.text, texto, { nombre, consulta: null });
+      return { send: [msgTexto(ev.from, texto)], metrica: tipo === 'persona' ? 'persona_auto' : 'consulta', ...(tipo === 'persona' && { handoff: true }), ...(reg && { consulta: reg.numero }) };
+    }
+    await guardar({ ...estado, consulta: null });
   }
 
   // Quien no nos conoce tiene que ver qué ofrecemos desde el primer mensaje: un saludo o «¿qué hacen?» reciben la
   // presentación y el menú, sin gastar IA (también si ya eligió idioma antes y vuelve a escribir otro día).
   const saludo = ev.kind === 'text' ? esSaludo(ev.text) : null;
   const queHacen = ev.kind === 'text' && !saludo ? pideQueHacen(ev.text) : null;
-  if ((saludo || queHacen) && conocido) {
+  // Un negocio que ya conoce a la persona (ZL-146) no le repite el saludo fijo: la IA la saluda y retoma lo que charlaron.
+  const conocida = neg && !!(estado?.resumen || estado?.nombre);
+  if ((saludo || queHacen) && conocido && !(conocida && saludo)) {
     if (unico && !estado) await guardar({ idioma: unico, humanoHasta: 0 });
     // Un negocio con varios idiomas (ZL-127): el idioma del mensaje manda. «Hello» con castellano guardado pasa a
     // inglés; un saludo que vale en varios idiomas («hey», «info») deja el que ya tenía.
@@ -318,6 +348,11 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     }
     const P = perfil.textos(en);
     const primero = saludo ? juntar(P.hola, P.quienes) : P.quienes;
+    if (neg) {
+      const texto = juntar(primero, P.menu);
+      await recordar(ev.text, texto);
+      return { send: [msgTexto(ev.from, texto)], metrica: saludo ? 'saludo' : 'presentacion' };
+    }
     return { send: [msgTexto(ev.from, primero), msgTexto(ev.from, P.menu)], metrica: saludo ? 'saludo' : 'presentacion' };
   }
   // Todavía no eligió idioma: si saluda otra vez se le vuelve a preguntar; si pregunta qué hacemos, se toma el idioma
@@ -327,11 +362,15 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     const en = delPerfil(queHacen) ?? perfil.idiomas[0];
     await guardar({ ...estado, idioma: en, humanoHasta: 0 });
     const P = perfil.textos(en);
+    if (neg) return { send: [msgTexto(ev.from, juntar(P.quienes, P.menu))], metrica: 'presentacion', idioma: en };
     return { send: [msgTexto(ev.from, P.quienes), msgTexto(ev.from, P.menu)], metrica: 'presentacion', idioma: en };
   }
 
   // Un número del menú: respuesta fija, sin gastar IA.
-  if (num && conocido && perfil.opcion(idioma, num)) return { send: [msgTexto(ev.from, perfil.opcion(idioma, num))], metrica: 'opcion', opcion: num };
+  if (num && conocido && perfil.opcion(idioma, num)) {
+    await recordar(ev.text, perfil.opcion(idioma, num));
+    return { send: [msgTexto(ev.from, perfil.opcion(idioma, num))], metrica: 'opcion', opcion: num };
+  }
 
   // Primer contacto de un negocio con una pregunta concreta: saludo y presentación, y además la respuesta.
   const primerContacto = !!(unico && memoria && !estado);
@@ -356,7 +395,9 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   const detectado = perfil === PERFIL_ESTUDIO ? null : idiomaDelTexto(texto);
   // Con pedidos, la IA ve el carrito actual para devolverlo completo si el mensaje lo cambia.
   const carrito = pedidos && memoria ? { carrito: await pedidos.contexto() } : {};
-  const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...carrito }) : await preguntar(texto, idioma, carrito);
+  // Un negocio (ZL-146): la IA ve los últimos mensajes y lo que sabemos de la persona, y sabe a qué cierre llevarla.
+  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), objetivo: perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
+  const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...contexto }) : await preguntar(texto, idioma, contexto);
   // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
   const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;
   const enIdioma = cambio ?? idioma;
@@ -372,9 +413,43 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
       await guardar({ ...ahora, idioma: ahora.idioma ?? enIdioma, humanoHasta: ahora.humanoHasta ?? 0, pedido: pedido.pedido });
     }
   }
+  if (neg) {
+    const Te = perfil.textos(enIdioma);
+    const nombre = c.memoria?.nombre || estado?.nombre || '';
+    const aprendido = { ...(nombre && { nombre }), ...(c.memoria?.resumen && { resumen: c.memoria.resumen }) };
+    let metrica = pedido ? 'ia_pedido' : 'ia';
+    let extra = {};
+    // Hace falta alguien del negocio (lo pidió, es un reclamo, la IA no tenía la respuesta o se llegó al tope del día):
+    // el asistente se calla en esta charla, el negocio la ve en «Pedidos y consultas» y responde por acá.
+    if ((c.persona || c.tope) && !c.fuera_de_tema) {
+      const reg = await pasarAlEquipo('persona', { ...aprendido, pausa: true });
+      respuesta = c.vacia || c.tope ? Te.sinRespuesta : juntar(c.respuesta, Te.persona);
+      metrica = 'persona_auto';
+      extra = { handoff: true, ...(reg && { consulta: reg.numero }) };
+      // La cuenta del estudio con la ficha de un negocio (ZL-124) tiene el panel del equipo: la charla va ahí y se avisa.
+      if (charlas) {
+        await agregar(charlas, ev.from, [{ de: 'persona', texto }, { de: 'sistema', texto: `El asistente pasó la charla al equipo. Idioma: ${NOMBRE_IDIOMA[enIdioma] ?? enIdioma}.` }], now, { abierta: true, idioma: enIdioma });
+        extra.avisar = true;
+      }
+    } else if (c.avanzar === 'consulta' && consultas && !pedido) {
+      // Quiere avanzar y el cierre es una consulta: con el nombre se registra ya; si no, se le pide (un solo dato).
+      if (nombre) {
+        const reg = await pasarAlEquipo('consulta', aprendido);
+        respuesta = juntar(c.respuesta, Te.consultaLista(nombre));
+        metrica = 'consulta';
+        extra = reg ? { consulta: reg.numero } : {};
+      } else {
+        respuesta = juntar(c.respuesta, Te.consultaNombre);
+        aprendido.consulta = { paso: 'nombre', tipo: 'consulta', interes: c.memoria?.resumen ?? '' };
+        metrica = 'consulta_nombre';
+      }
+    }
+    await recordar(texto, respuesta, aprendido);
+    return { send: [msgTexto(ev.from, respuesta)], metrica, ...extra, idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
+  }
   return {
     send: primerContacto
-      ? [msgTexto(ev.from, juntar(T.hola, T.quienes)), msgTexto(ev.from, `${respuesta}\n\n${T.menuHint}`)]
+      ? [msgTexto(ev.from, juntar(T.hola, T.quienes)), msgTexto(ev.from, respuesta)]
       : [msgTexto(ev.from, respuesta)],
     metrica: pedido ? 'ia_pedido' : 'ia',
     idioma,
@@ -382,6 +457,53 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     notas: c.notas,
     uso: c.uso,
   };
+}
+
+const limpiarTexto = (t) => String(t ?? '').replace(CONTROL_RE, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * El nombre que manda la persona cuando se lo pedimos («Juan», «soy Ana Pérez», «me llamo Luis»). Una pregunta, un
+ * número o un mensaje largo no son un nombre: → '' y la charla sigue normal.
+ */
+export function nombreDeMensaje(texto) {
+  let t = limpiarTexto(texto).replace(/^(hola[,!.]?\s*)?(soy|me llamo|mi nombre es|es|i'?m|my name is|ja sam|zovem se)\s+/i, '').replace(/[.!]+$/, '').trim();
+  if (!t || t.length < 2 || t.length > 60 || /[?¿@\d]|https?:/i.test(t)) return '';
+  if (t.split(' ').length > 4) return '';
+  if (/^(si|sí|no|ok|dale|gracias|menu|menú|persona|cancelar|hola|buenas)$/i.test(t)) return '';
+  return t.split(' ').map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Los últimos mensajes de la charla (solo los de las últimas 48 h). */
+const historial = (estado, now) => (estado?.histT && now - estado.histT < HISTORIAL_MS && Array.isArray(estado.hist) ? estado.hist : []);
+
+/** Lo que la IA de un negocio sabe de la charla (ZL-146): los últimos mensajes y la persona (nombre, resumen, días). */
+export function memoriaParaIa(estado, now) {
+  const dias = Number.isFinite(estado?.ultimo) ? Math.floor((now - estado.ultimo) / 86_400_000) : null;
+  const sabe = estado?.nombre || estado?.resumen;
+  return { historial: historial(estado, now), cliente: sabe ? { nombre: estado.nombre ?? '', resumen: estado.resumen ?? '', dias } : null };
+}
+
+/** Suma el mensaje y la respuesta a la memoria corta de un negocio (y lo que se aprendió de la persona). */
+async function recordarCharla(memoria, de, estado, now, idioma, neg, entrada, salida, extra) {
+  if (!neg || !memoria) return;
+  const ahora = (await memoria.get(de)) ?? estado ?? {};
+  const hist = [...historial(ahora, now), { r: 'u', t: limpiarTexto(entrada).slice(0, 500) }, { r: 'a', t: String(salida ?? '').slice(0, 500) }].slice(-HISTORIAL_MAX);
+  // El idioma no se fija acá: si todavía no lo eligió, se le sigue preguntando.
+  await memoria.put(de, { ...ahora, humanoHasta: ahora.humanoHasta ?? 0, ...extra, hist, histT: now, ultimo: now });
+}
+
+/**
+ * Pasa la charla al equipo del negocio (ZL-146): la registra en «Pedidos y consultas» con lo que sabemos (nunca el texto
+ * de la charla) y, si hace falta una persona, pausa al asistente las horas de la ficha. → {numero, nueva} o null.
+ */
+async function pase(memoria, consultas, de, estado, now, horas, idioma, tipo, { pausa = false, ...datos } = {}) {
+  if (pausa && memoria) {
+    const ahora = (await memoria.get(de)) ?? estado ?? {};
+    await memoria.put(de, { ...ahora, idioma: ahora.idioma ?? idioma, humanoHasta: now + horas * 3600_000, consulta: null });
+  }
+  if (!consultas) return null;
+  const st = (memoria && (await memoria.get(de))) || estado || {};
+  return consultas.registrar({ tipo, nombre: datos.nombre ?? st.nombre ?? '', interes: datos.interes ?? st.interes ?? '', resumen: datos.resumen ?? st.resumen ?? '', idioma });
 }
 
 /**
