@@ -16,7 +16,7 @@
 ## Datos
 
 > Nombre: como lo dice el negocio. Idioma: castellano, inglés o croata; o varios, separados por coma («castellano,
-> inglés»): el primero es el principal y, con varios, el primer mensaje pregunta en cuál seguir (ver «Varios idiomas»
+> inglés»): el primero es el principal y, con varios, cada charla arranca en el idioma en que le escriben (ver «Varios idiomas»
 > al final). Trato: vos, tú o usted (para el castellano).
 > Emojis: sí o no. Precios: «sí» si el asistente puede decir los precios escritos en esta ficha; «no» si nunca.
 > Horas de pausa: cuánto se calla el asistente después de pasarle la charla a alguien del negocio (de 1 a 72).

@@ -261,12 +261,16 @@ export async function appNegocios(request, env, deps) {
   // Pedidos (ZL-139): el panel del negocio. Solo el negocio (y el equipo) cambia estados; nunca la IA.
   if (request.method === 'GET' && sub === '/pedidos') {
     const r = await ejecutar('pedidos', [{ estado: url.searchParams.get('estado') ?? '', cuantos: Number(url.searchParams.get('cuantos') ?? 100) }]);
-    return r.resp ?? json({ ...r.valor, encendidos: negocio.pedidos === true });
+    if (r.resp) return r.resp;
+    await conContacto(r.valor.pedidos, deps);
+    return json({ ...r.valor, encendidos: negocio.pedidos === true });
   }
   const mo = /^\/pedidos\/(\d{1,9})$/.exec(sub);
   if (mo && request.method === 'GET') {
     const r = await ejecutar('pedido', [Number(mo[1])]);
-    return r.resp ?? json(r.valor);
+    if (r.resp) return r.resp;
+    await conContacto([r.valor], deps);
+    return json(r.valor);
   }
   if (mo && request.method === 'POST') {
     const b = await leerJson(request);
@@ -349,6 +353,7 @@ export async function appNegocios(request, env, deps) {
     for (const c of r.valor.consultas) {
       if (deps.charlasNegocio?.pausa && ['nueva', 'atendiendo'].includes(c.estado)) c.pausaHasta = await deps.charlasNegocio.pausa(c.charla).catch(() => 0);
     }
+    await conContacto(r.valor.consultas, deps);
     return json(r.valor);
   }
   const mc = /^\/consultas\/(\d{1,9})(\/devolver)?$/.exec(sub);
@@ -554,4 +559,35 @@ export async function administrar(request, ruta, deps, now) {
     return json({ ...r.negocio, acceso: cambios.emails && deps.acceso ? await deps.acceso(r.negocio.emails) : null });
   }
   return error('no existe', 404);
+}
+
+/**
+ * Por dónde escribió la persona y cómo encontrarla (ZL-153): en WhatsApp, su número (sale de la charla); en Instagram,
+ * su usuario si se guardó. Se arma al pedir la lista: nunca va en la URL ni en los avisos al celular.
+ * → {canal: 'whatsapp'|'instagram', texto, enlace} o null (una charla de prueba).
+ */
+export function contactoDeCharla(charla, canal, usuario = null) {
+  const wa = /^yc:\d+:(\d{6,16})$/.exec(String(charla ?? ''));
+  if (wa) return { canal: 'whatsapp', texto: '+' + wa[1], enlace: 'https://wa.me/' + wa[1] };
+  if (canal === 'ig' || /^ig:/.test(String(charla ?? ''))) {
+    const u = /^[\w.]{1,30}$/.test(String(usuario ?? '')) ? String(usuario) : null;
+    return u
+      ? { canal: 'instagram', texto: '@' + u, enlace: 'https://ig.me/m/' + u }
+      : { canal: 'instagram', texto: 'Instagram (sin usuario)', enlace: 'https://www.instagram.com/direct/inbox/' };
+  }
+  return null;
+}
+
+/** Le suma `contacto` a cada pedido o consulta (el usuario de Instagram se busca una vez por charla). */
+async function conContacto(lista, deps) {
+  const usuarios = new Map();
+  for (const x of lista ?? []) {
+    if (!x) continue;
+    let u = null;
+    if (/^ig:/.test(String(x.charla ?? '')) && deps.charlasNegocio?.usuario) {
+      if (!usuarios.has(x.charla)) usuarios.set(x.charla, await deps.charlasNegocio.usuario(x.charla).catch(() => null));
+      u = usuarios.get(x.charla);
+    }
+    x.contacto = contactoDeCharla(x.charla, x.canal, u);
+  }
 }

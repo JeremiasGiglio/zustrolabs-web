@@ -1,10 +1,10 @@
-// Fichas con varios idiomas (ZL-126): el primer mensaje pregunta el idioma, y el saludo, el menú y sus respuestas
-// salen en el idioma elegido. Con un solo idioma, todo sigue igual (lo prueba negocio.test.js).
+// Fichas con varios idiomas (ZL-126): el saludo, el menú y sus respuestas salen en el idioma de la charla. Desde
+// ZL-153 el primer mensaje ya no pregunta el idioma: se toma el del mensaje (IDIOMA lo sigue preguntando). Con un solo idioma, todo sigue igual (lo prueba negocio.test.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
-import { parsearFicha, perfilNegocio, preguntadorNegocio, promptNegocio } from '../src/negocio.js';
+import { parsearFicha, perfilNegocio, preguntadorNegocio, promptNegocio, sinSaludoInicial } from '../src/negocio.js';
 import { atender } from '../src/whatsapp.js';
 import { idiomaDelTexto } from '../src/textos.js';
 
@@ -81,58 +81,76 @@ test('ficha: los errores de idioma se explican', () => {
   assert.match(err(conIdiomas('castellano, inglés', EXTRA_EN, '\n## Nunca (inglés)\n- Nothing.\n')), /solo el saludo y el menú van por idioma/);
 });
 
-test('charla: el primer mensaje pregunta el idioma; el número elige; el menú y sus opciones salen en ese idioma', async () => {
+test('charla (ZL-153): el primer mensaje NO pregunta el idioma: se toma el del mensaje y sale el saludo con el menú', async () => {
   const { decir, preguntas } = charla(TRES);
-  const r1 = await decir('hello');
-  assert.equal(r1.metrica, 'pide_idioma');
-  assert.match(r1.textos[0], /Gracias por escribir a Panadería La Espiga[\s\S]*Thanks for writing to Panadería La Espiga[\s\S]*Na kojem jeziku/);
-  assert.match(r1.textos[0], /1️⃣ Español 🇦🇷\n2️⃣ English 🇬🇧\n3️⃣ Hrvatski 🇭🇷$/);
-  // Mientras elige, 2 es el idioma (no la opción 2 del menú).
-  const r2 = await decir('2');
-  assert.equal(r2.metrica, 'idioma');
-  // ZL-146: saludo, presentación y menú en un solo mensaje (Meta cobra cada mensaje).
-  assert.equal(r2.textos.length, 1);
-  assert.match(r2.textos[0], /^Hi! 👋[\s\S]*virtual assistant of Panadería La Espiga[\s\S]*How can I help\?[\s\S]*Bread and pastries[\s\S]*Reply with a number/);
-  // Ya eligió: 2 es la opción del menú, en inglés.
-  const r3 = await decir('2');
-  assert.equal(r3.metrica, 'opcion');
-  assert.match(r3.textos[0], /Order two days ahead/);
-  assert.doesNotMatch(r3.textos[0], /PERSON/, 'ZL-146: las opciones no empujan a pedir una persona');
-  // La IA recibe el idioma elegido, y el pie va en ese idioma.
-  const r4 = await decir('Do you have gluten free bread?');
-  assert.equal(r4.metrica, 'ia');
-  assert.deepEqual(preguntas, [['Do you have gluten free bread?', 'en']]);
-  assert.equal(r4.textos[0], 'IA (en)');
-  // ZL-127: saludar en otro idioma lo cambia (el idioma del mensaje manda); un mensaje que vale en varios («info») no.
+  const r1 = await decir('ola, como te va?');
+  assert.equal(r1.metrica, 'saludo');
+  assert.equal(r1.textos.length, 1);
+  assert.match(r1.textos[0], /¿En qué te puedo ayudar\?[\s\S]*Pan y facturas/);
+  assert.doesNotMatch(r1.textos[0], /idioma|language|jeziku/i);
+  // Ya eligió (castellano): 2 es la opción del menú.
+  assert.match((await decir('2')).textos[0], /dos días de anticipación|anticipación/);
+  const r3 = await decir('¿Tienen pan sin TACC?');
+  assert.equal(r3.metrica, 'ia');
+  assert.deepEqual(preguntas.at(-1), ['¿Tienen pan sin TACC?', 'es']);
+  // Otro idioma escrito lo cambia (ZL-127); IDIOMA sigue preguntando si alguien lo pide.
   assert.match((await decir('hello')).textos[0], /How can I help\?/);
-  assert.match((await decir('info')).textos[0], /How can I help\?/, '«info» vale en inglés y en castellano: sigue en inglés');
-  assert.match((await decir('hola')).textos[0], /¿En qué te puedo ayudar\?/);
-  assert.match((await decir('info')).textos[0], /¿En qué te puedo ayudar\?/, '«info» vale en castellano y en inglés: sigue en castellano');
-  assert.match((await decir('bok')).textos[0], /Kako vam mogu pomoći\?/);
-  assert.match((await decir('hi')).textos[0], /How can I help\?/);
-  // Pedir otro idioma por su nombre lo cambia y vuelve a mostrar el saludo y el menú.
-  const r5 = await decir('español');
-  assert.equal(r5.metrica, 'idioma');
-  assert.match(r5.textos[0], /¿En qué te puedo ayudar\?[\s\S]*Pan y facturas/);
-  // IDIOMA vuelve a preguntar.
   assert.equal((await decir('idioma')).metrica, 'pide_idioma');
-  const r6 = await decir('3');
-  assert.match(r6.textos[0], /Kako vam mogu pomoći\?[\s\S]*Kruh i peciva/);
+  assert.match((await decir('3')).textos[0], /Kako vam mogu pomoći\?[\s\S]*Kruh i peciva/);
 });
 
-test('charla: una pregunta antes de elegir idioma recibe la pregunta del idioma; un idioma que la ficha no tiene no se elige', async () => {
+test('charla (ZL-153): después del saludo la IA sabe que la charla ya empezó y no vuelve a decir «hola»', async () => {
+  const pf = parsearFicha(TRES);
+  const perfil = perfilNegocio(pf.ficha);
+  const memoria = adaptadores(crearAtencion(almacenPrueba()), () => T0).memoria;
+  const contextos = [];
+  const preguntar = async (texto, idioma, ctx = {}) => (contextos.push(ctx), { respuesta: '¡Hola de nuevo! Claro, armamos páginas para negocios como el tuyo.', persona: false, fuera_de_tema: false, vacia: false, notas: [] });
+  let k = 0;
+  const decir = async (text) => (await atender({ id: `m${++k}`, from: 'ig:1.2', ts: T0 / 1000, kind: 'text', text }, { memoria, charlas: null, preguntar, now: T0 + k, perfil })).send.map((m) => m.text?.body ?? '');
+  const saludo = await decir('ola, como te va?');
+  assert.equal(saludo.length, 1, 'un solo mensaje: el saludo con el menú, sin preguntar el idioma');
+  const r = await decir('quiero una página para mi heladería');
+  assert.equal(contextos.at(-1).saludado, true, 'la IA sabe que ya saludó');
+  assert.ok(contextos.at(-1).historial.length >= 2, 'y ve la charla anterior');
+  assert.equal(r.join('\n'), 'Claro, armamos páginas para negocios como el tuyo.', 'si igual saluda, se le saca el «hola» del principio');
+  // Después de elegir idioma con IDIOMA también: esa elección queda en la charla.
+  await decir('idioma');
+  await decir('1');
+  await decir('¿y cuánto tardan?');
+  assert.equal(contextos.at(-1).saludado, true);
+});
+
+test('sinSaludoInicial y el prompt (ZL-153): sin «hola» repetido; un saludo de verdad solo al principio', () => {
+  assert.equal(sinSaludoInicial('¡Hola! Claro, te cuento.'), 'Claro, te cuento.');
+  assert.equal(sinSaludoInicial('Hola de nuevo, Nelson. Sí, hacemos apps.'), 'Sí, hacemos apps.');
+  assert.equal(sinSaludoInicial('Buenas! ¿Para cuándo lo necesitás?'), '¿Para cuándo lo necesitás?');
+  assert.equal(sinSaludoInicial('Hello! Sure.'), 'Sure.');
+  assert.equal(sinSaludoInicial('Claro, holamente.'), 'Claro, holamente.', 'sin saludo, igual');
+  assert.equal(sinSaludoInicial('¡Hola!'), '¡Hola!', 'si es lo único que hay, queda');
+  const ficha = parsearFicha(BASE).ficha;
+  assert.match(promptNegocio(ficha, 'Instagram', null, null, null, null, { saludado: true }), /NO digas «hola» ni te presentes de nuevo/);
+  assert.match(promptNegocio(ficha, 'Instagram', null, null, null, null, { saludado: false }), /Es el primer mensaje de la charla: arrancá con un saludo corto/);
+  assert.match(promptNegocio(ficha), /no la mandes a la página web del negocio salvo que la pida/);
+  assert.match(promptNegocio(ficha), /nunca como «el <producto> de Panadería La Espiga»/);
+});
+
+test('charla (ZL-153): el primer mensaje en inglés o croata arranca en ese idioma; sin reconocerlo, en el principal', async () => {
+  assert.match((await charla(TRES).decir('Hi, how are you?')).textos[0], /^Hi! 👋[\s\S]*How can I help\?/);
+  assert.match((await charla(TRES).decir('Bok, kako ste?')).textos[0], /Kako vam mogu pomoći\?/);
+  const otro = charla(TRES);
+  const r = await otro.decir('👍');
+  assert.equal(r.metrica, 'ia', 'un emoji va a la IA, en el idioma principal');
+  assert.deepEqual(otro.preguntas.at(-1), ['👍', 'es']);
+  // Pedir un idioma por su nombre sigue andando; uno que la ficha no tiene, no.
   const dos = charla(conIdiomas('castellano, inglés', EXTRA_EN));
-  const r = await dos.decir('¿Tienen facturas?');
-  assert.equal(r.metrica, 'pide_idioma');
-  assert.match(r.textos[0], /1️⃣ Español 🇦🇷\n2️⃣ English 🇬🇧$/);
-  assert.equal((await dos.decir('hrvatski')).metrica !== 'idioma', true, 'croata no está en esta ficha');
-  assert.equal((await dos.decir('3')).metrica !== 'idioma', true, 'no hay opción 3 de idioma');
-  assert.equal((await dos.decir('1')).metrica, 'idioma');
+  assert.equal((await dos.decir('English')).metrica, 'idioma');
+  assert.notEqual((await dos.decir('hrvatski')).metrica, 'idioma');
 });
 
-test('charla: sin emojis, la pregunta del idioma va con números y sin banderas', async () => {
+test('charla: sin emojis, la pregunta del idioma (cuando se pide con IDIOMA) va con números y sin banderas', async () => {
   const { decir } = charla(TRES.replace('- Emojis: sí', '- Emojis: no'));
-  const t = (await decir('hola')).textos[0];
+  await decir('hola');
+  const t = (await decir('idioma')).textos[0];
   assert.match(t, /1\. Español\n2\. English\n3\. Hrvatski$/);
   assert.doesNotMatch(t, /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u);
 });
@@ -166,11 +184,9 @@ test('PERSONA: el horario va en el idioma de la charla, y sin traducción no se 
   const { decir, ficha } = charla(texto);
   assert.equal(ficha.horarios.en, 'Monday to Saturday');
   await decir('hello');
-  await decir('2');
   assert.match((await decir('person')).textos[0], /someone will reply to you right here \(Monday to Saturday\)\./);
   const otra = charla(texto);
-  await otra.decir('hola');
-  await otra.decir('3');
+  await otra.decir('bok');
   const hr = (await otra.decir('osoba')).textos[0];
   assert.match(hr, /odgovoriti osoba\.$/);
   assert.doesNotMatch(hr, /\(/, 'sin el horario en castellano');
