@@ -124,7 +124,11 @@ test.describe('app de negocios (ZL-121)', () => {
   test('el equipo ve Asistente y Administración, prueba la charla y crea un negocio', async ({ page }) => {
     await montar(page, 'equipo@example.com');
     await page.getByRole('tab', { name: 'Asistente' }).click();
-    await expect(page.getByLabel('Ficha del negocio')).toHaveValue(/Panadería La Espiga/);
+    // ZL-150: la ficha se abre en el formulario; en Markdown está la misma.
+    await expect(page.getByLabel('Nombre del negocio')).toHaveValue('Panadería La Espiga');
+    await expect(page.getByLabel('Opción 2: título')).toHaveValue('🎂 Tortas por encargo');
+    await page.getByRole('button', { name: 'Markdown' }).click();
+    await expect(page.getByLabel('Ficha del negocio')).toHaveValue(/- Nombre: Panadería La Espiga[\s\S]*- Objetivo: consultas/);
     await page.getByLabel('Mensaje de prueba').fill('¿tienen pan?');
     await page.getByRole('button', { name: 'Enviar' }).click();
     await expect(page.locator('.burbuja.asis').last()).toContainText('tenemos pan francés');
@@ -132,8 +136,8 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByLabel('Nombre del negocio').fill('Chocolatería Ficticia');
     await page.getByLabel('Correos de quienes entran').fill('dueno@example.com');
     await page.getByRole('button', { name: 'Crear' }).click();
-    await expect(page.getByRole('combobox', { name: 'Negocio' })).toHaveValue(/.+/);
-    await expect(page.getByRole('combobox', { name: 'Negocio' }).locator('option:checked')).toHaveText('Chocolatería Ficticia');
+    await expect(page.getByRole('combobox', { name: 'Negocio', exact: true })).toHaveValue(/.+/);
+    await expect(page.getByRole('combobox', { name: 'Negocio', exact: true }).locator('option:checked')).toHaveText('Chocolatería Ficticia');
   });
 
   test('la charla de prueba con una ficha en dos idiomas pregunta el idioma, lo recuerda y se reinicia (ZL-126)', async ({ page }) => {
@@ -141,6 +145,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('tab', { name: 'Asistente' }).click();
     const dos = FICHA.replace('- Idioma: castellano', '- Idioma: castellano, inglés') +
       '\n## Saludo (inglés)\n\nHi from the bakery.\n\n## Menú (inglés)\n\n### 1. Bread\nFresh.\n\n### 2. Cakes\nTo order.\n\n### 3. Hours\nMon to Sat.\n';
+    await page.getByRole('button', { name: 'Markdown' }).click();
     await page.getByLabel('Ficha del negocio').fill(dos);
     const enviar = async (m: string) => {
       await page.getByLabel('Mensaje de prueba').fill(m);
@@ -331,5 +336,26 @@ test.describe('app de negocios (ZL-121)', () => {
     expect([aj.entrega, aj.retiro, aj.reservaHoras]).toEqual(['retiro', 'Calle Ficticia 123, de 9 a 20', 2]);
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
+  });
+
+  test('alta fácil (ZL-150): plantilla por rubro en el formulario, revisor con charlas de prueba; el negocio ve su estado', async ({ page }) => {
+    // El formulario es largo y el revisor corre 7 charlas: en el celular emulado tarda más.
+    test.setTimeout(90_000);
+    await montar(page, 'equipo@example.com');
+    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await page.getByLabel('Plantilla por rubro').selectOption('servicios');
+    await page.getByRole('button', { name: 'Usar plantilla' }).click();
+    await expect(page.getByLabel('A qué cierre lleva la charla')).toHaveValue('consultas');
+    await expect(page.getByLabel('Saludo')).toHaveValue(/\[COMPLETAR nombre del negocio\]/);
+    await page.getByRole('button', { name: '+ Agregar opción' }).click();
+    await expect(page.getByLabel('Opción 4: título')).toBeVisible();
+    await page.getByRole('button', { name: 'Revisar todo' }).click();
+    await expect(page.getByText(/^Charlas de prueba \(\d de 7 bien\)$/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Falta completar/).first()).toBeVisible();
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'Estado', exact: true }).click();
+    await expect(page.locator('.chip').filter({ hasText: /Todo funcionando|Falta algo/ })).toBeVisible();
   });
 });

@@ -28,6 +28,8 @@ h2{margin:.2rem 0 .8rem;font-size:1.25rem}h3{margin:1.2rem 0 .5rem;font-size:1.0
 .barra input[type=search]{flex:1 1 12rem;min-width:0}
 input[type=text],input[type=search],input[type=number],input[type=email],select,textarea{border:1px solid #C9CED6;border-radius:8px;padding:.55rem .65rem;background:#fff;width:100%}
 .barra select,.barra input[type=search]{width:auto}
+select{max-width:100%}.barra>select,.barra>input[type=url]{flex:1 1 12rem;min-width:0;width:auto}
+.wa-form,.dosc>div{min-width:0}
 textarea{min-height:6rem;resize:vertical}textarea.ficha{min-height:24rem;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
 label{display:block;font-size:.9rem;font-weight:600;margin:.7rem 0 .25rem}
 label.check{display:flex;align-items:center;gap:.45rem;font-weight:400}
@@ -94,6 +96,7 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
   .tabs button{flex:1 1 0;padding:.65rem .2rem;font-size:.82rem;border-bottom:0;border-top:3px solid transparent}
   .tabs button[aria-selected="true"]{border-top-color:var(--rojo)}
   main{padding-bottom:5.5rem}
+  .dosc{grid-template-columns:1fr}
   .tabla.apilada thead{display:none}.tabla.apilada tr{display:block;border-bottom:1px solid var(--linea);padding:.4rem 0}
   .tabla.apilada td{display:block;border:0;padding:.1rem .7rem}.tabla.apilada td[data-t]::before{content:attr(data-t) ": ";color:var(--gris);font-size:.8rem}
 }
@@ -217,10 +220,25 @@ function app() {
   function vistaConexiones() {
     const caja = h('section', {});
     const cuerpo = h('div', {});
-    const id = estado.sub.conexiones || 'whatsapp';
-    poner(cuerpo, id === 'instagram' ? vistaInstagram() : id === 'ajustes' ? vistaAjustes() : vistaWhatsapp());
-    caja.append(segmento('conexiones', [['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['ajustes', 'Cómo vendés']]), cuerpo);
+    const id = estado.sub.conexiones || 'estado';
+    poner(cuerpo, id === 'instagram' ? vistaInstagram() : id === 'ajustes' ? vistaAjustes() : id === 'whatsapp' ? vistaWhatsapp() : vistaEstado());
+    caja.append(segmento('conexiones', [['estado', 'Estado'], ['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['ajustes', 'Cómo vendés']]), cuerpo);
     return caja;
+  }
+
+  // ── Estado (ZL-150): el semáforo del negocio. Qué anda y, si algo falta, qué hacer. ──
+  function vistaEstado() {
+    const lista = h('div', { 'aria-live': 'polite' }, h('p', { class: 'ayuda' }, 'Revisando…'));
+    const ICONO = { ok: '✓', mal: '✗', aviso: '•' };
+    conError(async () => {
+      const r = await api(base() + '/estado');
+      poner(lista,
+        h('p', { class: 'chip ' + (r.verde ? 'ok' : 'mal') }, r.verde ? 'Todo funcionando' : 'Falta algo: mirá lo que está en rojo'),
+        h('ul', { class: 'lista' }, r.controles.map((c) => h('li', { class: 'tarjeta' },
+          h('strong', { class: c.estado === 'mal' ? 'errores' : '' }, ICONO[c.estado] + ' ' + c.texto),
+          c.arreglo && c.estado !== 'ok' ? h('p', { class: 'ayuda' }, c.arreglo) : null))));
+    })();
+    return h('section', {}, h('h2', {}, 'Estado'), h('p', { class: 'ayuda' }, 'Si algo está en rojo, el asistente no puede responder por ahí. Abajo dice qué hacer.'), lista);
   }
 
   // ── Cómo vendés (ZL-148): entrega, pago y cuánto se guarda un pedido aceptado. El asistente los usa solo. ──
@@ -822,36 +840,153 @@ function app() {
     return caja;
   }
 
-  // ── Asistente (solo el equipo) ──
+  // ── Asistente (solo el equipo). ZL-150: la ficha por formulario (o en Markdown), desde una plantilla o desde la web
+  // del negocio, con un revisor que avisa lo que choca con el sistema y corre charlas de prueba. ──
   function vistaAsistente() {
     const caja = h('section', {}, h('h2', {}, 'Asistente'),
-      h('p', { class: 'ayuda' }, 'La ficha la maneja solo el equipo de Zustro Labs. El asistente responde con esta ficha y con los productos de este negocio.'));
-    const texto = h('textarea', { class: 'ficha', 'aria-label': 'Ficha del negocio', spellcheck: 'false' });
-    const activa = h('input', { type: 'checkbox' });
+      h('p', { class: 'ayuda' }, 'La ficha la maneja el equipo de Zustro Labs. El asistente responde con esta ficha, con «Cómo vendés» y con los productos del negocio.'));
+    const st = { modo: 'form', campos: null, texto: '' };
     const info = h('div', { 'aria-live': 'polite' });
-    const chat = h('div', { class: 'chat' });
-    const msg = h('input', { type: 'text', placeholder: 'Escribí como si fueras un cliente', 'aria-label': 'Mensaje de prueba' });
-    let estadoPrueba = null;
+    const cuerpo = h('div', {});
+    const activa = h('input', { type: 'checkbox' });
+    const markdown = h('textarea', { class: 'ficha', 'aria-label': 'Ficha del negocio', spellcheck: 'false' });
+    const vacios = () => ({ nombre: estado.datos.negocio.nombre || '', idioma: 'es', trato: 'vos', emojis: true, precios: false, pausaHoras: 12, objetivo: 'consultas', horario: '', saludo: '', menu: [{ titulo: '', texto: '' }], vender: '', conocimiento: '', faq: '', nunca: '', persona: '' });
+
     const mostrar = (r) => {
-      poner(info, 
+      poner(info,
         r.errores && r.errores.length ? h('ul', { class: 'errores' }, r.errores.map((e) => h('li', {}, e))) : null,
         r.pendientes && r.pendientes.length ? h('p', { class: 'chip alerta' }, 'Falta completar: ' + r.pendientes.join(' · ')) : null,
         r.avisos && r.avisos.length ? h('ul', { class: 'ayuda' }, r.avisos.map((a) => h('li', {}, 'Ojo: ' + a))) : null,
-        r.idiomas && r.idiomas.length > 1 ? h('p', { class: 'ayuda' }, 'Idiomas: ' + r.idiomas.map((i) => ({ es: 'castellano', en: 'inglés', hr: 'croata' })[i]).join(', ') + ' (el primer mensaje pregunta en cuál seguir)') : null,
-        r.menu ? h('p', { class: 'ayuda' }, 'Menú: ' + r.menu.join(' · ')) : null,
+        r.conflictos && r.conflictos.length ? h('div', { class: 'caja' }, h('h3', {}, 'Lo que revisé'), h('ul', {}, r.conflictos.map((c) => h('li', { class: c.nivel === 'mal' ? 'errores' : '' }, (c.nivel === 'mal' ? '✗ ' : '• ') + c.texto)))) : null,
+        r.conflictos && !r.conflictos.length ? h('p', { class: 'chip ok' }, 'La ficha no choca con nada del sistema') : null,
+        r.charlas && r.charlas.length ? h('div', { class: 'caja' }, h('h3', {}, 'Charlas de prueba (' + r.charlas.filter((c) => c.ok).length + ' de ' + r.charlas.length + ' bien)'),
+          r.charlas.map((c) => h('div', { class: 'tarjeta' + (c.ok ? '' : ' nuevo') },
+            h('p', {}, h('strong', {}, (c.ok ? '✓ ' : '✗ ') + c.mensaje), c.motivo ? h('span', { class: 'ayuda' }, ' · ' + c.motivo) : null),
+            c.respuestas.map((t) => h('div', { class: 'burbuja asis' }, t))))) : null,
         r.error ? h('p', { class: 'errores' }, r.error) : null);
     };
-    caja.append(texto,
+
+    /** El Markdown de lo que está en pantalla (en formulario, lo arma el servidor con el mismo formato). */
+    async function textoActual() {
+      if (st.modo === 'md') return markdown.value;
+      const r = await api(base() + '/ficha/armar', { metodo: 'POST', cuerpo: { campos: leerFormulario() } });
+      return r.texto;
+    }
+
+    // El formulario.
+    const f = {};
+    function campoTexto(clave, etiquetaTxt, ayuda, filas) {
+      f[clave] = filas ? h('textarea', { rows: filas }) : h('input', { type: 'text' });
+      return [etiqueta(etiquetaTxt, f[clave]), ayuda ? h('p', { class: 'ayuda' }, ayuda) : null, f[clave]];
+    }
+    function campoSelect(clave, etiquetaTxt, opciones) {
+      f[clave] = h('select', {}, opciones.map(([v, t]) => h('option', { value: v }, t)));
+      return h('div', {}, etiqueta(etiquetaTxt, f[clave]), f[clave]);
+    }
+    const listaMenu = h('div', {});
+    function filaMenu(o, i) {
+      const titulo = h('input', { type: 'text', maxlength: 80, value: o.titulo || '', 'data-menu': 'titulo' });
+      const texto = h('textarea', { rows: 3, maxlength: 900, 'data-menu': 'texto' }, o.texto || '');
+      texto.value = o.texto || '';
+      return h('div', { class: 'tarjeta' },
+        etiqueta('Opción ' + (i + 1) + ': título', titulo), titulo,
+        etiqueta('Opción ' + (i + 1) + ': respuesta (terminala con una pregunta)', texto), texto,
+        h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn peligro', onclick: () => { const c = leerFormulario(); c.menu.splice(i, 1); pintarMenu(c.menu.length ? c.menu : [{ titulo: '', texto: '' }]); } }, 'Quitar opción')));
+    }
+    function pintarMenu(menu) { poner(listaMenu, menu.map(filaMenu)); }
+    function leerFormulario() {
+      const menu = [...listaMenu.querySelectorAll('.tarjeta')].map((t) => ({ titulo: t.querySelector('[data-menu=titulo]').value, texto: t.querySelector('[data-menu=texto]').value }));
+      return {
+        nombre: f.nombre.value, idioma: f.idioma.value, trato: f.trato.value, emojis: f.emojis.value === 'si', precios: f.precios.value === 'si',
+        pausaHoras: Number(f.pausaHoras.value), objetivo: f.objetivo.value, horario: f.horario.value, saludo: f.saludo.value, menu,
+        vender: f.vender.value, conocimiento: f.conocimiento.value, faq: f.faq.value, nunca: f.nunca.value, persona: f.persona.value,
+      };
+    }
+    function llenarFormulario(c) {
+      for (const k of ['nombre', 'idioma', 'trato', 'objetivo', 'horario', 'saludo', 'vender', 'conocimiento', 'faq', 'nunca', 'persona']) f[k].value = c[k] == null ? '' : String(c[k]);
+      f.emojis.value = c.emojis === false ? 'no' : 'si';
+      f.precios.value = c.precios ? 'si' : 'no';
+      f.pausaHoras.value = String(c.pausaHoras || 12);
+      pintarMenu(c.menu && c.menu.length ? c.menu : [{ titulo: '', texto: '' }]);
+    }
+    const formulario = h('div', { class: 'wa-form', style: 'max-width:none' },
+      h('div', { class: 'dosc' },
+        h('div', {}, ...campoTexto('nombre', 'Nombre del negocio')),
+        campoSelect('objetivo', 'A qué cierre lleva la charla', [['consultas', 'Consultas (servicios, presupuestos, turnos)'], ['pedidos', 'Pedidos (productos del catálogo)']])),
+      h('div', { class: 'dosc' },
+        campoSelect('idioma', 'Idioma', [['es', 'Castellano'], ['en', 'Inglés'], ['hr', 'Croata']]),
+        campoSelect('trato', 'Trato', [['vos', 'Vos'], ['tu', 'Tú'], ['usted', 'Usted']])),
+      h('div', { class: 'dosc' },
+        campoSelect('emojis', 'Emojis', [['si', 'Sí'], ['no', 'No']]),
+        campoSelect('precios', 'Puede decir los precios escritos', [['no', 'No'], ['si', 'Sí']])),
+      h('div', { class: 'dosc' },
+        campoSelect('pausaHoras', 'Cuánto se calla si lo toma el negocio', [['2', '2 horas'], ['6', '6 horas'], ['12', '12 horas'], ['24', '24 horas'], ['48', '48 horas']]),
+        h('div', {}, ...campoTexto('horario', 'Cuándo responde una persona', 'Por ejemplo: de lunes a sábado de 9 a 19'))),
+      ...campoTexto('saludo', 'Saludo', 'Una o dos oraciones: quién es y en qué ayuda. Después va el menú.', 3),
+      h('h3', {}, 'Menú (hasta 9 opciones)'), listaMenu,
+      h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: () => { const c = leerFormulario(); if (c.menu.length >= 9) return aviso('Máximo 9 opciones.', true); c.menu.push({ titulo: '', texto: '' }); pintarMenu(c.menu); } }, '+ Agregar opción')),
+      ...campoTexto('vender', 'Cómo vendemos', 'Cómo vendería el mejor vendedor del negocio: qué preguntar primero, qué recomendar, cómo responder una duda. Una idea por línea, con «- ».', 6),
+      ...campoTexto('conocimiento', 'Lo que sabe el asistente', 'Todo lo que puede responder. Lo que no esté acá, no lo sabe (y le pasa la charla al equipo).', 10),
+      ...campoTexto('faq', 'Preguntas frecuentes (opcional)', null, 4),
+      ...campoTexto('nunca', 'Nunca', 'Lo que no tiene que decir ni prometer. Una por línea, con «- ».', 3),
+      ...campoTexto('persona', 'Pasar a una persona cuando', 'Solo reclamos, casos grandes o lo que no sabe. Los pedidos y las consultas los cierra solo.', 3));
+    pintarMenu([{ titulo: '', texto: '' }]);
+
+    function pintarModo() {
+      poner(cuerpo, st.modo === 'md' ? markdown : formulario);
+      modoBotones.forEach((b) => b.setAttribute('aria-pressed', b.dataset.modo === st.modo ? 'true' : 'false'));
+    }
+    const cambiarModo = (m) => conError(async () => {
+      if (m === st.modo) return;
+      if (m === 'md') { markdown.value = await textoActual(); st.modo = 'md'; }
+      else {
+        const r = await api(base() + '/ficha/campos', { metodo: 'POST', cuerpo: { texto: markdown.value } }).catch((e) => e.datos || { ok: false, errores: [e.message] });
+        if (!r.ok) return mostrar({ errores: r.errores, error: 'Corregí los errores en Markdown antes de pasar al formulario.' });
+        if (r.multi) return aviso('Esta ficha tiene varios idiomas: se edita en Markdown.', true);
+        llenarFormulario(r.campos); st.modo = 'form';
+      }
+      pintarModo();
+    });
+    const modoBotones = [h('button', { type: 'button', 'data-modo': 'form', onclick: () => cambiarModo('form')() }, 'Formulario'), h('button', { type: 'button', 'data-modo': 'md', onclick: () => cambiarModo('md')() }, 'Markdown')];
+
+    // Empezar desde una plantilla o desde la web del negocio.
+    const plantilla = h('select', { 'aria-label': 'Plantilla por rubro' }, h('option', { value: '' }, 'Elegí un rubro…'));
+    const web = h('input', { type: 'url', placeholder: 'https://minegocio.com', 'aria-label': 'Página web del negocio' });
+    let plantillas = [];
+    const usar = (campos, de) => { llenarFormulario(Object.assign(vacios(), campos, { nombre: campos.nombre || estado.datos.negocio.nombre || '' })); st.modo = 'form'; pintarModo(); aviso('Listo: ' + de + '. Revisá y completá lo que dice [COMPLETAR …].'); };
+    const inicio = h('div', { class: 'caja' },
+      h('h3', {}, 'Empezar rápido'),
+      h('div', { class: 'barra' }, plantilla, h('button', { type: 'button', class: 'btn', onclick: () => { const p = plantillas.find((x) => x.id === plantilla.value); if (p) usar(p.campos, 'plantilla «' + p.nombre + '»'); } }, 'Usar plantilla')),
+      h('div', { class: 'barra' }, web, h('button', { type: 'button', class: 'btn', onclick: conError(async (e) => {
+        const b = e.target; b.disabled = true; b.textContent = 'Leyendo la página…';
+        try { const r = await api(base() + '/ficha/web', { metodo: 'POST', cuerpo: { url: web.value } }); usar(r.campos, 'armada desde ' + r.fuente); }
+        finally { b.disabled = false; b.textContent = 'Armar desde la web'; }
+      }) }, 'Armar desde la web')),
+      h('p', { class: 'ayuda' }, 'La IA solo usa lo que dice la página; lo que falta queda como [COMPLETAR …]. Nada se guarda hasta que apretás Guardar.'));
+
+    caja.append(inicio,
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Cómo editar la ficha' }, modoBotones),
+      cuerpo,
       h('label', { class: 'check' }, activa, 'Activa (responde a los clientes de las cuentas de este negocio)'),
       h('div', { class: 'acciones' },
-        h('button', { class: 'btn', onclick: conError(async () => mostrar(await api(base() + '/probar', { metodo: 'POST', cuerpo: { texto: texto.value, mensajes: ['hola'] } }).catch((e) => e.datos || { error: e.message }))) }, 'Revisar'),
-        h('button', { class: 'btn prim', onclick: conError(async () => {
-          try { const r = await api(base() + '/ficha', { metodo: 'PUT', cuerpo: { texto: texto.value, activa: activa.checked } }); mostrar(r); aviso(r.activa ? 'Ficha guardada y ACTIVA' : 'Ficha guardada (apagada)'); refrescarResumen(); }
+        h('button', { type: 'button', class: 'btn', onclick: conError(async (e) => {
+          const b = e.target; b.disabled = true; b.textContent = 'Revisando (charlas de prueba)…';
+          try { mostrar(await api(base() + '/ficha/revisar', { metodo: 'POST', cuerpo: { texto: await textoActual() } }).catch((x) => x.datos || { error: x.message })); }
+          finally { b.disabled = false; b.textContent = 'Revisar todo'; }
+        }) }, 'Revisar todo'),
+        h('button', { type: 'button', class: 'btn prim', onclick: conError(async () => {
+          try { const r = await api(base() + '/ficha', { metodo: 'PUT', cuerpo: { texto: await textoActual(), activa: activa.checked } }); mostrar(r); aviso(r.activa ? 'Ficha guardada y ACTIVA' : 'Ficha guardada (apagada)'); refrescarResumen(); }
           catch (e) { mostrar(e.datos || { error: e.message }); }
         }) }, 'Guardar')),
-      info,
+      info);
+
+    // Probar: charla simulada con lo que está en pantalla.
+    const chat = h('div', { class: 'chat' });
+    const msg = h('input', { type: 'text', placeholder: 'Escribí como si fueras un cliente', 'aria-label': 'Mensaje de prueba' });
+    let estadoPrueba = null;
+    caja.append(
       h('h3', {}, 'Probar'),
-      h('p', { class: 'ayuda' }, 'Charla simulada con la ficha de arriba (aunque no esté guardada) y los productos cargados, como la vería alguien que escribe por primera vez. No se manda nada a Instagram.'),
+      h('p', { class: 'ayuda' }, 'Charla simulada con la ficha de arriba (aunque no esté guardada) y los productos cargados. No se manda nada a nadie.'),
       h('div', { class: 'acciones' }, h('button', { class: 'btn', type: 'button', onclick: () => { estadoPrueba = null; poner(chat); msg.focus(); } }, 'Reiniciar charla')),
       chat,
       h('form', { class: 'barra', onsubmit: conError(async (e) => {
@@ -860,22 +995,28 @@ function app() {
         if (!m) return;
         msg.value = '';
         chat.append(h('div', { class: 'burbuja cliente' }, m));
-        // La charla sigue: se manda lo que devolvió el mensaje anterior (idioma elegido, pausa de PERSONA) (ZL-126).
-        const r = await api(base() + '/probar', { metodo: 'POST', cuerpo: { texto: texto.value, mensajes: [m], estado: estadoPrueba } });
+        // La charla sigue: se manda lo que devolvió el mensaje anterior (idioma, pausa, memoria corta) (ZL-126, ZL-146).
+        const r = await api(base() + '/probar', { metodo: 'POST', cuerpo: { texto: await textoActual(), mensajes: [m], estado: estadoPrueba } });
         estadoPrueba = r.estado || null;
         const ultima = r.charla[r.charla.length - 1];
         for (const t of ultima.respuestas) chat.append(h('div', { class: 'burbuja asis' }, t));
-        // Una falla de la IA no es un control: se muestra como lo que es (ZL-125).
         if (ultima.que === 'error') chat.append(h('p', { class: 'ayuda' }, 'La IA no respondió (motivo: ' + (ultima.notas || []).join(', ') + '). El cliente recibiría el mensaje de arriba.'));
         else if (ultima.notas && ultima.notas.length) chat.append(h('p', { class: 'ayuda' }, 'Controles: se sacó ' + ultima.notas.join(', ') + ' (no estaba en la ficha ni en los productos).'));
         chat.scrollTop = chat.scrollHeight;
       }) }, msg, h('button', { class: 'btn prim', type: 'submit' }, 'Enviar')));
+
     conError(async () => {
-      const f = await api(base() + '/ficha');
-      texto.value = f.texto;
-      activa.checked = f.activa;
-      if (f.texto) mostrar(f);
-      else poner(info, h('p', { class: 'ayuda' }, 'Sin ficha todavía: pegá la plantilla (whatsapp/fichas/PLANTILLA.md) y completala.'));
+      const [fi, pl] = await Promise.all([api(base() + '/ficha'), api(base() + '/ficha/plantillas')]);
+      plantillas = pl.plantillas;
+      plantillas.forEach((p) => plantilla.append(h('option', { value: p.id }, p.nombre)));
+      activa.checked = fi.activa;
+      markdown.value = fi.texto || '';
+      if (!fi.texto) { llenarFormulario(vacios()); st.modo = 'form'; pintarModo(); poner(info, h('p', { class: 'ayuda' }, 'Sin ficha todavía: elegí una plantilla, armala desde la web o completá el formulario.')); return; }
+      const r = await api(base() + '/ficha/campos', { metodo: 'POST', cuerpo: { texto: fi.texto } }).catch((e) => e.datos || { ok: false });
+      if (r.ok && !r.multi) { llenarFormulario(r.campos); st.modo = 'form'; }
+      else st.modo = 'md';
+      pintarModo();
+      mostrar(fi);
     })();
     return caja;
   }

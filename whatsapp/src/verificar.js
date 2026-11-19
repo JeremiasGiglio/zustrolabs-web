@@ -31,30 +31,30 @@ export function verificarNegocio(d) {
   const emails = (n.emails ?? []).map((e) => String(e).toLowerCase());
 
   // Quién entra a la app.
-  if (!emails.length) c.push(aviso('correos', 'Nadie del negocio puede entrar a la app', 'Administración → el negocio → correos'));
+  if (!emails.length) c.push(aviso('correos', 'Nadie del negocio puede entrar a la app', 'Admin → el negocio → correos'));
   else if (!d.acceso) c.push(aviso('acceso', 'No pude revisar Access (falta CF_API_TOKEN o no responde)', `Revisá a mano que estén en la política «Negocios y equipo»: ${emails.join(', ')}`));
   else {
     const faltan = emails.filter((e) => !d.acceso.has(e));
     c.push(faltan.length
-      ? mal('acceso', `Access no deja entrar a: ${faltan.join(', ')} (no les llega el código)`, 'Guardá el negocio de nuevo en Administración (los agrega solo) o agregalos a mano en la política de Access')
+      ? mal('acceso', `Access no deja entrar a: ${faltan.join(', ')} (no les llega el código)`, 'Guardá el negocio de nuevo en Admin (los agrega solo) o agregalos a mano en la política de Access')
       : ok('acceso', `Entran a la app: ${emails.join(', ')}`));
   }
 
   // La ficha.
   const f = d.ficha ?? {};
-  if (!f.tiene) c.push(mal('ficha', 'No tiene ficha: el asistente no responde', 'Pestaña Asistente: pegar la ficha, Revisar y Guardar con «Activa»'));
-  else if (!f.valida) c.push(mal('ficha', `La ficha tiene errores: ${(f.errores ?? []).join(' · ')}`, 'Pestaña Asistente → Revisar'));
+  if (!f.tiene) c.push(mal('ficha', 'No tiene ficha: el asistente no responde', 'Asistente (equipo de Zustro Labs): armar la ficha, Revisar todo y Guardar con «Activa»'));
+  else if (!f.valida) c.push(mal('ficha', `La ficha tiene errores: ${(f.errores ?? []).join(' · ')}`, 'Asistente (equipo de Zustro Labs) → Revisar'));
   else if ((f.pendientes ?? []).length) c.push(mal('ficha', `Falta completar en la ficha: ${f.pendientes.join(' · ')}`, 'Completar lo que dice [COMPLETAR …] y activarla'));
-  else if (!f.activa) c.push(mal('ficha', 'La ficha está apagada: el asistente no responde', 'Pestaña Asistente → Guardar con «Activa»'));
+  else if (!f.activa) c.push(mal('ficha', 'La ficha está apagada: el asistente no responde', 'Asistente (equipo de Zustro Labs) → Guardar con «Activa»'));
   else c.push(ok('ficha', 'Ficha completa y activa'));
 
   // Los canales.
   const canales = n.canales ?? {};
-  if (!canales.instagram && !canales.whatsapp) c.push(mal('canales', 'No tiene ningún canal encendido', 'Administración → marcar Instagram o WhatsApp'));
+  if (!canales.instagram && !canales.whatsapp) c.push(mal('canales', 'No tiene ningún canal encendido', 'Admin → marcar Instagram o WhatsApp'));
 
   const cuentas = d.cuentas ?? [];
   if (canales.instagram) {
-    if (!cuentas.length) c.push(mal('instagram', 'Instagram encendido pero sin cuenta conectada', 'Pestaña Instagram → Conectar Instagram (o instagram-cliente.ps1)'));
+    if (!cuentas.length) c.push(mal('instagram', 'Instagram encendido pero sin cuenta conectada', 'Conexiones → Instagram → Conectar Instagram (o instagram-cliente.ps1)'));
     for (const cu of cuentas) {
       const nombre = cu.username ? `@${cu.username}` : `la cuenta ${cu.id}`;
       if (!cu.conectada) c.push(mal('instagram', `${nombre} está desconectada`, 'Conectarla de nuevo desde la pestaña Instagram'));
@@ -62,11 +62,11 @@ export function verificarNegocio(d) {
       else if (cu.venceEnDias !== null && cu.venceEnDias < 15) c.push(aviso('instagram', `El permiso de ${nombre} vence en ${cu.venceEnDias} días y no se renovó solo`, 'Conectarla de nuevo desde la pestaña Instagram'));
       else c.push(ok('instagram', `${nombre} conectada`));
     }
-  } else if (cuentas.length) c.push(aviso('instagram', 'Tiene cuentas de Instagram pero el canal está apagado: no responde ahí', 'Administración → marcar Instagram'));
+  } else if (cuentas.length) c.push(aviso('instagram', 'Tiene cuentas de Instagram pero el canal está apagado: no responde ahí', 'Admin → marcar Instagram'));
 
   const numeros = d.numeros ?? [];
   if (canales.whatsapp) {
-    if (!numeros.length) c.push(mal('whatsapp', 'WhatsApp encendido pero sin número conectado', 'Pestaña WhatsApp → Conectar'));
+    if (!numeros.length) c.push(mal('whatsapp', 'WhatsApp encendido pero sin número conectado', 'Conexiones → WhatsApp → Conectar'));
     for (const nu of numeros) {
       const w = nu.webhook ?? {};
       let host = null;
@@ -78,12 +78,12 @@ export function verificarNegocio(d) {
       else c.push(ok('whatsapp', `${nu.numero} conectado y recibiendo`));
       if (!w.error && host === WEBHOOK_HOST && nu.ecos === false) c.push(aviso('whatsapp', `${nu.numero}: el asistente no sabe cuándo contesta el dueño (YCloud no manda los ecos)`, 'Pedirle a YCloud el evento whatsapp.smb.message.echoes'));
     }
-  } else if (numeros.length) c.push(aviso('whatsapp', 'Tiene un número de WhatsApp pero el canal está apagado: no responde ahí', 'Administración → marcar WhatsApp'));
+  } else if (numeros.length) c.push(aviso('whatsapp', 'Tiene un número de WhatsApp pero el canal está apagado: no responde ahí', 'Admin → marcar WhatsApp'));
 
   // Los productos.
   const p = d.productos;
   if (p === null || p === undefined) c.push(aviso('productos', 'No pude leer los productos'));
-  else if (!p.activos) c.push(aviso('productos', 'Sin productos a la venta: responde solo con la ficha', 'Pestaña Importar Excel o + Nuevo producto'));
+  else if (!p.activos) c.push(aviso('productos', 'Sin productos a la venta: responde solo con la ficha', 'Productos → Importar Excel o + Nuevo producto'));
   else c.push(ok('productos', `${p.activos} productos a la venta${p.agotados ? `, ${p.agotados} agotados` : ''}`));
 
   // La charla de prueba (solo con la ficha activa).

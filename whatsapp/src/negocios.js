@@ -12,6 +12,7 @@ import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
 import { ajustesDeVenta } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
+import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 
 export const NEGOCIOS_HOST = 'negocios.zustrolabs.com';
@@ -362,6 +363,52 @@ export async function appNegocios(request, env, deps) {
     if (r.resp) return r.resp;
     if (!r.valor) return error('no existe', 404);
     return new Response(r.valor.datos, { status: 200, headers: { 'content-type': r.valor.tipo, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" } });
+  }
+
+  // El semáforo del negocio (ZL-150): qué anda y qué falta, en Conexiones. Sin charla de prueba (no gasta IA).
+  if (request.method === 'GET' && sub === '/estado') {
+    if (!deps.verificar) return error('sin memoria', 503);
+    return json(await deps.verificar(negocio.id, { charla: false }));
+  }
+
+  // Alta fácil (ZL-150): la ficha por formulario, desde la web y desde plantillas, y el revisor. Solo el equipo.
+  if (sub.startsWith('/ficha/')) {
+    if (!admin) return error('la ficha del asistente la maneja el equipo de Zustro Labs', 403);
+    if (request.method === 'GET' && sub === '/ficha/plantillas') return json({ plantillas: PLANTILLAS.map((p) => ({ id: p.id, nombre: p.nombre, campos: p.campos })) });
+    const b = request.method === 'POST' ? await leerJson(request) : null;
+    if (request.method !== 'POST' || !b) return error('pedido inválido');
+    if (sub === '/ficha/campos') {
+      const r = camposDeFicha(String(b.texto ?? ''));
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (sub === '/ficha/armar') {
+      const texto = fichaDeCampos(b.campos ?? {});
+      return json({ texto, ...resumenFicha(parsearFicha(texto)) });
+    }
+    if (sub === '/ficha/web') {
+      try {
+        const r = await armarDesdeWeb(env, b.url, { fetchImpl: deps.fetch ?? fetch, ...(deps.llamarWeb && { llamar: deps.llamarWeb }) });
+        return json(r, r.error ? 400 : 200);
+      } catch (e) {
+        return error(`no pude armarla: ${String(e?.message ?? 'error').slice(0, 60)}`, 502);
+      }
+    }
+    if (sub === '/ficha/revisar') {
+      const texto = String(b.texto ?? '');
+      const pf = parsearFicha(texto);
+      const resumen = (await ejecutar('resumen', [])).valor ?? {};
+      const conflictos = revisarFicha(texto, { pedidos: negocio.pedidos === true, productos: resumen.activos ?? 0 });
+      if (!pf.ok || b.charlas === false) return json({ ...resumenFicha(pf), conflictos, charlas: [] });
+      // Cada charla de prueba arranca de cero, con los productos del negocio. No se manda nada a nadie.
+      const charlas = [];
+      for (const prueba of CHARLAS_DE_PRUEBA) {
+        const r = await deps.probar(pf.ficha, negocio.id, [prueba.mensaje], null);
+        const ultima = r.charla.at(-1) ?? {};
+        charlas.push({ mensaje: prueba.mensaje, respuestas: ultima.respuestas ?? [], que: ultima.que, ...evaluarPrueba(prueba, ultima) });
+      }
+      return json({ ...resumenFicha(pf), conflictos, charlas });
+    }
+    return error('no existe', 404);
   }
 
   // Lo que sigue es solo del equipo: la ficha del asistente y la charla de prueba.

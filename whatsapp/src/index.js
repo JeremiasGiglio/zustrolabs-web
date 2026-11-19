@@ -596,10 +596,16 @@ async function fichaDeNegocio(request, env, deps, id) {
 
 /** GET /api/instagram/admin/negocios/<id>/verificar: el semáforo del negocio, con una charla de prueba (ZL-138). */
 async function verificar(env, deps, id, now) {
+  const r = await datosVerificar(env, deps, id, now);
+  return r ? json(r, 200) : json({ error: 'no existe ese negocio' }, 404);
+}
+
+/** El semáforo de un negocio. `charla: false` no corre la charla de prueba (lo que ve el negocio, ZL-150). */
+async function datosVerificar(env, deps, id, now, { charla: conCharla = true } = {}) {
   const a = almacen(env, deps);
   const fetchImpl = deps.fetch ?? fetch;
   const negocio = await a.negocios.get(id);
-  if (!negocio) return json({ error: 'no existe ese negocio' }, 404);
+  if (!negocio) return null;
   const f = await a.negocios.ficha(id);
   const pf = f?.texto ? parsearFicha(f.texto) : null;
   const ficha = { tiene: Boolean(f?.texto), valida: Boolean(pf?.ok), activa: Boolean(f?.activa), errores: pf?.errores ?? [], pendientes: pf?.pendientes ?? [] };
@@ -620,13 +626,13 @@ async function verificar(env, deps, id, now) {
   } catch { productos = null; }
   const acceso = await correosEnAcceso(env, fetchImpl, env.NEGOCIOS_HOST || NEGOCIOS_HOST);
   let charla = null;
-  if (ficha.valida && ficha.activa && !ficha.pendientes.length) {
+  if (conCharla && ficha.valida && ficha.activa && !ficha.pendientes.length) {
     const varios = (pf.ficha.idiomas?.length ?? 1) > 1;
     charla = (await probarFicha(env, pf.ficha, mensajesDePrueba(varios), deps, id)).charla;
   }
   const r = verificarNegocio({ negocio: { ...negocio, canales: canalesDe(negocio) }, ficha, cuentas, numeros, productos, acceso, charla, now });
   console.log(JSON.stringify({ canal: 'negocio', que: 'verificar', verde: r.verde, mal: r.controles.filter((x) => x.estado === 'mal').map((x) => x.id) }));
-  return json({ negocio: { id, nombre: negocio.nombre }, ...r, charla }, 200);
+  return { negocio: { id, nombre: negocio.nombre }, ...r, charla };
 }
 
 /**
@@ -773,6 +779,8 @@ export default {
         probar: (ficha, negocioId, mensajes, estado) => probarFicha(env, ficha, mensajes, deps, negocioId, estado),
         avisarComprador: (negocio, charla, texto) => avisarComprador(env, a, negocio, charla, texto, fetchImpl),
         charlasNegocio: pausasDeCharla(a, deps.now),
+        verificar: (id, op) => datosVerificar(env, deps, id, deps.now ?? Date.now(), op),
+        ...(deps.llamarWeb && { llamarWeb: deps.llamarWeb }),
       });
     }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
