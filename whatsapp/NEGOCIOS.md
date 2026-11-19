@@ -151,8 +151,8 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 
 ## Charla completa (ZL-149)
 
-- **Audios:** se transcriben con Whisper en Workers AI (binding `AI`; gratis hasta 10.000 neuronas por día, unos 210
-  minutos) y se responden como texto. El audio no se guarda. Si no se entiende, el asistente pide repetirlo.
+- **Audios:** no se escuchan ni se transcriben (decisión del 19/11/2026). El asistente responde «Por ahora no puedo
+  escuchar audios, ¿me lo escribís?» en el idioma de la charla. No se baja ni se guarda el audio.
 - **Ráfagas:** quien manda varios mensajes seguidos recibe una sola respuesta. Cada mensaje se suma en el Durable
   Object (`sumarRafaga`) y, después de 6 segundos, solo el último la toma entera (`tomarRafaga`).
 - **Botones:** el menú, el «¿Lo confirmamos?» y «¿Retiro o envío?» van con botones (hasta 3) o una lista (WhatsApp por

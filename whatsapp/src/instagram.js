@@ -57,11 +57,11 @@ export function leerWebhookIg(payload) {
       // ZL-149: una respuesta rápida tocada trae nuestro id («2», «SI»): vale como si lo escribiera.
       const rapido = String(msg.quick_reply?.payload ?? '');
       const texto = /^[A-Z0-9_]{1,20}$/.test(rapido) ? rapido : typeof msg.text === 'string' ? msg.text : '';
-      // Un audio se transcribe antes de responder (index.js). Un «me gusta» o un sticker llegan como adjunto.
-      const audio = (msg.attachments ?? []).find((x) => x?.type === 'audio' && /^https:\/\//.test(String(x.payload?.url ?? '')));
+      // Un audio no se escucha: el asistente avisa que solo lee mensajes escritos. Un «me gusta» o un sticker también
+      // llegan como adjunto.
+      const audio = (msg.attachments ?? []).some((x) => x?.type === 'audio');
       if (texto.trim()) out.push({ ...base, kind: 'text', text: texto });
-      else if (audio) out.push({ ...base, kind: 'audio', media: { url: audio.payload.url } });
-      else out.push({ ...base, kind: 'otro' });
+      else out.push({ ...base, kind: 'otro', ...(audio && { audio: true }) });
     }
   }
   return out;

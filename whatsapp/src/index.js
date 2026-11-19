@@ -231,43 +231,23 @@ export async function seguimientos(env, deps, now) {
 export const RAFAGA_MS = 6000;
 
 /**
- * Antes de responder a un negocio (ZL-149): un audio se transcribe (Whisper en Workers AI, gratis hasta unos 210
- * minutos por día; el audio no se guarda) y los mensajes seguidos se juntan en uno. Devuelve el evento listo, o null si
- * este mensaje es parte de una ráfaga que va a responder el último.
+ * Antes de responder a un negocio (ZL-149): los mensajes seguidos se juntan en uno. Devuelve el evento listo, o null si
+ * este mensaje es parte de una ráfaga que va a responder el último. (Los audios no se transcriben: el asistente avisa
+ * que solo lee mensajes escritos.)
  */
-async function prepararEvento(ev, { env, deps, memoria, clave, bajar, log }) {
-  let e = ev;
-  if (e.kind === 'audio') {
-    const texto = await transcribir(env, deps, e.media, bajar).catch(() => null);
-    log({ ok: Boolean(texto), que: texto ? 'audio' : 'audio_sin_texto' });
-    e = texto ? { ...e, kind: 'text', text: texto, audio: true } : { ...e, kind: 'otro', audio: true };
-  }
-  if (e.kind !== 'text' || !memoria?.sumarRafaga || !(deps.rafagaMs > 0)) return e;
-  await memoria.sumarRafaga(clave, { id: e.id, t: e.text });
+async function prepararEvento(ev, { deps, memoria, clave }) {
+  if (ev.kind !== 'text' || !memoria?.sumarRafaga || !(deps.rafagaMs > 0)) return ev;
+  await memoria.sumarRafaga(clave, { id: ev.id, t: ev.text });
   await (deps.esperar ?? ((ms) => new Promise((ok) => setTimeout(ok, ms))))(deps.rafagaMs);
-  const textos = await memoria.tomarRafaga(clave, e.id);
+  const textos = await memoria.tomarRafaga(clave, ev.id);
   if (!textos) {
     // Lo responde el último de la ráfaga; este queda marcado para que un reintento de Meta no lo repita.
-    await memoria.visto?.(e.id);
+    await memoria.visto?.(ev.id);
     return null;
   }
-  return textos.length > 1 ? { ...e, text: textos.join('\n') } : e;
+  return textos.length > 1 ? { ...ev, text: textos.join('\n') } : ev;
 }
 
-/** Audio → texto. `bajar(media)` trae el archivo (YCloud con la clave del negocio; Instagram, el link). */
-async function transcribir(env, deps, media, bajar) {
-  if (deps.transcribir) return deps.transcribir(media);
-  if (!env.AI?.run) return null;
-  const r = await bajar(media);
-  if (!r?.ok) return null;
-  const buf = new Uint8Array(await r.arrayBuffer());
-  if (!buf.length || buf.length > 8_000_000) return null;
-  let bin = '';
-  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-  const out = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: btoa(bin) });
-  const texto = String(out?.text ?? '').replace(/\s+/g, ' ').trim();
-  return texto ? texto.slice(0, 2000) : null;
-}
 
 /** Consultas y pases al equipo de un negocio (ZL-146): siempre que el negocio tenga su base. */
 function consultasDe(env, deps, dueño, charla, canal) {
@@ -422,8 +402,8 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!(await env.LIMITE.limit({ key: esInstagram(ev.from) ? ev.from : `wa:${ev.from}` })).success) { log({ ok: true, que: 'limite' }); continue; }
       // El de toda la cuenta (los dos canales juntos) se mira recién antes de gastar IA (no corta la atención humana ni BORRAR).
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      // Un negocio: audio a texto y ráfagas en un solo mensaje (ZL-149).
-      const listo = negocio ? await prepararEvento(ev, { env, deps, memoria: a.memoria, clave: ev.from, bajar: (m) => fetchImpl(m.url), log }) : ev;
+      // Un negocio: los mensajes seguidos van en uno solo (ZL-149).
+      const listo = negocio ? await prepararEvento(ev, { deps, memoria: a.memoria, clave: ev.from }) : ev;
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
       const antes = negocio && dueñoEv ? await memoria?.get(ev.from) : null;
       const r = await atender(listo, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
@@ -537,7 +517,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
       if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const listo = await prepararEvento(ev, { env, deps, memoria: a.memoria, clave: claveMemoria(ev.from), bajar: (m) => fetchImpl(m.link, { headers: { 'X-API-Key': reg.apiKey } }), log });
+      const listo = await prepararEvento(ev, { deps, memoria: a.memoria, clave: claveMemoria(ev.from) });
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
       const antes = await memoria?.get(ev.from);
       const r = await atender(listo, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa') });
