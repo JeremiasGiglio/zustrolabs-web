@@ -382,7 +382,13 @@ test.describe('app de negocios (ZL-121)', () => {
       const pan = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'x'])).valor.id;
       await cat.ejecutar('carrito', ['yc:5493410000001:5493410000009', [{ id: pan, cantidad: 3 }], { canal: 'wa' }]);
       await cat.ejecutar('confirmar', ['yc:5493410000001:5493410000009', { nombre: 'Ana', entrega: 'retiro' }]);
+      const torta = (await cat.ejecutar('crear', [{ nombre: 'Torta de chocolate', precio: 30000, stock: 2 }, 'x'])).valor.id;
+      await cat.ejecutar('carrito', ['yc:5493410000001:5493410000008', [{ id: torta, cantidad: 1 }], { canal: 'wa' }]);
     });
+    // ZL-155: con una sola unidad reservada, en singular.
+    await page.getByRole('tab', { name: 'Productos' }).click();
+    await expect(page.getByText('3 reservadas', { exact: true })).toBeVisible();
+    await expect(page.getByText('1 reservada', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Reportes' }).click();
     await expect(page.getByRole('button', { name: 'Semana', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText('Las horas con más mensajes: 20:00, 11:00.')).toBeVisible();
@@ -391,6 +397,20 @@ test.describe('app de negocios (ZL-121)', () => {
     // La barra más alta ocupa todo el alto (el estilo se pone por CSSOM: la política de seguridad no lo bloquea).
     const alto = await page.locator('.grafico').first().locator('.barra-dato').nth(20).evaluate((el) => el.style.height);
     expect(alto).toBe('100%');
+    // ZL-155: las horas del eje se leen enteras (en el celular se cortaban: «0C 0: 0€») y no se pisan entre sí.
+    const ejes = await page.locator('.ejes').first().evaluate((el) => {
+      const caja = el.closest('.caja')!.getBoundingClientRect();
+      return [...el.querySelectorAll('span')].filter((s) => s.textContent).map((s) => {
+        const r = document.createRange(); r.selectNodeContents(s);
+        const b = r.getBoundingClientRect();
+        return { t: s.textContent, izq: b.left, der: b.right, dentro: b.left >= caja.left && b.right <= caja.right, corta: getComputedStyle(s).overflow !== 'visible' };
+      });
+    });
+    expect(ejes.map((e) => e.t)).toEqual(['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00']);
+    for (const [i, e] of ejes.entries()) {
+      expect(e.dentro && !e.corta, `${e.t} se ve entera`).toBe(true);
+      if (i) expect(e.izq, `${e.t} no pisa a ${ejes[i - 1].t}`).toBeGreaterThan(ejes[i - 1].der);
+    }
     await expect(page.getByRole('link', { name: 'Descargar Excel' })).toHaveAttribute('href', new RegExp(`/api/n/${negocio.id}/reporte\\?periodo=semana&fecha=\\d{4}-\\d{2}-\\d{2}&formato=xlsx$`));
     await page.getByRole('button', { name: 'Mes', exact: true }).click();
     await expect(page.getByRole('heading', { name: /^Reporte de Panadería La Espiga · 01\// })).toBeVisible();
