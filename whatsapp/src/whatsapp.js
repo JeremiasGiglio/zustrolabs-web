@@ -396,7 +396,8 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // Con pedidos, la IA ve el carrito actual para devolverlo completo si el mensaje lo cambia.
   const carrito = pedidos && memoria ? { carrito: await pedidos.contexto() } : {};
   // Un negocio (ZL-146): la IA ve los últimos mensajes y lo que sabemos de la persona, y sabe a qué cierre llevarla.
-  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), objetivo: perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
+  // Sin pedidos por chat encendidos (o sin productos), el cierre es una consulta aunque la ficha diga «pedidos» (ZL-147).
+  const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), objetivo: perfil.objetivo === 'pedidos' && !pedidos ? 'consultas' : perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
   const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...contexto }) : await preguntar(texto, idioma, contexto);
   // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
   const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;

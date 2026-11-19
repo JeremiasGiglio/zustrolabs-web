@@ -487,3 +487,22 @@ test('memoria: guarda solo lo conocido; los mensajes se olvidan a las 48 h, el n
   assert.equal(v.hist, undefined, 'pasadas 48 h, sin mensajes');
   assert.deepEqual([v.nombre, v.resumen], ['Ana', 'Quiere pan.']);
 });
+
+// ——— Lo que el lector de fichas no puede perder sin avisar (ZL-147) ———
+
+test('ficha: «Precios: solo los "desde"…» es sí; las pautas en varias secciones se juntan en «Cómo vendemos»; lo desconocido se avisa', () => {
+  const texto = FICHA.replace('- Precios: sí', '- Precios: solo los "desde" de esta ficha')
+    .replace('## Lo que sabe', '## Cómo vende\n- Entender el caso antes de recomendar.\n\n## Dudas y objeciones\n- Preguntar qué lo frena.\n\n## Tomar los datos\n- Pedir el rubro.\n\n## Estilo\n- Mensajes cortos.\n\n## Horóscopo\n- Esto no lo lee nadie.\n\n## Lo que sabe');
+  const p = parsearFicha(texto);
+  assert.ok(p.ok, p.errores.join(' | '));
+  assert.equal(p.ficha.precios, true);
+  for (const t of ['### Cómo vende', 'Entender el caso', '### Dudas y objeciones', 'Preguntar qué lo frena', '### Tomar los datos', 'Pedir el rubro', '### Estilo', 'Mensajes cortos']) assert.ok(p.ficha.vender.includes(t), t);
+  assert.doesNotMatch(p.ficha.vender, /Horóscopo|no lo lee nadie/);
+  assert.equal(p.avisos.length, 1);
+  assert.match(p.avisos[0], /«## Horóscopo» no la lee el asistente/);
+  assert.deepEqual(resumenFicha(p).avisos, p.avisos);
+  assert.match(promptNegocio(p.ficha), /## Cómo vende el negocio[\s\S]*Preguntar qué lo frena[\s\S]*Mensajes cortos/);
+  assert.equal(parsearFicha(FICHA.replace('- Precios: sí', '- Precios: no, nunca')).ficha.precios, false);
+  assert.deepEqual(parsearFicha(FICHA).avisos, [], 'la ficha de prueba no tiene secciones desconocidas');
+  assert.deepEqual(parsearFicha(PLANTILLA).avisos, [], 'la plantilla tampoco');
+});
