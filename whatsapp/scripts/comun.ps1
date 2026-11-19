@@ -139,6 +139,7 @@ function Mostrar-Revision($r) {
   if ($r.errores -and $r.errores.Count) { foreach ($e in $r.errores) { Falla $e }; return $false }
   Ok ("Ficha de «" + $r.nombre + "» · idioma " + $r.idioma + " · trato " + $r.trato + " · precios " + $(if ($r.precios) { "sí" } else { "no" }) + " · pausa " + $r.pausaHoras + " h")
   Nota "Menú:"; foreach ($o in $r.menu) { Nota ("   " + $o) }
+  if ($r.avisos -and $r.avisos.Count) { foreach ($a in $r.avisos) { Aviso ("Ojo: " + $a) } }
   if ($r.pendientes -and $r.pendientes.Count) {
     Aviso ("Falta completar ([COMPLETAR …]): " + ($r.pendientes -join " · "))
     Nota "  Se puede probar y guardar apagada, pero no activar hasta completarla."

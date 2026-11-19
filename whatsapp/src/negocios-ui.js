@@ -755,6 +755,7 @@ function app() {
       poner(info, 
         r.errores && r.errores.length ? h('ul', { class: 'errores' }, r.errores.map((e) => h('li', {}, e))) : null,
         r.pendientes && r.pendientes.length ? h('p', { class: 'chip alerta' }, 'Falta completar: ' + r.pendientes.join(' · ')) : null,
+        r.avisos && r.avisos.length ? h('ul', { class: 'ayuda' }, r.avisos.map((a) => h('li', {}, 'Ojo: ' + a))) : null,
         r.idiomas && r.idiomas.length > 1 ? h('p', { class: 'ayuda' }, 'Idiomas: ' + r.idiomas.map((i) => ({ es: 'castellano', en: 'inglés', hr: 'croata' })[i]).join(', ') + ' (el primer mensaje pregunta en cuál seguir)') : null,
         r.menu ? h('p', { class: 'ayuda' }, 'Menú: ' + r.menu.join(' · ')) : null,
         r.error ? h('p', { class: 'errores' }, r.error) : null);

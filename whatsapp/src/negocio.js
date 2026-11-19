@@ -34,8 +34,10 @@ const SECCIONES = [
   ['faq', /^(preguntas frecuentes|faq)/],
   ['nunca', /^(nunca|lo que nunca)/],
   ['persona', /^(pasar a una persona|cuando pasar|derivar)/],
-  // ZL-146: cómo se vende (calificar, recomendar, objeciones, cierre). Opcional, para cualquier rubro.
-  ['vender', /^(como vendemos|como vender|venta|ventas)/],
+  // ZL-146: cómo se vende (calificar, recomendar, objeciones, cierre). Opcional, para cualquier rubro. ZL-147: las
+  // pautas que vengan en varias secciones («Dudas y objeciones», «Tomar los datos», «Estilo») se juntan acá, cada una
+  // con su título: antes se descartaban sin avisar.
+  ['vender', /^(como vend|como vender|venta|ventas|dudas|objeciones|tomar (los )?datos|estilo|tono|cierre)/],
 ];
 
 // Idiomas que puede tener una ficha (los mismos tres de la landing) y cómo se escriben en los títulos de sección.
@@ -78,6 +80,7 @@ export function parsearFicha(texto) {
 
   // Con varios idiomas, el saludo y el menú van en cada uno: «## Saludo (inglés)», «## Menú (inglés)» (ZL-126).
   const partes = {};
+  const avisos = [];
   let actual = null;
   for (const linea of limpio.split('\n')) {
     const h = /^##\s+(.+?)\s*$/.exec(linea);
@@ -87,6 +90,11 @@ export function parsearFicha(texto) {
       const enIdioma = suf ? codigoIdioma(suf[1]) : null;
       if (suf) nombre = nombre.slice(0, suf.index).trim();
       actual = (SECCIONES.find(([, re]) => re.test(nombre)) ?? [null])[0];
+      // Una sección que no conocemos no llega a la IA: se avisa (no es un error, para no apagar una ficha activa).
+      if (!actual) avisos.push(`la sección «## ${h[1].trim()}» no la lee el asistente: pasá su contenido a «Lo que sabe el asistente» o a «Cómo vendemos»`);
+      // Varias secciones de venta se suman, cada una con su título.
+      if (actual === 'vender' && partes.vender) { partes.vender.push('', `### ${h[1].trim()}`); continue; }
+      if (actual === 'vender') { partes.vender = [`### ${h[1].trim()}`]; continue; }
       if (actual && enIdioma && !POR_IDIOMA.includes(actual)) {
         errores.push(`solo el saludo y el menú van por idioma («## ${h[1].trim()}»)`);
         actual = null;
@@ -181,7 +189,8 @@ export function parsearFicha(texto) {
         idiomas,
         trato,
         emojis: siNo(dato('emojis'), true),
-        precios: siNo(dato('precios'), false),
+        // ZL-147: «sí, solo los "desde"» o «solo los de esta ficha» también es sí (antes se leía como no, sin avisar).
+        precios: /^(si|solo)\b/.test(plano(dato('precios'))) ? true : siNo(dato('precios'), false),
         pausaHoras,
         objetivo,
         horarioPersona: horarios[idioma] ?? '',
@@ -199,7 +208,7 @@ export function parsearFicha(texto) {
         // Lo que se permite nombrar porque está escrito en la ficha (controles de la respuesta).
         permitidos: permitidosDe(limpio),
       };
-  return { ok: errores.length === 0, errores, pendientes, ficha };
+  return { ok: errores.length === 0, errores, pendientes, avisos, ficha };
 }
 
 /** Resumen para el script y el panel de administración (sin el texto entero). */
@@ -207,6 +216,7 @@ export const resumenFicha = (p) => ({
   ok: p.ok,
   errores: p.errores,
   pendientes: p.pendientes,
+  avisos: p.avisos ?? [],
   ...(p.ficha && {
     nombre: p.ficha.nombre,
     idioma: p.ficha.idioma,
