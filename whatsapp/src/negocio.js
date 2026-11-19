@@ -241,6 +241,28 @@ const PROMO_RE = /\b(?:descuentos?|promo(?:ción|cion|ciones)?|ofertas?|2\s?x\s?
 const digitos = (s) => String(s).replace(/\D/g, '');
 const dominio = (u) => u.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0].replace(/[.,;:]+$/, '');
 
+/**
+ * La ficha con lo que carga el propio negocio en «Cómo vendés» (ZL-149): retiro, envío y pago se suman a lo que sabe
+ * el asistente, y sus montos, links y teléfonos pasan a estar permitidos (los escribió el negocio).
+ */
+export function conAjustes(ficha, ajustes) {
+  if (!ficha || !ajustes) return ficha;
+  const lineas = [
+    ajustes.entrega === 'retiro' ? 'Entrega: solo retiro en el local.' : ajustes.entrega === 'envio' ? 'Entrega: solo envío.' : 'Entrega: retiro en el local o envío.',
+    ajustes.retiro && `Retiro (dónde y cuándo): ${ajustes.retiro}`,
+    ajustes.envio && `Envío (zonas, costo y horarios): ${ajustes.envio}`,
+    ajustes.pago && `Cómo se paga: ${ajustes.pago}`,
+  ].filter(Boolean);
+  const extra = `## Entrega y pago (lo carga el negocio)\n${lineas.join('\n')}`;
+  const p = permitidosDe(extra);
+  const unir = (a, b) => (Array.isArray(a) || Array.isArray(b) ? [...new Set([...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])])] : a ?? b);
+  return {
+    ...ficha,
+    conocimiento: `${ficha.conocimiento}\n\n${extra}`,
+    permitidos: Object.fromEntries(Object.keys({ ...ficha.permitidos, ...p }).map((k) => [k, unir(ficha.permitidos?.[k], p[k])])),
+  };
+}
+
 function permitidosDe(texto) {
   return {
     correos: [...new Set((texto.match(CORREO_RE) ?? []).map((c) => c.toLowerCase()))],
@@ -414,9 +436,9 @@ export function mensajesConHistorial(historial, texto) {
 // ───────────────────────── Textos fijos del negocio ─────────────────────────
 
 const V = {
-  vos: { escribi: 'escribí', Escribi: 'Escribí', responde: 'Respondé', queres: 'querés', contame: 'contame', necesitas: 'necesitás', proba: 'Probá', te: 'te', escribis: 'escribís', repetis: 'repetís', meDecis: 'me decís', tu: 'tu' },
-  tu: { escribi: 'escribe', Escribi: 'Escribe', responde: 'Responde', queres: 'quieres', contame: 'cuéntame', necesitas: 'necesitas', proba: 'Prueba', te: 'te', escribis: 'escribes', repetis: 'repites', meDecis: 'me dices', tu: 'tu' },
-  usted: { escribi: 'escriba', Escribi: 'Escriba', responde: 'Responda', queres: 'quiere', contame: 'cuénteme', necesitas: 'necesita', proba: 'Pruebe', te: 'le', escribis: 'escribe', repetis: 'repite', meDecis: 'me dice', tu: 'su' },
+  vos: { escribi: 'escribí', Escribi: 'Escribí', responde: 'Respondé', queres: 'querés', contame: 'contame', necesitas: 'necesitás', proba: 'Probá', te: 'te', escribis: 'escribís', repetis: 'repetís', meDecis: 'me decís', tu: 'tu', mandas: 'mandás' },
+  tu: { escribi: 'escribe', Escribi: 'Escribe', responde: 'Responde', queres: 'quieres', contame: 'cuéntame', necesitas: 'necesitas', proba: 'Prueba', te: 'te', escribis: 'escribes', repetis: 'repites', meDecis: 'me dices', tu: 'tu', mandas: 'mandas' },
+  usted: { escribi: 'escriba', Escribi: 'Escriba', responde: 'Responda', queres: 'quiere', contame: 'cuénteme', necesitas: 'necesita', proba: 'Pruebe', te: 'le', escribis: 'escribe', repetis: 'repite', meDecis: 'me dice', tu: 'su', mandas: 'manda' },
 };
 const NUMEROS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
 const sinEmojis = (s) => s.replace(/\p{Extended_Pictographic}|[️‍]/gu, '').replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?])/g, '$1').replace(/^ +| +$/gm, '');
@@ -442,6 +464,8 @@ function base(ficha, idioma = ficha.idioma) {
       limite: 'Lots of messages at once ⏳ Could you write again in a few minutes?',
       tope: 'We’ve chatted a lot today 😅 Let’s carry on tomorrow, right here.',
       devuelta: 'I’m back! 😊 How can I help?',
+      sigoYo: 'While the team gets back to you, I’m still here 😊',
+      sinAudio: 'I couldn’t make out that audio 🙈 Could you send it again or type it?',
     };
   }
   if (idioma === 'hr') {
@@ -459,6 +483,8 @@ function base(ficha, idioma = ficha.idioma) {
       limite: 'Trenutačno stiže puno poruka ⏳ Možete li se javiti za nekoliko minuta?',
       tope: 'Danas smo puno razgovarali 😅 Nastavljamo sutra, ovdje.',
       devuelta: 'Evo me opet! 😊 Kako vam mogu pomoći?',
+      sigoYo: 'Dok vam se tim ne javi, tu sam ja 😊',
+      sinAudio: 'Nisam uspio razumjeti audio 🙈 Možete li ga poslati ponovno ili napisati?',
     };
   }
   const v = V[ficha.trato];
@@ -476,6 +502,8 @@ function base(ficha, idioma = ficha.idioma) {
     limite: `Hay muchas consultas a la vez ⏳ ¿Me ${v.escribis} de nuevo en unos minutos?`,
     tope: 'Por hoy ya charlamos un montón 😅 Mañana seguimos por acá.',
     devuelta: `¡Acá estoy de nuevo! 😊 ¿En qué ${v.te} ayudo?`,
+    sigoYo: `Mientras el equipo ${v.te} responde, sigo yo 😊`,
+    sinAudio: `No pude escuchar bien el audio 🙈 ¿Me lo ${v.mandas} de nuevo o me lo ${v.escribis}?`,
   };
 }
 
@@ -521,12 +549,16 @@ export function perfilNegocio(ficha) {
   }
   const de = (i) => (idiomas.includes(i) ? i : idiomas[0]);
   const textos = (i) => T[de(i)];
+  // ZL-149: el menú también como botones o lista (WhatsApp) y respuestas rápidas (Instagram); el id es el número.
+  const sinEmojiTitulo = (t) => (ficha.emojis ? t : sinEmojis(t));
+  const opcionesMenu = Object.fromEntries(idiomas.map((i) => [i, menus[i].map((o) => ({ id: String(o.n), titulo: sinEmojiTitulo(o.titulo) }))]));
   const varios = idiomas.length > 1;
   return {
     nombre: ficha.nombre,
     idiomas,
     textos,
     opcion: (i, n) => opciones[de(i)][n] ?? null,
+    menuOpciones: (i) => opcionesMenu[de(i)],
     formatear: (c, i) => {
       const t = textos(i);
       if (c.tope) return t.tope;
@@ -537,6 +569,7 @@ export function perfilNegocio(ficha) {
       // Número → idioma, en el orden de la ficha (mientras se espera la elección, 1, 2 y 3 son idiomas, no opciones).
       idiomaPorNumero: Object.fromEntries(idiomas.map((i, k) => [k + 1, i])),
       // Sin emojis: números con punto y sin banderas (sinEmojis no saca las banderas ni el recuadro de 1️⃣).
+      opcionesIdioma: idiomas.map((i, k) => ({ id: String(k + 1), titulo: OPCION_IDIOMA[i] })),
       preguntaIdioma: `${idiomas.map((i) => limpiar(PREGUNTA_IDIOMA[i](ficha.nombre))).join('\n\n')}\n\n${idiomas.map((i, k) => (ficha.emojis ? `${NUMEROS[k]} ${OPCION_IDIOMA[i]}${BANDERA[i]}` : `${k + 1}. ${OPCION_IDIOMA[i]}`)).join('\n')}`,
     }),
     pausaSinPanel: true,

@@ -11,6 +11,8 @@ import { firmar } from '../src/whatsapp.js';
 import { firmarYCloud } from '../src/ycloud.js';
 import { sqlPrueba } from './sqlite.js';
 
+// ZL-149: con opciones, YCloud recibe botones o una lista: el texto va en interactive.body.text.
+const textoYC = (b) => b?.text?.body ?? b?.interactive?.body?.text;
 const T0 = 1_792_000_000_000;
 const TEAM = 'equipo-de-prueba.cloudflareaccess.com';
 const AUD = 'aud-negocios-prueba';
@@ -416,7 +418,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
     const antes = enviados.length;
     const r = await worker.fetch(new Request(`https://zustrolabs.com/api/whatsapp/ycloud/${clave}`, { method: 'POST', headers: { 'YCloud-Signature': await firmarYCloud(cuerpo, FIRMA_FALSA, T0 / 1000) }, body: cuerpo }), ENV, {}, d);
     assert.equal(r.status, 200);
-    return enviados.slice(antes).filter((e) => e.url.endsWith('/sendDirectly')).map((e) => e.body.text.body).join('\n---\n');
+    return enviados.slice(antes).filter((e) => e.url.endsWith('/sendDirectly')).map((e) => textoYC(e.body)).join('\n---\n');
   };
   await escribir('hola');
   let t = await escribir('quiero 3 kilos de pan');
@@ -454,7 +456,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
     const e = enviados.slice(antes).find((x) => x.url.endsWith('/sendDirectly'));
     assert.equal(e.clave, CLAVE_YC);
     assert.deepEqual([e.body.from, e.body.to], ['+5493410000001', '+5493410000009']);
-    avisos.push(e.body.text.body);
+    avisos.push(textoYC(e.body));
   }
   assert.match(avisos[0], /^¡Listo! Panadería La Espiga aceptó tu pedido N\.º 1\.\nCómo pagar: Transferencia al alias LA\.ESPIGA\.PAN \(ficticio\)\nRetiro: Calle Ficticia 123, de 9 a 20\nCualquier duda/, 'retira en el local: va el retiro, no el envío');
   assert.match(avisos[1], /recibió el pago de tu pedido N\.º 1/);

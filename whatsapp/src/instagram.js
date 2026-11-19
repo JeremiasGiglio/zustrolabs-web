@@ -54,9 +54,13 @@ export function leerWebhookIg(payload) {
       if (!ID_RE.test(cuenta) || !ID_RE.test(quien) || quien === cuenta) continue;
       const base = { id: String(msg.mid ?? ''), from: armarFrom(cuenta, quien), cuenta, ts: Math.floor(Number(m.timestamp ?? 0) / 1000) };
       if (!base.id) continue;
-      const texto = typeof msg.text === 'string' ? msg.text : '';
-      // Un «me gusta» rápido o un sticker llegan como adjunto; una foto con texto, como texto.
+      // ZL-149: una respuesta rápida tocada trae nuestro id («2», «SI»): vale como si lo escribiera.
+      const rapido = String(msg.quick_reply?.payload ?? '');
+      const texto = /^[A-Z0-9_]{1,20}$/.test(rapido) ? rapido : typeof msg.text === 'string' ? msg.text : '';
+      // Un audio se transcribe antes de responder (index.js). Un «me gusta» o un sticker llegan como adjunto.
+      const audio = (msg.attachments ?? []).find((x) => x?.type === 'audio' && /^https:\/\//.test(String(x.payload?.url ?? '')));
       if (texto.trim()) out.push({ ...base, kind: 'text', text: texto });
+      else if (audio) out.push({ ...base, kind: 'audio', media: { url: audio.payload.url } });
       else out.push({ ...base, kind: 'otro' });
     }
   }
@@ -102,7 +106,11 @@ export function convertir(m) {
   const p = partes(m.to);
   const id = p ? p.quien : String(m.to ?? '').replace(PREFIJO, '');
   const texto = m.type === 'interactive' ? SALUDO_IDIOMA_TEXTO : String(m.text?.body ?? '');
-  return trozar(texto).map((t) => ({ recipient: { id }, message: { text: t } }));
+  const trozos = trozar(texto);
+  // ZL-149: las opciones van como respuestas rápidas en el último trozo (hasta 13, 20 letras cada una).
+  const ops = Array.isArray(m.opciones) ? m.opciones.filter((o) => o && /^[A-Z0-9_]{1,20}$/.test(String(o.id)) && String(o.titulo ?? '').trim()).slice(0, 13) : [];
+  const corto = (t) => { const a = [...String(t).trim()]; return a.length > 20 ? `${a.slice(0, 19).join('')}…` : a.join(''); };
+  return trozos.map((t, i) => ({ recipient: { id }, message: { text: t, ...(ops.length && i === trozos.length - 1 && { quick_replies: ops.map((o) => ({ content_type: 'text', title: corto(o.titulo), payload: String(o.id) })) }) } }));
 }
 
 /** Token de la cuenta que recibió el mensaje: la guardada al conectarse, o la de la variable IG_TOKEN para IG_ID. */

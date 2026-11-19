@@ -115,18 +115,32 @@ test('charla: el primer mensaje con una pregunta concreta recibe UNA respuesta d
   assert.equal(vistos[1].cliente.resumen, 'Pregunta por pan francés.');
 });
 
-test('charla: PERSONA pausa al asistente las horas de la ficha, sin panel ni correo; el negocio contesta desde su app', async () => {
+test('charla: PERSONA calla al asistente 15 minutos; si nadie la toma vuelve (lo dice una vez); si el negocio la toma, la pausa sigue (ZL-149)', async () => {
   const m = memoria();
   const { llamadas, preguntar } = preguntas();
+  const DE = 'ig:17841400000000002.17841400000000009';
   await atender(ev('hola'), { memoria: m, preguntar, now: T0, perfil });
   const p = await atender(ev('quiero hablar con alguien'), { memoria: m, preguntar, now: T0, perfil });
   assert.equal(p.metrica, 'persona');
   assert.equal(p.avisar, undefined, 'no se avisa al estudio');
   assert.equal(p.send[0].text.body, perfil.textos().persona);
-  assert.deepEqual((await atender(ev('¿tienen torta de limón?'), { memoria: m, preguntar, now: T0 + 3600_000, perfil })).send, [], 'en pausa: silencio');
-  const despues = await atender(ev('¿tienen torta de limón?'), { memoria: m, preguntar, now: T0 + 3600_000 + 7 * 3600_000, perfil });
-  assert.equal(despues.metrica, 'ia', 'pasadas las horas de pausa, vuelve el asistente');
-  assert.equal(llamadas.length, 1);
+  // Mientras espera, silencio; y escribir no alarga la espera (nadie la tomó todavía).
+  assert.deepEqual((await atender(ev('¿hola?'), { memoria: m, preguntar, now: T0 + 10 * 60_000, perfil })).send, [], 'en pausa: silencio');
+  assert.equal((await m.get(DE)).humanoHasta, T0 + 15 * 60_000);
+  const vuelve = await atender(ev('¿tienen torta de limón?'), { memoria: m, preguntar, now: T0 + 16 * 60_000, perfil });
+  assert.equal(vuelve.metrica, 'ia', 'a los 15 minutos vuelve el asistente');
+  assert.match(vuelve.send[0].text.body, new RegExp('^' + perfil.textos().sigoYo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const otra = await atender(ev('¿y de chocolate?'), { memoria: m, preguntar, now: T0 + 17 * 60_000, perfil });
+  assert.doesNotMatch(otra.send[0].text.body, /sigo yo/, 'lo dice una sola vez');
+  assert.equal(llamadas.length, 2);
+  // Si el negocio la toma (respondió desde su app: eco, o «La atiendo yo»), la pausa es la de la ficha y no hay «sigo yo».
+  await atender(ev('PERSONA'), { memoria: m, preguntar, now: T0 + 20 * 60_000, perfil });
+  await m.put(DE, { ...(await m.get(DE)), humanoHasta: T0 + 20 * 60_000 + 6 * 3600_000, pase: 0 });
+  assert.deepEqual((await atender(ev('gracias'), { memoria: m, preguntar, now: T0 + 3 * 3600_000, perfil })).send, []);
+  // Escribir mientras la atiende el negocio renueva su pausa (6 h de la ficha desde ese mensaje).
+  const despues = await atender(ev('¿tienen torta de limón?'), { memoria: m, preguntar, now: T0 + 9 * 3600_000 + 60_000, perfil });
+  assert.equal(despues.metrica, 'ia');
+  assert.doesNotMatch(despues.send[0].text.body, /sigo yo/);
   assert.equal((await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0, perfil })).send[0].text.body, perfil.textos().borrado);
 });
 
@@ -505,4 +519,13 @@ test('ficha: «Precios: solo los "desde"…» es sí; las pautas en varias secci
   assert.equal(parsearFicha(FICHA.replace('- Precios: sí', '- Precios: no, nunca')).ficha.precios, false);
   assert.deepEqual(parsearFicha(FICHA).avisos, [], 'la ficha de prueba no tiene secciones desconocidas');
   assert.deepEqual(parsearFicha(PLANTILLA).avisos, [], 'la plantilla tampoco');
+});
+
+test('conAjustes (ZL-149): lo que carga el negocio en «Cómo vendés» lo sabe el asistente y sus montos quedan permitidos', async () => {
+  const { conAjustes } = await import('../src/negocio.js');
+  const f = conAjustes(ficha, { entrega: 'retiro', retiro: 'Calle Ficticia 123', envio: '', pago: 'alias LA.ESPIGA o $ 1.200 de seña' });
+  assert.match(f.conocimiento, /## Entrega y pago \(lo carga el negocio\)\nEntrega: solo retiro en el local\.\nRetiro \(dónde y cuándo\): Calle Ficticia 123\nCómo se paga: alias LA\.ESPIGA/);
+  assert.ok(f.permitidos.montos.includes('1200'));
+  assert.equal(controlarNegocio({ respuesta: 'Se paga una seña de $ 1.200.', persona: false, fuera_de_tema: false }, f).notas.length, 0);
+  assert.equal(conAjustes(ficha, null), ficha);
 });

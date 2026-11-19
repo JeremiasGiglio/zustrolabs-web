@@ -17,6 +17,8 @@ import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idio
 
 export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
+/** Cuánto espera el asistente callado a que alguien del negocio tome una charla que le pasó (ZL-149). */
+export const PASE_MS = 15 * 60_000;
 /** Respuestas de la IA por número y por día; pasado eso, se sugiere PERSONA (tope de gasto y de abuso). */
 export const TOPE_DIARIO = 40;
 // eslint-disable-next-line no-control-regex
@@ -106,12 +108,14 @@ export function comando(texto) {
 
 // ───────────────────────── Salida ─────────────────────────
 
-export const msgTexto = (to, body) => ({
+export const msgTexto = (to, body, opciones = null) => ({
   messaging_product: 'whatsapp',
   recipient_type: 'individual',
   to,
   type: 'text',
   text: { preview_url: false, body: String(body).slice(0, 4096) },
+  // ZL-149: botones o lista ({id, titulo}); los usan YCloud e Instagram. La API de Meta del estudio no los recibe.
+  ...(opciones?.length && { opciones }),
 });
 
 /** Tres botones de idioma (Meta deja hasta 3, con título de hasta 20 caracteres). */
@@ -186,7 +190,9 @@ async function postear(env, mensaje, fetchImpl) {
 }
 
 /** Manda un mensaje. Si Meta rechaza un celular argentino (#131030), prueba la otra forma. */
-export async function enviar(env, mensaje, fetchImpl = fetch) {
+export async function enviar(env, mensajeConOpciones, fetchImpl = fetch) {
+  // La API de Meta no conoce «opciones» (son nuestras): se sacan antes de mandar.
+  const { opciones: _o, ...mensaje } = mensajeConOpciones;
   let err = await postear(env, mensaje, fetchImpl);
   const alt = varianteArgentina(mensaje.to);
   if (err && err.code === 131030 && alt) err = await postear(env, { ...mensaje, to: alt }, fetchImpl);
@@ -226,7 +232,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   // Un negocio con varios idiomas (ZL-126) pregunta con los suyos, en su orden; el estudio, con los tres de siempre.
   const delPerfil = (i) => (i && perfil.idiomas.includes(i) ? i : null);
   const porNumero = perfil.idiomaPorNumero ?? IDIOMA_POR_NUMERO;
-  const pedirIdioma = () => (perfil.preguntaIdioma ? msgTexto(ev.from, perfil.preguntaIdioma) : msgIdiomas(ev.from));
+  const pedirIdioma = () => (perfil.preguntaIdioma ? msgTexto(ev.from, perfil.preguntaIdioma, perfil.opcionesIdioma) : msgIdiomas(ev.from));
   const elegido = unico || ev.kind !== 'text' ? null : delPerfil(eligeIdioma(ev.text)) ?? (esperaIdioma ? porNumero[num] ?? null : null);
   if (elegido) ev = { ...ev, kind: 'idioma', idioma: elegido };
   const guardar = (s) => memoria?.put(ev.from, s);
@@ -255,15 +261,18 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   if ((charlas || perfil.pausaSinPanel) && estado?.humanoHasta && estado.humanoHasta > now) {
     const texto = ev.kind === 'text' ? String(ev.text ?? '').replace(CONTROL_RE, ' ').trim() || '[Mensaje vacío]' : notaNoTexto(ev);
     if (charlas) await agregar(charlas, ev.from, { de: 'persona', texto }, now, { abierta: true });
+    // Si el asistente le pasó la charla al equipo y nadie la tomó todavía (ZL-149), la pausa NO se alarga: a los 15
+    // minutos vuelve el asistente. Si la tomó alguien (respondió o tocó «La atiendo yo»), sigue la pausa de la ficha.
     const hasta = now + horas * 3600_000;
-    if (hasta - estado.humanoHasta > 3600_000) await guardar({ ...estado, humanoHasta: hasta });
+    if (!estado.pase && hasta - estado.humanoHasta > 3600_000) await guardar({ ...estado, humanoHasta: hasta });
     return { send: [], metrica: 'humano' };
   }
 
   if (cmd === 'persona') {
     // Sin panel o sin memoria nadie vería el pedido: se deriva al correo y el asistente no se calla.
     if (memoria && !charlas && perfil.pausaSinPanel) {
-      await guardar({ ...estado, idioma, humanoHasta: now + horas * 3600_000 });
+      // Un negocio (ZL-149): 15 minutos para que alguien la tome; si nadie la toma, vuelve el asistente.
+      await guardar({ ...estado, idioma, humanoHasta: now + (neg ? PASE_MS : horas * 3600_000), ...(neg && { pase: now }) });
       const reg = neg ? await pasarAlEquipo('persona') : null;
       return { send: [msgTexto(ev.from, T.persona)], metrica: 'persona', handoff: true, ...(reg && { consulta: reg.numero }) };
     }
@@ -289,7 +298,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     // ¿Cómo estás? + quiénes somos, y enseguida lo que podemos lograr juntos.
     const N = perfil.textos(nuevo);
     // Un negocio manda todo en un solo mensaje (Meta cobra cada mensaje desde el 1/10/2026).
-    const send = neg ? [msgTexto(ev.from, juntar(N.bienvenida, N.quienes, N.menu))] : [msgTexto(ev.from, juntar(N.bienvenida, N.quienes)), msgTexto(ev.from, N.menu)];
+    const send = neg ? [msgTexto(ev.from, juntar(N.bienvenida, N.quienes, N.menu), perfil.menuOpciones(nuevo))] : [msgTexto(ev.from, juntar(N.bienvenida, N.quienes)), msgTexto(ev.from, N.menu)];
     return { send, metrica: 'idioma', idioma: nuevo };
   }
 
@@ -298,8 +307,9 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     if (estado) await guardar({ ...estado, idioma: undefined, pedido: null, consulta: null, humanoHasta: estado.humanoHasta ?? 0 });
     return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   }
-  if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu)], metrica: 'menu' };
-  if (ev.kind === 'otro') return { send: [msgTexto(ev.from, T.soloTexto)], metrica: 'otro' };
+  if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu, neg ? perfil.menuOpciones(idioma) : null)], metrica: 'menu' };
+  // Un audio que no se pudo transcribir (ZL-149) pide repetirlo; una foto o un sticker, que lo escriba.
+  if (ev.kind === 'otro') return { send: [msgTexto(ev.from, ev.audio && T.sinAudio ? T.sinAudio : T.soloTexto)], metrica: ev.audio ? 'audio_fallido' : 'otro' };
 
   // Los pasos fijos de un pedido (SÍ, retiro o envío, nombre, dirección, CANCELAR, PEDIDO) van antes que el menú y la
   // IA: «1» y «2» son retiro y envío mientras se pregunta eso. Sin memoria no hay pedidos (no se recordaría el paso).
@@ -310,7 +320,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
       const nombre = p.pedido?.nombre || (estado?.pedido?.paso === 'nombre' && p.metrica !== 'pedido_nombre' ? limpiarTexto(ev.text).slice(0, 60) : '') || estado?.nombre;
       await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, pedido: p.pedido, ...(nombre && { nombre }) });
       await recordar(ev.text, p.texto);
-      return { send: [msgTexto(ev.from, p.texto)], metrica: p.metrica, ...(p.numero && { pedido: p.numero }) };
+      return { send: [msgTexto(ev.from, p.texto, p.opciones)], metrica: p.metrica, ...(p.numero && { pedido: p.numero }) };
     }
   }
 
@@ -351,7 +361,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     if (neg) {
       const texto = juntar(primero, P.menu);
       await recordar(ev.text, texto);
-      return { send: [msgTexto(ev.from, texto)], metrica: saludo ? 'saludo' : 'presentacion' };
+      return { send: [msgTexto(ev.from, texto, perfil.menuOpciones(en))], metrica: saludo ? 'saludo' : 'presentacion' };
     }
     return { send: [msgTexto(ev.from, primero), msgTexto(ev.from, P.menu)], metrica: saludo ? 'saludo' : 'presentacion' };
   }
@@ -362,7 +372,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     const en = delPerfil(queHacen) ?? perfil.idiomas[0];
     await guardar({ ...estado, idioma: en, humanoHasta: 0 });
     const P = perfil.textos(en);
-    if (neg) return { send: [msgTexto(ev.from, juntar(P.quienes, P.menu))], metrica: 'presentacion', idioma: en };
+    if (neg) return { send: [msgTexto(ev.from, juntar(P.quienes, P.menu), perfil.menuOpciones(en))], metrica: 'presentacion', idioma: en };
     return { send: [msgTexto(ev.from, P.quienes), msgTexto(ev.from, P.menu)], metrica: 'presentacion', idioma: en };
   }
 
@@ -424,6 +434,7 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     // el asistente se calla en esta charla, el negocio la ve en «Pedidos y consultas» y responde por acá.
     if ((c.persona || c.tope) && !c.fuera_de_tema) {
       const reg = await pasarAlEquipo('persona', { ...aprendido, pausa: true });
+      aprendido.pase = now;
       respuesta = c.vacia || c.tope ? Te.sinRespuesta : juntar(c.respuesta, Te.persona);
       metrica = 'persona_auto';
       extra = { handoff: true, ...(reg && { consulta: reg.numero }) };
@@ -445,8 +456,13 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
         metrica = 'consulta_nombre';
       }
     }
+    // Volvió el asistente después de un pase que nadie tomó (ZL-149): lo dice una vez y sigue.
+    if (estado?.pase && metrica !== 'persona_auto' && (!estado.humanoHasta || estado.humanoHasta <= now)) {
+      respuesta = juntar(Te.sigoYo, respuesta);
+      aprendido.pase = 0;
+    }
     await recordar(texto, respuesta, aprendido);
-    return { send: [msgTexto(ev.from, respuesta)], metrica, ...extra, idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
+    return { send: [msgTexto(ev.from, respuesta, metrica === 'ia_pedido' ? pedido?.opciones : null)], metrica, ...extra, idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
   }
   return {
     send: primerContacto
@@ -498,9 +514,11 @@ async function recordarCharla(memoria, de, estado, now, idioma, neg, entrada, sa
  * de la charla) y, si hace falta una persona, pausa al asistente las horas de la ficha. → {numero, nueva} o null.
  */
 async function pase(memoria, consultas, de, estado, now, horas, idioma, tipo, { pausa = false, ...datos } = {}) {
+  // ZL-149: la pausa de un pase es de 15 minutos; si alguien del negocio la toma (responde o toca «La atiendo yo»),
+  // pasa a las horas de la ficha. Si nadie la toma, vuelve el asistente.
   if (pausa && memoria) {
     const ahora = (await memoria.get(de)) ?? estado ?? {};
-    await memoria.put(de, { ...ahora, idioma: ahora.idioma ?? idioma, humanoHasta: now + horas * 3600_000, consulta: null });
+    await memoria.put(de, { ...ahora, idioma: ahora.idioma ?? idioma, humanoHasta: now + PASE_MS, pase: now, consulta: null });
   }
   if (!consultas) return null;
   const st = (memoria && (await memoria.get(de))) || estado || {};

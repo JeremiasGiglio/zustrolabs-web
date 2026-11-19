@@ -7,7 +7,8 @@
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
-import { parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { conAjustes, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { ajustesDeVenta } from './atencion.js';
 import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
@@ -81,7 +82,9 @@ const consultaCatalogo = (env, deps, negocioId, ficha) => {
  * La IA de un negocio: su ficha, sus productos y su tope diario (uno con mucho movimiento no deja sin IA a los demás;
  * también es lo que se le factura). Lo usan Instagram y WhatsApp por YCloud.
  */
-function iaDeNegocio(env, deps, a, dueño, ficha, canal) {
+function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
+  // ZL-149: lo que carga el negocio en «Cómo vendés» (retiro, envío, pago) también lo sabe el asistente.
+  const ficha = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
   const catalogo = consultaCatalogo(env, deps, dueño?.id, ficha);
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
   return async (texto, idioma, opciones) => {
@@ -144,7 +147,49 @@ function pausasDeCharla(a, now) {
 function pedidosDe(env, deps, dueño, ficha, charla, canal) {
   if (!dueño?.pedidos) return null;
   const cat = catalogoDe(env, deps)(dueño.id);
-  return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios }) : null;
+  return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDeVenta(dueño.ajustes) }) : null;
+}
+
+/** Cuánto espera el asistente a que terminen de llegar los mensajes de una ráfaga antes de responder (ZL-149). */
+export const RAFAGA_MS = 6000;
+
+/**
+ * Antes de responder a un negocio (ZL-149): un audio se transcribe (Whisper en Workers AI, gratis hasta unos 210
+ * minutos por día; el audio no se guarda) y los mensajes seguidos se juntan en uno. Devuelve el evento listo, o null si
+ * este mensaje es parte de una ráfaga que va a responder el último.
+ */
+async function prepararEvento(ev, { env, deps, memoria, clave, bajar, log }) {
+  let e = ev;
+  if (e.kind === 'audio') {
+    const texto = await transcribir(env, deps, e.media, bajar).catch(() => null);
+    log({ ok: Boolean(texto), que: texto ? 'audio' : 'audio_sin_texto' });
+    e = texto ? { ...e, kind: 'text', text: texto, audio: true } : { ...e, kind: 'otro', audio: true };
+  }
+  if (e.kind !== 'text' || !memoria?.sumarRafaga || !(deps.rafagaMs > 0)) return e;
+  await memoria.sumarRafaga(clave, { id: e.id, t: e.text });
+  await (deps.esperar ?? ((ms) => new Promise((ok) => setTimeout(ok, ms))))(deps.rafagaMs);
+  const textos = await memoria.tomarRafaga(clave, e.id);
+  if (!textos) {
+    // Lo responde el último de la ráfaga; este queda marcado para que un reintento de Meta no lo repita.
+    await memoria.visto?.(e.id);
+    return null;
+  }
+  return textos.length > 1 ? { ...e, text: textos.join('\n') } : e;
+}
+
+/** Audio → texto. `bajar(media)` trae el archivo (YCloud con la clave del negocio; Instagram, el link). */
+async function transcribir(env, deps, media, bajar) {
+  if (deps.transcribir) return deps.transcribir(media);
+  if (!env.AI?.run) return null;
+  const r = await bajar(media);
+  if (!r?.ok) return null;
+  const buf = new Uint8Array(await r.arrayBuffer());
+  if (!buf.length || buf.length > 8_000_000) return null;
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  const out = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: btoa(bin) });
+  const texto = String(out?.text ?? '').replace(/\s+/g, ' ').trim();
+  return texto ? texto.slice(0, 2000) : null;
 }
 
 /** Consultas y pases al equipo de un negocio (ZL-146): siempre que el negocio tenga su base. */
@@ -241,7 +286,8 @@ async function webhook(request, env, ctx, deps, canal) {
     canal: canal.clave, que: 'aviso', objeto: String(payload?.object ?? '').slice(0, 40), entradas: (payload?.entry ?? []).length,
     forma: (payload?.entry ?? []).map((e) => (e.messaging ? 'messaging' : e.changes ? 'changes' : 'otra')).join(','), eventos: eventos.length,
   }));
-  const trabajo = procesar(eventos, env, fetchImpl, deps, canal);
+  // En Cloudflare (con waitUntil) se esperan las ráfagas; en las pruebas, no (salvo que la prueba lo pida).
+  const trabajo = procesar(eventos, env, fetchImpl, { ...deps, rafagaMs: deps.rafagaMs ?? (ctx?.waitUntil ? RAFAGA_MS : 0) }, canal);
   if (ctx?.waitUntil) ctx.waitUntil(trabajo);
   else await trabajo;
   return json({ ok: true }, 200);
@@ -298,7 +344,10 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!(await env.LIMITE.limit({ key: esInstagram(ev.from) ? ev.from : `wa:${ev.from}` })).success) { log({ ok: true, que: 'limite' }); continue; }
       // El de toda la cuenta (los dos canales juntos) se mira recién antes de gastar IA (no corta la atención humana ni BORRAR).
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
+      // Un negocio: audio a texto y ráfagas en un solo mensaje (ZL-149).
+      const listo = negocio ? await prepararEvento(ev, { env, deps, memoria: a.memoria, clave: ev.from, bajar: (m) => fetchImpl(m.url), log }) : ev;
+      if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
+      const r = await atender(listo, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
       for (const m of r.send) await mandar(m);
       // Aviso por correo (sin número ni texto). Si falla, la charla igual queda en el panel; el motivo va al registro.
       let avisado, avisoError;
@@ -357,7 +406,7 @@ async function webhookYCloud(request, env, ctx, deps, clave) {
   log({ que: 'aviso', tipo: String(payload?.type ?? '').slice(0, 50), eventos: eventos.length });
   // Para el script: cuándo llegó el último mensaje (se guarda como mucho una vez por minuto).
   if (eventos.some((e) => !e.eco) && now - (reg.ultimo ?? 0) > 60_000) await a.ycloud.put(clave, { ultimo: now }).catch(() => {});
-  const trabajo = procesarYCloud(eventos, env, fetchImpl, deps, reg);
+  const trabajo = procesarYCloud(eventos, env, fetchImpl, { ...deps, rafagaMs: deps.rafagaMs ?? (ctx?.waitUntil ? RAFAGA_MS : 0) }, reg);
   if (ctx?.waitUntil) ctx.waitUntil(trabajo);
   else await trabajo;
   return json({ ok: true }, 200);
@@ -398,7 +447,8 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
     if (ev.eco) {
       if (memoria) {
         const estado = await memoria.get(ev.from);
-        await memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000 });
+        // Lo tomó el dueño: la pausa es la de la ficha y ya no vuelve el asistente a los 15 minutos (ZL-149).
+        await memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000, pase: 0 });
       }
       log({ ok: true, que: 'eco' });
       continue;
@@ -407,7 +457,9 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
       if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
-      const r = await atender(ev, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa') });
+      const listo = await prepararEvento(ev, { env, deps, memoria: a.memoria, clave: claveMemoria(ev.from), bajar: (m) => fetchImpl(m.link, { headers: { 'X-API-Key': reg.apiKey } }), log });
+      if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
+      const r = await atender(listo, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa') });
       // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente. (Un pase al equipo
       // también pausa, pero ese aviso sí va: lo puso el propio asistente.)
       if (r.send.length && !['borrar', 'persona', 'humano'].includes(r.metrica) && !r.handoff && memoria) {

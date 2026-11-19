@@ -85,10 +85,14 @@ export function leerYCloud(payload) {
     // Reacciones (👍 a un mensaje del dueño) y avisos del sistema: no son mensajes para contestar.
     if (['reaction', 'system', 'unsupported', 'request_welcome'].includes(m.type)) return [];
     const base = { id: `yc:${m.wamid ?? m.id ?? payload.id}`, from: idCharla(m.to, m.from), ts: Math.floor(Date.parse(m.sendTime ?? payload.createTime ?? '') / 1000) || 0 };
+    // ZL-149: un botón o una fila de lista tocada llega con nuestro id («2», «SI», «CANCELAR»): vale como si lo escribiera.
+    const elegido = m.interactive?.button_reply ?? m.interactive?.list_reply ?? null;
     const texto = m.type === 'text' ? m.text?.body
-      : m.type === 'button' ? m.button?.text
-      : m.type === 'interactive' ? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title
+      : m.type === 'button' ? m.button?.payload ?? m.button?.text
+      : m.type === 'interactive' ? (/^[A-Z0-9_]{1,20}$/.test(String(elegido?.id ?? '')) ? elegido.id : elegido?.title)
       : null;
+    // Un audio se transcribe antes de responder (index.js); el link se baja con la clave del negocio.
+    if (m.type === 'audio' && /^https:\/\//.test(String(m.audio?.link ?? ''))) return [{ ...base, kind: 'audio', media: { link: m.audio.link, tipo: String(m.audio.mime_type ?? '') } }];
     return [texto && String(texto).trim() ? { ...base, kind: 'text', text: String(texto) } : { ...base, kind: 'otro' }];
   }
   if (tipo === ECO) {
@@ -99,17 +103,39 @@ export function leerYCloud(payload) {
   return [];
 }
 
-/** Manda un mensaje de texto (los de atender(): {to, text: {body}}) con la clave del negocio. */
+/** Corta un título a `n` letras (cuenta los emojis como una). */
+const cortar = (t, n) => { const a = [...String(t ?? '').trim()]; return a.length > n ? `${a.slice(0, n - 1).join('')}…` : a.join(''); };
+
+/**
+ * El mensaje interactivo de WhatsApp para unas opciones [{id, titulo}] (ZL-149): botones de respuesta si son hasta 3,
+ * una lista si son más (hasta 10). Los límites son los de WhatsApp: 20 letras por botón, 24 por fila, 1024 de texto.
+ * → el cuerpo para sendDirectly, o null si no corresponde.
+ */
+export function interactivo(body, opciones) {
+  const ops = Array.isArray(opciones) ? opciones.filter((o) => o && /^[A-Z0-9_]{1,20}$/.test(String(o.id)) && String(o.titulo ?? '').trim()).slice(0, 10) : [];
+  if (!ops.length || body.length > 1024) return null;
+  if (ops.length <= 3) {
+    return { type: 'interactive', interactive: { type: 'button', body: { text: body }, action: { buttons: ops.map((o) => ({ type: 'reply', reply: { id: String(o.id), title: cortar(o.titulo, 20) } })) } } };
+  }
+  return { type: 'interactive', interactive: { type: 'list', body: { text: body }, action: { button: 'Ver opciones', sections: [{ title: 'Opciones', rows: ops.map((o) => ({ id: String(o.id), title: cortar(o.titulo, 24) })) }] } } };
+}
+
+/** Manda un mensaje de texto (los de atender(): {to, text: {body}, opciones?}) con la clave del negocio. */
 export async function enviarYCloud(apiKey, m, fetchImpl = fetch) {
   const [, negocio, persona] = /^yc:(\d+):(\d+)$/.exec(String(m?.to ?? '')) ?? [];
   if (!negocio) throw new Error('destino inválido');
   const body = String(m?.text?.body ?? '').slice(0, MAX_TEXTO);
   if (!body) return null;
-  const r = await fetchImpl(`${YCLOUD_API}/whatsapp/messages/sendDirectly`, {
+  const mandar = (msg) => fetchImpl(`${YCLOUD_API}/whatsapp/messages/sendDirectly`, {
     method: 'POST',
     headers: { 'X-API-Key': apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ from: `+${negocio}`, to: `+${persona}`, type: 'text', text: { body } }),
+    body: JSON.stringify({ from: `+${negocio}`, to: `+${persona}`, ...msg }),
   });
+  // ZL-149: con opciones, botones (hasta 3) o una lista (hasta 10). Si WhatsApp o YCloud no los aceptan, va el texto
+  // de siempre (que ya trae las opciones numeradas): la persona nunca se queda sin respuesta.
+  const inter = interactivo(body, m?.opciones);
+  let r = inter ? await mandar(inter).catch(() => null) : null;
+  if (!r?.ok) r = await mandar({ type: 'text', text: { body } });
   if (!r.ok) throw new Error(`ycloud ${r.status}`);
   const d = await r.json().catch(() => ({}));
   if (d?.status === 'failed') throw new Error(`ycloud ${String(d.errorCode ?? 'failed').slice(0, 30)}`);

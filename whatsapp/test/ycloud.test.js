@@ -7,6 +7,8 @@ import worker from '../src/index.js';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
 import { claveMemoria, crearWebhook, enviarYCloud, firmarYCloud, firmaYCloud, idCharla, leerYCloud, normalizar, numeroE164 } from '../src/ycloud.js';
 
+// ZL-149: con opciones, YCloud recibe botones o una lista: el texto va en interactive.body.text.
+const textoYC = (b) => b?.text?.body ?? b?.interactive?.body?.text;
 const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
 const T0 = 1_792_000_000_000;
 const NEGOCIO_TEL = '+5493410000001';
@@ -172,10 +174,10 @@ test('circuito: sin ficha activa no responde; con la ficha, saluda, contesta con
   const saludo = enviados(ycloud);
   assert.equal(saludo.length, 1, 'ZL-146: un solo mensaje');
   assert.ok(saludo.every((p) => p.clave === CLAVE_API && p.body.from === NEGOCIO_TEL && p.body.to === PERSONA_TEL));
-  assert.match(saludo.map((p) => p.body.text.body).join('\n'), /Panadería La Espiga[\s\S]*Pan y facturas/);
+  assert.match(saludo.map((p) => textoYC(p.body)).join('\n'), /Panadería La Espiga[\s\S]*Pan y facturas/);
   await avisar(clave, entrante('¿Tienen facturas sin TACC?'));
   assert.deepEqual(llamadas, [['Panadería La Espiga', '¿Tienen facturas sin TACC?']]);
-  assert.match(enviados(ycloud).at(-1).body.text.body, /Respuesta de Panadería La Espiga/);
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /Respuesta de Panadería La Espiga/);
   // El script ve cuándo llegó el último mensaje.
   assert.equal((await (await admin('GET', '/ycloud')).json()).numeros[0].ultimo, T0);
 });
@@ -255,4 +257,74 @@ test('registro: un aviso que llega justo al desconectar el número no lo revive'
   const { n } = await armar();
   await n.ycloud.put('0123456789abcdef01234567', { ultimo: T0 });
   assert.equal(await n.ycloud.get('0123456789abcdef01234567'), null);
+});
+
+// ——— Charla completa (ZL-149) ———
+
+test('botones y listas: hasta 3 opciones son botones, más son una lista; títulos al largo de WhatsApp; si no los acepta, va el texto', async () => {
+  const { interactivo } = await import('../src/ycloud.js');
+  const b = interactivo('¿Lo confirmamos?', [{ id: 'SI', titulo: 'Sí, confirmo' }, { id: 'CANCELAR', titulo: 'Cancelar' }]);
+  assert.equal(b.interactive.type, 'button');
+  assert.deepEqual(b.interactive.action.buttons.map((x) => x.reply.id), ['SI', 'CANCELAR']);
+  const l = interactivo('Menú', [1, 2, 3, 4].map((n) => ({ id: String(n), titulo: `🥖 Opción con un título larguísimo número ${n}` })));
+  assert.equal(l.interactive.type, 'list');
+  assert.ok(l.interactive.action.sections[0].rows.every((r) => [...r.title].length <= 24));
+  assert.equal(interactivo('x'.repeat(1100), [{ id: '1', titulo: 'a' }]), null, 'texto muy largo: sin botones');
+  assert.equal(interactivo('hola', [{ id: 'con espacios', titulo: 'a' }]), null, 'solo nuestros ids');
+  // Si YCloud rechaza el interactivo, va el texto.
+  const pedidos = [];
+  const f = async (url, o) => { const body = JSON.parse(o.body); pedidos.push(body); return body.type === 'interactive' ? new Response('', { status: 400 }) : Response.json({ status: 'accepted' }); };
+  await enviarYCloud(CLAVE_API, { to: idCharla(NEGOCIO_TEL, PERSONA_TEL), text: { body: 'Menú' }, opciones: [{ id: '1', titulo: 'Pan' }] }, f);
+  assert.deepEqual(pedidos.map((p) => p.type), ['interactive', 'text']);
+});
+
+test('entrada: un botón o una fila tocada vale su id; un audio llega como audio con su link', () => {
+  const [b] = leerYCloud(entrante('', { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'SI', title: 'Sí, confirmo' } } }));
+  assert.deepEqual([b.kind, b.text], ['text', 'SI']);
+  const [l] = leerYCloud(entrante('', { type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: '2', title: '🎂 Tortas' } } }));
+  assert.equal(l.text, '2');
+  const [a] = leerYCloud(entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/abc', id: 'm1', mime_type: 'audio/ogg' } }));
+  assert.equal(a.kind, 'audio');
+  assert.match(a.media.link, /^https:\/\/api\.ycloud\.com/);
+});
+
+test('circuito: un audio se transcribe (con la clave del negocio) y se responde como texto; si no se puede, pide repetirlo', async () => {
+  const { n, negocio, ycloud, llamadas, admin, avisar, d } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  const bajados = [];
+  d.transcribir = async (media) => (bajados.push(media.link), media.link.endsWith('ok') ? '¿Tienen facturas sin TACC?' : null);
+  await avisar(clave, entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/ok', mime_type: 'audio/ogg' } }));
+  assert.deepEqual(llamadas.at(-1), ['Panadería La Espiga', '¿Tienen facturas sin TACC?']);
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /Respuesta de Panadería La Espiga/);
+  await avisar(clave, entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/mal', mime_type: 'audio/ogg' } }));
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /No pude escuchar bien el audio/);
+  assert.equal(bajados.length, 2);
+});
+
+test('circuito: tres mensajes seguidos reciben UNA respuesta, con los tres juntos para la IA', async () => {
+  const { n, negocio, ycloud, llamadas, admin, avisar, d } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  await avisar(clave, entrante('hola'));
+  const antes = enviados(ycloud).length;
+  d.rafagaMs = 400;
+  d.esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  await Promise.all([avisar(clave, entrante('quiero una torta')), avisar(clave, entrante('para el sábado')), avisar(clave, entrante('de chocolate'))]);
+  assert.equal(enviados(ycloud).length - antes, 1, 'una sola respuesta');
+  assert.deepEqual(llamadas.at(-1), ['Panadería La Espiga', 'quiero una torta\npara el sábado\nde chocolate']);
+});
+
+test('circuito: el menú va con botones (lista) y el pedido sin elegir entrega si el negocio solo hace retiro', async () => {
+  const { n, negocio, ycloud, admin, avisar } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  await avisar(clave, entrante('hola'));
+  const menu = enviados(ycloud).at(-1).body;
+  assert.equal(menu.type, 'interactive');
+  assert.equal(menu.interactive.type, 'button', 'la ficha de prueba tiene 3 opciones: botones');
+  assert.deepEqual(menu.interactive.action.buttons.map((x) => x.reply.id), ['1', '2', '3']);
+  // Tocar el botón 2 es como escribir «2».
+  await avisar(clave, entrante('', { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: '2', title: 'Tortas' } } }));
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /dos días de anticipación/);
 });

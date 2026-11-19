@@ -15,7 +15,7 @@ const MIN = 60_000;
 const ANA = 'yc:5493410000001:5493410000009';
 const BETO = 'yc:5493410000001:5493410000008';
 
-function armar({ precios = true } = {}) {
+function armar({ precios = true, ajustes = null } = {}) {
   const { sql, transaccion } = sqlPrueba();
   const reloj = { t: T0 };
   const c = crearCatalogo(sql, transaccion, () => reloj.t);
@@ -38,11 +38,11 @@ function armar({ precios = true } = {}) {
   };
   const perfil = perfilNegocio({ ...FICHA, precios });
   const charlar = (de) => {
-    const pedidos = pedidosDeCharla({ cat, charla: de, canal: 'wa', negocio: FICHA.nombre, precios });
+    const pedidos = pedidosDeCharla({ cat, charla: de, canal: 'wa', negocio: FICHA.nombre, precios, ajustes });
     let n = 0;
     return async (texto) => {
       const r = await atender({ id: `${de}:${++n}:${reloj.t}`, from: de, kind: 'text', text: texto }, { memoria, preguntar, now: reloj.t, perfil, pedidos });
-      return { ...r, texto: r.send.map((m) => m.text.body).join('\n---\n') };
+      return { ...r, texto: r.send.map((m) => m.text.body).join('\n---\n'), opciones: r.send.at(-1)?.opciones ?? null };
     };
   };
   const stock = (p) => { const x = ejecutarCatalogo(c, 'obtener', [p.id]).valor; return { stock: x.stock, reservado: x.reservado, disponible: x.stock - x.reservado }; };
@@ -191,4 +191,30 @@ test('sin precios en la ficha, el resumen no muestra montos; la IA nunca escribe
   assert.match(r.texto, /• 2 × Pan francés\nEl total te lo confirma el negocio\./);
   assert.doesNotMatch(r.texto, /\$/);
   assert.equal(resumenPedido({ items: [{ nombre: 'X', cantidad: 1, subtotal: null }], sinPrecio: true }, { precios: true }), 'Tu pedido (lo guardo 20 minutos):\n• 1 × X\nAlgunos productos no tienen precio cargado: el total te lo confirma el negocio.');
+});
+
+test('«Cómo vendés» (ZL-149): con solo retiro no se pregunta la entrega; con los dos, la pregunta dice dónde y cuánto; botones en cada paso', async () => {
+  const solo = armar({ ajustes: { entrega: 'retiro', retiro: 'Calle Ficticia 123, de 8 a 20' } });
+  const ana = solo.charlar(ANA);
+  await ana('hola');
+  let r = await ana('quiero 2 kilos de pan');
+  assert.deepEqual(r.opciones.map((o) => o.id), ['SI', 'CANCELAR'], 'confirmar con botones');
+  r = await ana('sí');
+  assert.equal(r.metrica, 'pedido_nombre', 'salta «retiro o envío»: solo hace retiro');
+  r = await ana('Ana');
+  assert.equal(r.metrica, 'pedido_nuevo');
+  assert.equal(solo.c.pedido(r.pedido).comprador.entrega, 'retiro');
+  const dos = armar({ ajustes: { entrega: 'ambos', retiro: 'Calle Ficticia 123', envio: 'centro $ 1.500' } });
+  const beto = dos.charlar(BETO);
+  await beto('hola');
+  await beto('quiero 2 kilos de pan');
+  r = await beto('dale');
+  assert.match(r.texto, /1\. Retiro \(Calle Ficticia 123\)\n2\. Envío \(centro \$ 1\.500\)/);
+  assert.deepEqual(r.opciones.map((o) => o.id), ['1', '2']);
+  const envio = armar({ ajustes: { entrega: 'envio' } });
+  const caro = envio.charlar(ANA);
+  await caro('hola');
+  await caro('quiero 2 kilos de pan');
+  assert.equal((await caro('si')).metrica, 'pedido_nombre');
+  assert.equal((await caro('Carla')).metrica, 'pedido_direccion', 'solo envío: pide la dirección');
 });
