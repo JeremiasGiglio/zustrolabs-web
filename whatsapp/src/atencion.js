@@ -89,8 +89,33 @@ export function crearAtencion(storage) {
         ...(corto(datos?.interes, 120) && { interes: corto(datos.interes, 120) }),
         ...(Number.isFinite(datos?.ultimo) && { ultimo: datos.ultimo }),
         ...(consulta && { consulta }),
+        // ZL-149: cuándo el asistente le pasó la charla al equipo (para volver a los 15 minutos si nadie la tomó).
+        ...(Number.isFinite(datos?.pase) && datos.pase > 0 && { pase: datos.pase }),
+        // ZL-151: seguimiento con permiso (un recordatorio, como mucho dos) y BAJA.
+        ...(datos?.seguir && Number.isFinite(datos.seguir.cuando) && ['carrito', 'consulta'].includes(datos.seguir.tipo) && { seguir: { cuando: datos.seguir.cuando, tipo: datos.seguir.tipo, negocio: corto(datos.seguir.negocio, 40) } }),
+        ...(Number.isFinite(datos?.seguidos) && datos.seguidos > 0 && { seguidos: Math.min(9, datos.seguidos) }),
+        ...(datos?.baja === true && { baja: true }),
       };
       await s.put(`wa:${num}`, { idioma, humanoHasta, ...(pedido && { pedido }), ...contacto, vence: now + RETENCION_MEMORIA_MS });
+    },
+    /**
+     * Ráfagas (ZL-149): quien escribe varios mensajes seguidos recibe UNA respuesta. Cada mensaje se suma acá (en una
+     * sola operación del Durable Object, así dos mensajes que llegan juntos no se pisan); después de unos segundos, solo
+     * el último de la ráfaga la toma entera y responde. Vence a los 2 minutos.
+     */
+    async sumarRafaga(num, item, now) {
+      const k = `raf:${num}`;
+      const r = vigente(await s.get(k), now);
+      const lista = [...(r?.lista ?? []), { id: String(item.id).slice(0, 120), t: String(item.t ?? '').slice(0, 1000) }].slice(-6);
+      await s.put(k, { lista, vence: now + 120_000 });
+      return lista.length;
+    },
+    async tomarRafaga(num, id, now) {
+      const k = `raf:${num}`;
+      const r = vigente(await s.get(k), now);
+      if (!r?.lista?.length || r.lista.at(-1).id !== String(id)) return null;
+      await s.delete(k);
+      return r.lista.map((x) => x.t);
     },
     /** BORRAR: memoria, charla y contador de ese número. */
     async borrar(num) {
@@ -324,6 +349,8 @@ export function adaptadores(a, reloj = () => Date.now()) {
     put: (n, d) => a.guardarEstado(n, d, reloj()),
     delete: (n) => a.borrar(n),
     visto: (id) => a.visto(id, reloj()),
+    sumarRafaga: (n, item) => a.sumarRafaga(n, item, reloj()),
+    tomarRafaga: (n, id) => a.tomarRafaga(n, id, reloj()),
     contar: (n) => a.contar(n, reloj()),
   };
   const charlas = {

@@ -22,6 +22,8 @@ export class Atencion extends DurableObject {
   estado(num, now) { return this.a.estado(num, now); }
   async guardarEstado(num, datos, now) { await this.#alarma(); return this.a.guardarEstado(num, datos, now); }
   borrar(num) { return this.a.borrar(num); }
+  async sumarRafaga(num, item, now) { await this.#alarma(); return this.a.sumarRafaga(num, item, now); }
+  tomarRafaga(num, id, now) { return this.a.tomarRafaga(num, id, now); }
   async visto(id, now) { await this.#alarma(); return this.a.visto(id, now); }
   contar(num, now) { return this.a.contar(num, now); }
   charla(num, now) { return this.a.charla(num, now); }

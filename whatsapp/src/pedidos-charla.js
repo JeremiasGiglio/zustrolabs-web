@@ -31,6 +31,8 @@ const T = {
     cancelado: 'Listo, cancelé tu pedido.',
     nada: 'No tenés un pedido armado. Decime qué querés y lo armo.',
     error: 'Uy, no pude registrar el pedido 😓 ¿Probamos de nuevo en un ratito?',
+    botones: { si: 'Sí, confirmo', cancelar: 'Cancelar', retiro: 'Retiro', envio: 'Envío' },
+    preguntaEntrega: '¿Lo retirás o te lo enviamos?',
   },
   en: {
     titulo: (min) => `Your order (held for ${min} minutes):`,
@@ -53,6 +55,8 @@ const T = {
     cancelado: 'OK, I cancelled your order.',
     nada: 'You have no order yet. Tell me what you want.',
     error: 'Oops, I could not place the order 😓 Shall we try again in a moment?',
+    botones: { si: 'Yes, confirm', cancelar: 'Cancel', retiro: 'Pick-up', envio: 'Delivery' },
+    preguntaEntrega: 'Pick-up or delivery?',
   },
   hr: {
     titulo: (min) => `Vaša narudžba (čuvam je ${min} minuta):`,
@@ -75,6 +79,8 @@ const T = {
     cancelado: 'U redu, otkazao sam narudžbu.',
     nada: 'Još nemate narudžbu. Recite mi što želite.',
     error: 'Ups, nisam mogao zaprimiti narudžbu 😓 Pokušamo ponovno za koji trenutak?',
+    botones: { si: 'Da, potvrđujem', cancelar: 'Odustani', retiro: 'Preuzimanje', envio: 'Dostava' },
+    preguntaEntrega: 'Preuzimanje ili dostava?',
   },
 };
 export const textosPedido = (idioma) => T[idioma] ?? T.es;
@@ -108,7 +114,13 @@ export function resumenPedido(p, { precios, idioma = 'es', faltantes = [], min =
  * Lo que necesita la charla de un negocio con pedidos encendidos.
  * @param o {cat: {ejecutar(op, args)}, charla, canal: 'ig'|'wa', negocio: nombre, precios: bool}
  */
-export function pedidosDeCharla({ cat, charla, canal, negocio, precios }) {
+export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes = null }) {
+  // ZL-149: «Cómo vendés» del negocio. Si solo hace retiro o solo envío, no se pregunta; la pregunta lleva dónde,
+  // cuándo y cuánto cuesta cada uno.
+  const fija = ajustes?.entrega === 'retiro' || ajustes?.entrega === 'envio' ? ajustes.entrega : null;
+  const preguntaEntrega = (t) => `${t.preguntaEntrega}\n1. ${t.botones.retiro}${ajustes?.retiro ? ` (${ajustes.retiro})` : ''}\n2. ${t.botones.envio}${ajustes?.envio ? ` (${ajustes.envio})` : ''}`;
+  const botonesEntrega = (t) => [{ id: '1', titulo: t.botones.retiro }, { id: '2', titulo: t.botones.envio }];
+  const botonesConfirmar = (t) => [{ id: 'SI', titulo: t.botones.si }, { id: 'CANCELAR', titulo: t.botones.cancelar }];
   const op = async (nombre, args) => {
     const r = await cat.ejecutar(nombre, args);
     if (!r?.ok) { const e = new Error(r?.error ?? 'error'); e.catalogo = true; throw e; }
@@ -140,7 +152,7 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios }) {
       if (VER.test(m)) {
         const p = await op('carritoDe', [charla]).catch(() => null);
         if (!p) return { texto: t.nada, pedido: null, metrica: 'pedido_ver' };
-        return { texto: `${resumenPedido(p, { precios, idioma })}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, metrica: 'pedido_ver' };
+        return { texto: `${resumenPedido(p, { precios, idioma })}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, metrica: 'pedido_ver', opciones: botonesConfirmar(t) };
       }
       if (!paso) return null;
       if (paso === 'confirmar') {
@@ -148,11 +160,11 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios }) {
         if (!SI.test(m) || m.split(' ').length > 3) return null;
         const p = await op('carritoDe', [charla]).catch(() => null);
         if (!p) return { texto: t.vencido(MINUTOS_CARRITO), pedido: null, metrica: 'pedido_vencido' };
-        return { texto: t.entrega, pedido: { paso: 'entrega' }, metrica: 'pedido_entrega' };
+        if (!fija) return { texto: preguntaEntrega(t), pedido: { paso: 'entrega' }, metrica: 'pedido_entrega', opciones: botonesEntrega(t) };
       }
-      if (paso === 'entrega') {
-        const entrega = RETIRO.test(m) ? 'retiro' : ENVIO.test(m) ? 'envio' : null;
-        if (!entrega) return { texto: t.entregaOtraVez, pedido: estadoPedido, metrica: 'pedido_entrega' };
+      if (paso === 'entrega' || (paso === 'confirmar' && fija)) {
+        const entrega = fija ?? (RETIRO.test(m) ? 'retiro' : ENVIO.test(m) ? 'envio' : null);
+        if (!entrega) return { texto: t.entregaOtraVez, pedido: estadoPedido, metrica: 'pedido_entrega', opciones: botonesEntrega(t) };
         // Si ya sabemos su nombre (memoria del contacto, ZL-146), no se lo volvemos a preguntar.
         const conocido = String(nombre ?? '').trim().slice(0, 80);
         if (conocido) {
@@ -202,7 +214,7 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios }) {
         const falt = resumenPedido(null, { precios, idioma, faltantes: r.faltantes });
         return { texto: falt || t.vacio, pedido: null, soloSistema: Boolean(falt) };
       }
-      return { texto: `${resumenPedido(r.pedido, { precios, idioma, faltantes: r.faltantes })}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, soloSistema: Boolean(r.sinCambios) };
+      return { texto: `${resumenPedido(r.pedido, { precios, idioma, faltantes: r.faltantes })}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, soloSistema: Boolean(r.sinCambios), opciones: botonesConfirmar(t) };
     },
   };
 }

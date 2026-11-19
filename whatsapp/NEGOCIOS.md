@@ -148,6 +148,21 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   persona que escriba PERSONA (la palabra igual funciona).
 - Las consultas viven en la base del negocio (`src/consultas.js`): una abierta por charla, sin el texto de la charla.
 
+## Charla completa (ZL-149)
+
+- **Audios:** se transcriben con Whisper en Workers AI (binding `AI`; gratis hasta 10.000 neuronas por día, unos 210
+  minutos) y se responden como texto. El audio no se guarda. Si no se entiende, el asistente pide repetirlo.
+- **Ráfagas:** quien manda varios mensajes seguidos recibe una sola respuesta. Cada mensaje se suma en el Durable
+  Object (`sumarRafaga`) y, después de 6 segundos, solo el último la toma entera (`tomarRafaga`).
+- **Botones:** el menú, el «¿Lo confirmamos?» y «¿Retiro o envío?» van con botones (hasta 3) o una lista (WhatsApp por
+  YCloud) y respuestas rápidas (Instagram). Al tocarlos llega el id, que vale como escribirlo. Si YCloud no acepta el
+  interactivo, va el texto con las opciones numeradas.
+- **Cómo vendés en la charla:** el asistente sabe retiro, envío y pago; si el negocio solo hace retiro o solo envío,
+  el pedido no lo pregunta; la pregunta de entrega dice dónde, cuándo y cuánto.
+- **Pase con red:** cuando el asistente le pasa la charla al equipo (o la persona escribe PERSONA), se calla 15
+  minutos. Si nadie la tomó (no respondió desde su app ni tocó «La atiendo yo»), vuelve y lo dice una vez («Mientras el
+  equipo te responde, sigo yo»). Si la tomó, se calla las horas de la ficha.
+
 ## Lo que falta (próximas etapas)
 
 - **Pedidos, etapa 2:** avisos al celular con la app cerrada (Web Push), aviso por correo de pedido nuevo, el alias

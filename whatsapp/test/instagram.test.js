@@ -511,3 +511,14 @@ test('el state del «Conectar Instagram» lleva la app y, si viene de la app de 
   // Vencido, no sirve.
   assert.equal(await leerEstado(S, con, T0 + 3_600_000), null);
 });
+
+test('Instagram (ZL-149): respuestas rápidas al mandar; al tocar una llega su id; un audio llega como audio', async () => {
+  const { convertir, leerWebhookIg } = await import('../src/instagram.js');
+  const [p] = convertir({ to: 'ig:17841400000000002.17841400000000009', text: { body: 'Menú' }, opciones: [{ id: '1', titulo: '🥖 Pan y facturas del día de hoy' }, { id: '2', titulo: 'Tortas' }] });
+  assert.deepEqual(p.message.quick_replies.map((q) => q.payload), ['1', '2']);
+  assert.ok(p.message.quick_replies.every((q) => [...q.title].length <= 20));
+  const base = (message) => ({ object: 'instagram', entry: [{ id: '17841400000000002', messaging: [{ sender: { id: '17841400000000009' }, recipient: { id: '17841400000000002' }, timestamp: Date.now(), message: { mid: 'm' + Math.random(), ...message } }] }] });
+  assert.equal(leerWebhookIg(base({ text: 'Tortas', quick_reply: { payload: '2' } }))[0].text, '2');
+  const [a] = leerWebhookIg(base({ attachments: [{ type: 'audio', payload: { url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1' } }] }));
+  assert.equal(a.kind, 'audio');
+});
