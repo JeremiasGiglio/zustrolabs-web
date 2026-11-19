@@ -18,6 +18,7 @@
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
 import { clavesVapid } from './push.js';
+import { ZONA_POR_DEFECTO, ZONAS } from './reporte.js';
 
 export const DIA_MS = 24 * 3600_000;
 /** Índice de seguimientos: `seg:<hora con 15 dígitos>:<num>`, así se ordenan por hora. */
@@ -37,6 +38,8 @@ export function ajustesDeVenta(a) {
     retiro: corto(a?.retiro, 300),
     envio: corto(a?.envio, 300),
     pago: corto(a?.pago, 300),
+    // ZL-152: la zona horaria del negocio (para los reportes: a qué hora y qué día escriben).
+    zona: ZONAS.some(([z]) => z === a?.zona) ? a.zona : ZONA_POR_DEFECTO,
   };
 }
 export const RETENCION_MEMORIA_MS = 90 * DIA_MS;
@@ -165,14 +168,38 @@ export function crearAtencion(storage) {
       return lista.length;
     },
     /** Números del negocio por día (ZL-151): charlas, audios, seguimientos, pases. 120 días. */
-    async sumarMetrica(id, clave, now) {
+    async sumarMetrica(id, clave, now, dia = null) {
       if (!['charlas', 'audios', 'seguimientos', 'pases'].includes(clave)) return 0;
-      const k = `negmet:${id}:${diaDe(now)}`;
+      const k = `negmet:${id}:${/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : diaDe(now)}`;
       const x = (await s.get(k)) ?? {};
       x[clave] = (x[clave] ?? 0) + 1;
       x.vence = now + 120 * DIA_MS;
       await s.put(k, x);
       return x[clave];
+    },
+    /** Cada mensaje que recibe un negocio (ZL-152): por día y hora del negocio, y por canal. Sin texto ni número. */
+    async sumarMensaje(id, { dia, hora, canal, n = 1 }, now) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dia)) || !(hora >= 0 && hora < 24)) return 0;
+      const k = `negmet:${id}:${dia}`;
+      const x = (await s.get(k)) ?? {};
+      const k1 = Math.min(20, Math.max(1, Math.floor(Number(n) || 1)));
+      x.mensajes = (x.mensajes ?? 0) + k1;
+      x.horas = Array.from({ length: 24 }, (_, h) => (x.horas?.[h] ?? 0) + (h === Math.floor(hora) ? k1 : 0));
+      x.canales = { wa: (x.canales?.wa ?? 0) + (canal === 'wa' ? k1 : 0), ig: (x.canales?.ig ?? 0) + (canal === 'ig' ? k1 : 0) };
+      x.vence = now + 120 * DIA_MS;
+      await s.put(k, x);
+      return x.mensajes;
+    },
+    /** Los números de cada día entre `desde` y `hasta` (AAAA-MM-DD, incluidos), para los reportes. */
+    async metricasDias(id, desde, hasta, now) {
+      const out = [];
+      for (const [k, v] of await s.list({ prefix: `negmet:${id}:` })) {
+        const dia = k.split(':').pop();
+        if (dia < desde || dia > hasta || !vigente(v, now)) continue;
+        const { vence, ...resto } = v;
+        out.push({ dia, ...resto });
+      }
+      return out;
     },
     async metricas(id, dias, now) {
       const desde = diaDe(now - (dias - 1) * DIA_MS);
@@ -459,7 +486,9 @@ export function adaptadores(a, reloj = () => Date.now()) {
     suscribirPush: (id, sub, email) => a.suscribirPush(id, sub, email, reloj()),
     suscripcionesPush: (id) => a.suscripcionesPush(id),
     borrarPush: (id, endpoints) => a.borrarPush(id, endpoints),
-    sumarMetrica: (id, clave) => a.sumarMetrica(id, clave, reloj()),
+    sumarMetrica: (id, clave, dia) => a.sumarMetrica(id, clave, reloj(), dia),
+    sumarMensaje: (id, datos) => a.sumarMensaje(id, datos, reloj()),
+    metricasDias: (id, desde, hasta) => a.metricasDias(id, desde, hasta, reloj()),
     metricas: (id, dias = 7) => a.metricas(id, dias, reloj()),
   };
   // Ficha por cuenta de Instagram (lo que usan el Worker y el script): es la ficha del negocio dueño de esa cuenta.

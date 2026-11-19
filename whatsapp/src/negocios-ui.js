@@ -101,6 +101,13 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
   .tabla.apilada thead{display:none}.tabla.apilada tr{display:block;border-bottom:1px solid var(--linea);padding:.4rem 0}
   .tabla.apilada td{display:block;border:0;padding:.1rem .7rem}.tabla.apilada td[data-t]::before{content:attr(data-t) ": ";color:var(--gris);font-size:.8rem}
 }
+.grafico{display:flex;align-items:flex-end;gap:2px;height:150px;padding:1.4rem 0 0;border-bottom:1px solid var(--linea);position:relative}
+.grafico .col{flex:1 1 0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0;position:relative}
+.grafico .barra-dato{width:100%;max-width:24px;background:var(--rojo);border-radius:4px 4px 0 0;min-height:0}
+.grafico .col:hover .barra-dato{opacity:.8}.grafico .valor{position:absolute;top:-1.3rem;font-size:.75rem;font-weight:600;white-space:nowrap}
+.ejes{display:flex;gap:2px;font-size:.72rem;color:var(--gris);margin-top:.25rem}.ejes span{flex:1 1 0;text-align:center;min-width:0;overflow:hidden}
+.titulo-reporte{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between}
+@media print{.top,.tabs,.no-imprimir,.toast{display:none!important}body{background:#fff}main{max-width:none;padding:0}.caja,.tarjeta,.resumen div{break-inside:avoid}}
 @media (min-width:700px){.prod{grid-template-columns:64px 1fr}.foto{width:64px;height:64px}}`;
 
 /** El programa de la página (corre en el navegador). */
@@ -117,6 +124,8 @@ function app() {
       else if (k === 'class') el.className = v;
       else if (k === 'value') el.value = v;
       else if (k === 'checked') el.checked = !!v;
+      // Estilos por CSSOM (la política de seguridad no deja atributos «style»): {height: '40%'}.
+      else if (k === 'estilo') Object.assign(el.style, v);
       else el.setAttribute(k, v === true ? '' : String(v));
     }
     for (const c of hijos.flat(9)) if (c !== null && c !== undefined && c !== false) el.append(c instanceof Node ? c : String(c));
@@ -178,7 +187,7 @@ function app() {
   }
   // ZL-148: tres secciones para el negocio (en el celular, una barra abajo). Inicio es lo único que tiene que mirar
   // seguido: lo que el asistente le deja listo para confirmar o responder. El equipo ve además Asistente y Admin.
-  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['conexiones', 'Conexiones']]
+  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['reportes', 'Reportes'], ['conexiones', 'Conexiones']]
     .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Admin']] : []);
   // Lo guardado con los nombres de antes lleva a la sección nueva.
   const VIEJAS = { pedidos: ['inicio'], importar: ['productos', 'importar'], historial: ['productos', 'historial'], instagram: ['conexiones', 'instagram'], whatsapp: ['conexiones', 'whatsapp'] };
@@ -242,6 +251,74 @@ function app() {
     return h('section', {}, h('h2', {}, 'Estado'), h('p', { class: 'ayuda' }, 'Si algo está en rojo, el asistente no puede responder por ahí. Abajo dice qué hacer.'), lista);
   }
 
+  // ── Reportes (ZL-152): día, semana o mes, para mostrarle al cliente. Se baja en Excel o se imprime como PDF. ──
+  const NOMBRE_DIA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  /** Columnas de una sola serie (sin leyenda: el título dice qué es). El valor más alto lleva su número. */
+  function columnas(valores, etiquetas, describir, cadaCuanto) {
+    const max = Math.max(1, ...valores);
+    const pico = valores.indexOf(Math.max(...valores));
+    return h('div', {},
+      h('div', { class: 'grafico', role: 'img', 'aria-label': describir(valores) },
+        valores.map((v, i) => h('div', { class: 'col', title: etiquetas[i] + ': ' + v },
+          i === pico && v > 0 ? h('span', { class: 'valor' }, String(v)) : null,
+          h('div', { class: 'barra-dato', estilo: { height: Math.round((v / max) * 100) + '%' } })))),
+      h('div', { class: 'ejes', 'aria-hidden': 'true' }, etiquetas.map((t, i) => h('span', {}, i % (cadaCuanto || 1) === 0 ? t : ''))));
+  }
+  function tablaNumeros(titulos, filas) {
+    return h('details', { class: 'no-imprimir' }, h('summary', {}, 'Ver los números'),
+      h('div', { class: 'scroll' }, h('table', { class: 'tabla' }, h('thead', {}, h('tr', {}, titulos.map((t) => h('th', {}, t)))), h('tbody', {}, filas.map((f) => h('tr', {}, f.map((c) => h('td', {}, String(c)))))))));
+  }
+  function vistaReportes() {
+    if (!estado.sub.reportes) estado.sub.reportes = 'semana';
+    const periodo = estado.sub.reportes;
+    const hoy = new Date();
+    const fecha = h('input', { type: 'date', value: estado.fechaReporte || new Date(hoy.getTime() - hoy.getTimezoneOffset() * 60000).toISOString().slice(0, 10), 'aria-label': 'Fecha del reporte' });
+    const cuerpo = h('div', { 'aria-live': 'polite' }, h('p', { class: 'ayuda' }, 'Armando el reporte…'));
+    const excel = h('a', { class: 'btn', download: '' }, 'Descargar Excel');
+    const consulta = () => '?periodo=' + periodo + '&fecha=' + encodeURIComponent(fecha.value);
+    const cargar = conError(async () => {
+      estado.fechaReporte = fecha.value;
+      excel.href = '/api' + base() + '/reporte' + consulta() + '&formato=xlsx';
+      const r = await api(base() + '/reporte' + consulta());
+      const s = r.resumen;
+      const rango = r.desde === r.hasta ? r.desde.split('-').reverse().join('/') : r.desde.split('-').reverse().join('/') + ' al ' + r.hasta.split('-').reverse().join('/');
+      const hs = (i) => String(i).padStart(2, '0') + ':00';
+      const tarjeta = (n, t) => h('div', {}, h('strong', {}, String(n)), h('span', {}, t));
+      poner(cuerpo,
+        h('h3', {}, 'Reporte de ' + r.negocio + ' · ' + rango),
+        h('div', { class: 'resumen' },
+          tarjeta(s.charlas, 'charlas atendidas'), tarjeta(s.mensajes, 'mensajes recibidos'), tarjeta(s.respuestas, 'respuestas del asistente'),
+          tarjeta(s.consultas, 'consultas'), tarjeta(s.ganadas, 'consultas ganadas'), tarjeta(s.pedidos, 'pedidos'),
+          tarjeta(s.entregados, 'pedidos entregados'), tarjeta(plata(s.vendido), 'vendido'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null),
+        h('p', { class: 'ayuda' }, 'Por WhatsApp: ' + s.canales.whatsapp + ' mensajes · por Instagram: ' + s.canales.instagram + '. Pases al equipo: ' + s.pasesAlEquipo + '. Recordatorios enviados: ' + s.seguimientos + '.'),
+        h('div', { class: 'caja' }, h('h3', {}, 'A qué hora te escriben'),
+          h('p', { class: 'ayuda' }, s.mensajes ? 'Las horas con más mensajes: ' + r.horasPico.map(hs).join(', ') + '.' : 'Todavía no hay mensajes en este período.'),
+          columnas(r.porHora, r.porHora.map((_, i) => hs(i)), (v) => 'Mensajes por hora del día. Más mensajes a las ' + r.horasPico.map(hs).join(', '), 3),
+          tablaNumeros(['Hora', 'Mensajes'], r.porHora.map((n, i) => [hs(i), n]))),
+        r.periodo !== 'dia' ? h('div', { class: 'caja' }, h('h3', {}, 'Qué días te escriben más'),
+          h('p', { class: 'ayuda' }, r.diasPico.length ? 'Los días con más mensajes: ' + r.diasPico.join(' y ') + '.' : ''),
+          columnas(r.porDiaSemana, NOMBRE_DIA, () => 'Mensajes por día de la semana. Más: ' + r.diasPico.join(' y ')),
+          tablaNumeros(['Día', 'Mensajes'], r.porDiaSemana.map((n, i) => [NOMBRE_DIA[i], n]))) : null,
+        r.porDia.length > 1 ? h('div', { class: 'caja' }, h('h3', {}, 'Mensajes día por día'),
+          columnas(r.porDia.map((d) => d.mensajes), r.porDia.map((d) => d.dia.slice(8) + '/' + d.dia.slice(5, 7)), () => 'Mensajes por día del período', r.porDia.length > 10 ? 5 : 1),
+          tablaNumeros(['Día', 'Mensajes', 'Charlas', 'Consultas', 'Pedidos', 'Vendido'], r.porDia.map((d) => [d.dia.split('-').reverse().join('/'), d.mensajes, d.charlas, d.consultas, d.pedidos, plata(d.vendido)]))) : null,
+        h('div', { class: 'caja' }, h('h3', {}, 'Lo que más compran'),
+          r.productos.length
+            ? h('div', { class: 'scroll' }, h('table', { class: 'tabla' }, h('thead', {}, h('tr', {}, h('th', {}, 'Producto'), h('th', {}, 'Unidades'), h('th', {}, 'Monto'))),
+                h('tbody', {}, r.productos.map((p) => h('tr', {}, h('td', {}, p.nombre), h('td', {}, String(p.unidades)), h('td', {}, plata(p.monto)))))))
+            : h('p', { class: 'ayuda' }, 'No hubo pedidos por chat en este período.')));
+    });
+    fecha.addEventListener('change', cargar);
+    const caja = h('section', {},
+      h('div', { class: 'titulo-reporte' }, h('h2', {}, 'Reportes'),
+        h('div', { class: 'acciones no-imprimir', estilo: { margin: '0' } }, excel, h('button', { type: 'button', class: 'btn', onclick: () => window.print() }, 'Imprimir o guardar PDF'))),
+      h('p', { class: 'ayuda no-imprimir' }, 'Cuántos te escriben, a qué hora, qué días y qué compran más. Con la hora de tu negocio (la elegís en Conexiones → Cómo vendés).'),
+      h('div', { class: 'barra no-imprimir' }, segmento('reportes', [['dia', 'Día'], ['semana', 'Semana'], ['mes', 'Mes']]), fecha),
+      cuerpo);
+    cargar();
+    return caja;
+  }
+
   // ── Cómo vendés (ZL-148): entrega, pago y cuánto se guarda un pedido aceptado. El asistente los usa solo. ──
   function vistaAjustes() {
     const a = estado.datos.negocio.ajustes || {};
@@ -250,13 +327,14 @@ function app() {
     const envio = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: zona centro $ 1.500, otras zonas a convenir; de 18 a 21' }, a.envio || '');
     const pago = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: transferencia al alias MI.NEGOCIO o efectivo al retirar' }, a.pago || '');
     const reserva = h('select', {}, [[2, '2 horas'], [24, '24 horas'], [48, '48 horas'], [168, '7 días']].map(([v, t]) => h('option', { value: v, selected: Number(a.reservaHoras || 24) === v }, t)));
+    const zona = h('select', {}, [['America/Argentina/Buenos_Aires', 'Argentina'], ['America/Montevideo', 'Uruguay'], ['America/Santiago', 'Chile'], ['America/Sao_Paulo', 'Brasil (São Paulo)'], ['Europe/Zagreb', 'Croacia'], ['Europe/Madrid', 'España']].map(([v, t]) => h('option', { value: v, selected: (a.zona || 'America/Argentina/Buenos_Aires') === v }, t)));
     retiro.value = a.retiro || ''; envio.value = a.envio || ''; pago.value = a.pago || '';
     return h('section', {},
       h('h2', {}, 'Cómo vendés'),
       h('p', { class: 'ayuda' }, 'Lo cargás una vez. El asistente lo usa para responder, y cuando aceptás un pedido le manda al comprador cómo pagar y cómo recibirlo: no tenés que escribir nada a mano.'),
       h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
         e.preventDefault();
-        const r = await api(base() + '/ajustes', { metodo: 'PUT', cuerpo: { entrega: entrega.value, retiro: retiro.value, envio: envio.value, pago: pago.value, reservaHoras: Number(reserva.value) } });
+        const r = await api(base() + '/ajustes', { metodo: 'PUT', cuerpo: { entrega: entrega.value, retiro: retiro.value, envio: envio.value, pago: pago.value, reservaHoras: Number(reserva.value), zona: zona.value } });
         estado.datos.negocio.ajustes = r;
         aviso('Guardado. El asistente ya lo usa.');
       }) },
@@ -267,6 +345,8 @@ function app() {
         h('p', { class: 'ayuda' }, 'Alias, link de pago o efectivo. Nunca pongas claves ni datos de tarjetas.'),
         etiqueta('Cuánto te guardo un pedido aceptado sin pagar', reserva), reserva,
         h('p', { class: 'ayuda' }, 'Pasado ese tiempo sin marcarlo pagado ni entregado, se cancela solo y los productos vuelven a la venta.'),
+        etiqueta('Zona horaria del negocio', zona), zona,
+        h('p', { class: 'ayuda' }, 'Para los reportes: a qué hora y qué día te escriben.'),
         h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Guardar'))));
   }
 
@@ -279,7 +359,7 @@ function app() {
       return;
     }
     if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
-    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, conexiones: vistaConexiones, asistente: vistaAsistente, admin: vistaAdmin };
+    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, reportes: vistaReportes, conexiones: vistaConexiones, asistente: vistaAsistente, admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaPedidos)());
   }
 
@@ -939,7 +1019,7 @@ function app() {
       f.pausaHoras.value = horas;
       pintarMenu(c.menu && c.menu.length ? c.menu : [{ titulo: '', texto: '' }]);
     }
-    const formulario = h('div', { class: 'wa-form', style: 'max-width:none' },
+    const formulario = h('div', { class: 'wa-form', estilo: { maxWidth: 'none' } },
       h('div', { class: 'dosc' },
         h('div', {}, ...campoTexto('nombre', 'Nombre del negocio')),
         campoSelect('objetivo', 'A qué cierre lleva la charla', [['consultas', 'Consultas (servicios, presupuestos, turnos)'], ['pedidos', 'Pedidos (productos del catálogo)']])),

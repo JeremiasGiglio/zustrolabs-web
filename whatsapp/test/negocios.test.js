@@ -576,3 +576,26 @@ test('avisos y números (ZL-151): el negocio suscribe su celular y ve los númer
   assert.deepEqual([num.dias, num.charlas, num.consultas, num.ganadas, num.pedidos], [7, 1, 1, 1, 0]);
   for (const r of ['/sw.js', '/manifest.webmanifest', '/icono.svg']) assert.equal((await pedir('duena@example.com', 'GET', r)).status, 200, r);
 });
+
+test('reportes (ZL-152): cada mensaje cuenta con la hora del negocio; el reporte se ve y se baja en Excel', async () => {
+  const { pedir, a, d, n } = await armar();
+  await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/ajustes`, { zona: 'Europe/Zagreb' });
+  assert.equal((await n.negocios.get(a.id)).ajustes.zona, 'Europe/Zagreb');
+  assert.equal((await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/ajustes`, { zona: 'Marte/Olimpo' })).datos.zona, 'America/Argentina/Buenos_Aires', 'una zona que no está en la lista vuelve a la de siempre');
+  const hoy = new Date(T0).toISOString().slice(0, 10);
+  await n.negocios.sumarMensaje(a.id, { dia: hoy, hora: 19, canal: 'wa', n: 3 });
+  await n.negocios.sumarMensaje(a.id, { dia: hoy, hora: 10, canal: 'ig' });
+  await d.catalogo(a.id).ejecutar('crearConsulta', ['yc:1:2', { tipo: 'consulta', nombre: 'Ana' }]);
+  const r = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/reporte?periodo=semana`);
+  assert.equal(r.status, 200);
+  assert.equal(r.datos.resumen.mensajes, 4);
+  assert.deepEqual(r.datos.resumen.canales, { whatsapp: 3, instagram: 1 });
+  assert.equal(r.datos.porHora[19], 3);
+  assert.deepEqual(r.datos.horasPico, [19, 10]);
+  assert.equal(r.datos.resumen.consultas, 1);
+  const x = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/reporte?periodo=mes&formato=xlsx`);
+  assert.equal(x.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  assert.match(x.headers.get('content-disposition'), /^attachment; filename="reporte-mes-\d{4}-\d{2}-01-al-\d{4}-\d{2}-\d{2}\.xlsx"$/);
+  assert.deepEqual([...new Uint8Array(x.datos).slice(0, 2)], [0x50, 0x4b]);
+  assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/reporte`)).status, 404, 'el de otro negocio, no');
+});

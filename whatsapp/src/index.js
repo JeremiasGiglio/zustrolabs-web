@@ -18,6 +18,7 @@ import { agregarAAcceso, correosEnAcceso } from './acceso.js';
 import { pedidosDeCharla } from './pedidos-charla.js';
 import { consultasDeCharla } from './consultas.js';
 import { avisarCelulares } from './push.js';
+import { armarReporte, diaLocal, horaLocal, xlsx } from './reporte.js';
 import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
 const MAX_CUERPO = 256_000;
@@ -151,8 +152,6 @@ function pedidosDe(env, deps, dueño, ficha, charla, canal) {
   return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDeVenta(dueño.ajustes) }) : null;
 }
 
-const diaDe = (t) => new Date(t).toISOString().slice(0, 10);
-
 /**
  * Después de responderle a alguien de un negocio (ZL-151): los números del día (charlas, audios, pases) y el aviso al
  * celular del dueño cuando entra un pedido o una consulta. Nunca frena la charla si falla.
@@ -160,9 +159,13 @@ const diaDe = (t) => new Date(t).toISOString().slice(0, 10);
 async function despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, ev, r, now, charla) {
   if (!dueño?.id || !a.negocios?.sumarMetrica) return;
   try {
-    if (!['repetido', 'humano'].includes(r.metrica) && (!antes?.ultimo || diaDe(antes.ultimo) !== diaDe(now))) await a.negocios.sumarMetrica(dueño.id, 'charlas');
-    if (ev.audio) await a.negocios.sumarMetrica(dueño.id, 'audios');
-    if (r.handoff) await a.negocios.sumarMetrica(dueño.id, 'pases');
+    // Todo con la hora del negocio (ZL-152): así el reporte dice a qué hora y qué día le escriben.
+    const zona = ajustesDeVenta(dueño.ajustes).zona;
+    const dia = diaLocal(now, zona);
+    if (r.metrica !== 'repetido' && a.negocios.sumarMensaje) await a.negocios.sumarMensaje(dueño.id, { dia, hora: horaLocal(now, zona), canal: /^yc:/.test(charla) ? 'wa' : 'ig', n: ev.partes ?? 1 });
+    if (!['repetido', 'humano'].includes(r.metrica) && (!antes?.ultimo || diaLocal(antes.ultimo, zona) !== dia)) await a.negocios.sumarMetrica(dueño.id, 'charlas', dia);
+    if (ev.audio) await a.negocios.sumarMetrica(dueño.id, 'audios', dia);
+    if (r.handoff) await a.negocios.sumarMetrica(dueño.id, 'pases', dia);
     const canal = /^yc:/.test(charla) ? 'WhatsApp' : 'Instagram';
     let aviso = null;
     if (r.metrica === 'pedido_nuevo' && r.pedido) aviso = { titulo: 'Pedido nuevo', cuerpo: `Pedido N.º ${r.pedido} por ${canal}. Abrí la app para aceptarlo.` };
@@ -220,7 +223,7 @@ export async function seguimientos(env, deps, now) {
     const texto = e.seguir.tipo === 'carrito' ? T.seguirCarrito : T.seguirConsulta;
     const enviado = await avisarComprador(env, a, negocio, charla, texto, fetchImpl);
     await a.memoria.put(num, { ...e, seguir: null, seguidos: (e.seguidos ?? 0) + 1 });
-    if (enviado === true) await a.negocios.sumarMetrica?.(negocio.id, 'seguimientos');
+    if (enviado === true) await a.negocios.sumarMetrica?.(negocio.id, 'seguimientos', diaLocal(now, ajustesDeVenta(negocio.ajustes).zona));
     out.push({ que: enviado === true ? 'enviado' : 'no_enviado', tipo: e.seguir.tipo });
   }
   if (out.length) console.log(JSON.stringify({ canal: 'negocio', que: 'seguimientos', r: out }));
@@ -245,7 +248,7 @@ async function prepararEvento(ev, { deps, memoria, clave }) {
     await memoria.visto?.(ev.id);
     return null;
   }
-  return textos.length > 1 ? { ...ev, text: textos.join('\n') } : ev;
+  return textos.length > 1 ? { ...ev, text: textos.join('\n'), partes: textos.length } : ev;
 }
 
 
@@ -844,6 +847,7 @@ export default {
         verificar: (id, op) => datosVerificar(env, deps, id, deps.now ?? Date.now(), op),
         ...(deps.llamarWeb && { llamarWeb: deps.llamarWeb }),
         avisarCelulares: (id, aviso) => avisarNegocio(a, id, aviso, fetchImpl, deps.now ?? Date.now()),
+        reporte: { armarReporte, xlsx },
       });
     }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
