@@ -307,11 +307,19 @@ test('circuito: tres mensajes seguidos reciben UNA respuesta, con los tres junto
   await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
   await avisar(clave, entrante('hola'));
   const antes = enviados(ycloud).length;
-  d.rafagaMs = 400;
-  d.esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  // La espera de la ráfaga termina cuando llegaron los tres (sin depender de cuánto tarda la máquina).
+  let sumados = 0;
+  let listos;
+  const todos = new Promise((ok) => (listos = ok));
+  const sumar = d.memoria.sumarRafaga;
+  d.memoria = { ...d.memoria, sumarRafaga: async (...x) => { const r = await sumar(...x); if (++sumados === 3) listos(); return r; } };
+  d.rafagaMs = 1;
+  d.esperar = () => todos;
   await Promise.all([avisar(clave, entrante('quiero una torta')), avisar(clave, entrante('para el sábado')), avisar(clave, entrante('de chocolate'))]);
   assert.equal(enviados(ycloud).length - antes, 1, 'una sola respuesta');
-  assert.deepEqual(llamadas.at(-1), ['Panadería La Espiga', 'quiero una torta\npara el sábado\nde chocolate']);
+  // Van en el orden en que llegaron (con tres pedidos a la vez, ese orden puede variar).
+  assert.equal(llamadas.at(-1)[0], 'Panadería La Espiga');
+  assert.deepEqual(llamadas.at(-1)[1].split('\n').sort(), ['de chocolate', 'para el sábado', 'quiero una torta']);
 });
 
 test('circuito: el menú va con botones (lista) y el pedido sin elegir entrega si el negocio solo hace retiro', async () => {
@@ -367,4 +375,19 @@ test('seguimiento: fuera de las 24 h del último mensaje no se manda nada', asyn
   assert.ok(a2);
   const r = await seguimientos(ENV, { ...d, now: T0 + 25 * 3600_000 }, T0 + 25 * 3600_000);
   assert.deepEqual(r, [{ que: 'fuera_de_24h' }]);
+});
+
+test('reportes (ZL-152): cada mensaje que llega por WhatsApp se cuenta con la hora de Argentina', async () => {
+  const { n, negocio, admin, avisar } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  await avisar(clave, entrante('hola'));
+  await avisar(clave, entrante('¿tienen facturas?'));
+  const { diaLocal, horaLocal } = await import('../src/reporte.js');
+  const AR = 'America/Argentina/Buenos_Aires';
+  const [m] = await n.negocios.metricasDias(negocio.id, diaLocal(T0, AR), diaLocal(T0, AR));
+  assert.equal(m.mensajes, 2);
+  assert.equal(m.horas[horaLocal(T0, AR)], 2);
+  assert.deepEqual(m.canales, { wa: 2, ig: 0 });
+  assert.equal(m.charlas, 1, 'la misma persona en el mismo día es una charla');
 });

@@ -73,6 +73,11 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
       return armar(una('SELECT * FROM consultas WHERE id = ?', f.id));
     },
 
+    /** Para el reporte (ZL-152): las consultas del período. */
+    consultasReporte(desde, hasta) {
+      return filas('SELECT id AS numero, creado, estado, tipo, canal, nombre, resumen FROM consultas WHERE creado >= ? AND creado < ? ORDER BY creado LIMIT 5000', Number(desde) || 0, Number(hasta) || 0);
+    },
+
     /** Números para el dueño (ZL-151): consultas desde `desde` y cuántas se ganaron. */
     numerosConsultas(desde) {
       const d = Number(desde) || 0;

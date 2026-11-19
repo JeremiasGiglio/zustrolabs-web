@@ -57,7 +57,9 @@ export class Atencion extends DurableObject {
   async suscribirPush(id, sub, email, now) { await this.#alarma(); return this.a.suscribirPush(id, sub, email, now); }
   suscripcionesPush(id) { return this.a.suscripcionesPush(id); }
   borrarPush(id, endpoints) { return this.a.borrarPush(id, endpoints); }
-  async sumarMetrica(id, clave, now) { await this.#alarma(); return this.a.sumarMetrica(id, clave, now); }
+  async sumarMetrica(id, clave, now, dia) { await this.#alarma(); return this.a.sumarMetrica(id, clave, now, dia); }
+  async sumarMensaje(id, datos, now) { await this.#alarma(); return this.a.sumarMensaje(id, datos, now); }
+  metricasDias(id, desde, hasta, now) { return this.a.metricasDias(id, desde, hasta, now); }
   metricas(id, dias, now) { return this.a.metricas(id, dias, now); }
 }
 

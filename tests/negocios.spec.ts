@@ -75,7 +75,7 @@ test.describe('app de negocios (ZL-121)', () => {
   test('la dueña carga un producto, le cambia el stock y lo ve en el historial', async ({ page }) => {
     await montar(page, 'duena@example.com');
     // ZL-148: arranca en Inicio; Productos es una de las tres secciones.
-    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Conexiones']);
+    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Reportes', 'Conexiones']);
     await page.getByRole('tab', { name: 'Productos' }).click();
     await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();
     await expect(page.getByText('Asistente activo')).toBeVisible();
@@ -361,5 +361,34 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('tab', { name: 'Conexiones' }).click();
     await page.getByRole('button', { name: 'Estado', exact: true }).click();
     await expect(page.locator('.chip').filter({ hasText: /Todo funcionando|Falta algo/ })).toBeVisible();
+  });
+
+  test('reportes (ZL-152): semana con horarios y lo que más compran, Excel para bajar, sin estilos bloqueados; accesible', async ({ page }) => {
+    const errores: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'error') errores.push(m.text()); });
+    const { negocio } = await montar(page, 'duena@example.com', async (n, neg, d) => {
+      const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+      await n.negocios.sumarMensaje(neg.id, { dia: hoy, hora: 20, canal: 'wa', n: 5 });
+      await n.negocios.sumarMensaje(neg.id, { dia: hoy, hora: 11, canal: 'ig', n: 2 });
+      await n.negocios.guardar(neg.id, { pedidos: true });
+      const cat = d.catalogo(neg.id);
+      const pan = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'x'])).valor.id;
+      await cat.ejecutar('carrito', ['yc:5493410000001:5493410000009', [{ id: pan, cantidad: 3 }], { canal: 'wa' }]);
+      await cat.ejecutar('confirmar', ['yc:5493410000001:5493410000009', { nombre: 'Ana', entrega: 'retiro' }]);
+    });
+    await page.getByRole('tab', { name: 'Reportes' }).click();
+    await expect(page.getByRole('button', { name: 'Semana', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Las horas con más mensajes: 20:00, 11:00.')).toBeVisible();
+    await expect(page.locator('.resumen')).toContainText('7mensajes recibidos');
+    await expect(page.getByRole('cell', { name: 'Pan francés' })).toBeVisible();
+    // La barra más alta ocupa todo el alto (el estilo se pone por CSSOM: la política de seguridad no lo bloquea).
+    const alto = await page.locator('.grafico').first().locator('.barra-dato').nth(20).evaluate((el) => el.style.height);
+    expect(alto).toBe('100%');
+    await expect(page.getByRole('link', { name: 'Descargar Excel' })).toHaveAttribute('href', new RegExp(`/api/n/${negocio.id}/reporte\\?periodo=semana&fecha=\\d{4}-\\d{2}-\\d{2}&formato=xlsx$`));
+    await page.getByRole('button', { name: 'Mes', exact: true }).click();
+    await expect(page.getByRole('heading', { name: /^Reporte de Panadería La Espiga · 01\// })).toBeVisible();
+    expect(errores.filter((e) => /Content Security Policy/i.test(e))).toEqual([]);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
   });
 });

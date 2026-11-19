@@ -24,7 +24,8 @@ const SEGURIDAD = {
   'x-frame-options': 'DENY',
   'referrer-policy': 'no-referrer',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-  'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  // manifest-src y worker-src (ZL-151, ZL-152): la app instalable y los avisos al celular.
+  'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
 /** Canales del negocio; los negocios creados antes de ZL-122 tienen solo Instagram. */
 export const canalesDe = (n) => n?.canales ?? { instagram: true, whatsapp: false };
@@ -304,6 +305,30 @@ export async function appNegocios(request, env, deps) {
     const c = (await ejecutar('numeros', [desde])).valor ?? {};
     const uso = (await deps.negocios.uso(negocio.id)).filter((u) => u.dia >= new Date(desde).toISOString().slice(0, 10)).reduce((x, u) => x + u.n, 0);
     return json({ dias, charlas: m.charlas ?? 0, audios: m.audios ?? 0, pases: m.pases ?? 0, seguimientos: m.seguimientos ?? 0, respuestas: uso, ...c });
+  }
+
+  // Reportes (ZL-152): día, semana o mes, para ver en la app o bajar en Excel. Con la hora del negocio.
+  if (request.method === 'GET' && sub === '/reporte') {
+    if (!deps.reporte || !deps.negocios.metricasDias) return error('sin memoria', 503);
+    const zona = ajustesDeVenta(negocio.ajustes).zona;
+    const periodo = url.searchParams.get('periodo') ?? 'semana';
+    const fecha = url.searchParams.get('fecha') ?? '';
+    // Primero el rango (para pedirle a la base solo esos días) y después el reporte entero.
+    const vacio = deps.reporte.armarReporte({ negocio: negocio.nombre, periodo, fecha, zona, now });
+    const desdeMs = Date.parse(`${vacio.desde}T00:00:00Z`) - 86_400_000;
+    const hastaMs = Date.parse(`${vacio.hasta}T00:00:00Z`) + 2 * 86_400_000;
+    const datos = (await ejecutar('datosReporte', [desdeMs, hastaMs])).valor ?? {};
+    const r = deps.reporte.armarReporte({
+      negocio: negocio.nombre, periodo, fecha, zona, now,
+      metricas: await deps.negocios.metricasDias(negocio.id, vacio.desde, vacio.hasta),
+      uso: await deps.negocios.uso(negocio.id),
+      datos,
+    });
+    if (url.searchParams.get('formato') === 'xlsx') {
+      const nombre = `reporte-${r.periodo}-${r.desde}${r.hasta !== r.desde ? `-al-${r.hasta}` : ''}.xlsx`;
+      return new Response(deps.reporte.xlsx(r), { status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': `attachment; filename="${nombre}"`, 'cache-control': 'no-store' } });
+    }
+    return json(r);
   }
 
   // Ajustes de venta (ZL-148): los carga el propio negocio (entrega, pago, cuánto se guarda un pedido sin pagar).

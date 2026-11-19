@@ -283,6 +283,18 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
       return { pedidos: r?.n ?? 0, entregados: e?.n ?? 0, vendido: redondo(e?.total ?? 0) };
     },
 
+    /** Para el reporte (ZL-152): los pedidos confirmados del período y lo que más se pidió (sin los caídos). */
+    datosReporte(desde, hasta) {
+      const d = Number(desde) || 0;
+      const h = Number(hasta) || 0;
+      const pedidos = filas(`SELECT numero, creado, estado, total, canal FROM pedidos WHERE numero IS NOT NULL AND creado >= ? AND creado < ? ORDER BY creado LIMIT 5000`, d, h);
+      const productos = filas(`SELECT i.nombre AS nombre, SUM(i.cantidad) AS unidades, SUM(COALESCE(i.precio, 0) * i.cantidad) AS monto
+        FROM pedido_items i JOIN pedidos p ON p.id = i.pedido
+        WHERE p.numero IS NOT NULL AND p.creado >= ? AND p.creado < ? AND p.estado NOT IN ('rechazado','cancelado','vencido')
+        GROUP BY i.nombre ORDER BY unidades DESC, monto DESC LIMIT 20`, d, h);
+      return { pedidos, productos };
+    },
+
     /** Un pedido con su historia. */
     pedido(numero) {
       transaccion(() => vencerAhora());
