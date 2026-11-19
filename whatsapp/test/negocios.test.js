@@ -439,6 +439,10 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'pagado' })).status, 400);
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'borrador' })).status, 400);
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'aceptado' }, { sinCabecera: true })).status, 403);
+  // ZL-148: el negocio carga una vez cómo se paga y cómo se entrega; el aviso de «aceptado» lo lleva solo.
+  const aj = await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/ajustes`, { pago: 'Transferencia al alias LA.ESPIGA.PAN (ficticio)', envio: 'Centro, $ 1.500, de 18 a 20', retiro: 'Calle Ficticia 123, de 9 a 20', reservaHoras: 48, entrega: 'cualquiera' });
+  assert.equal(aj.status, 200);
+  assert.deepEqual([aj.datos.reservaHoras, aj.datos.entrega], [48, 'ambos'], 'lo que no se entiende vuelve al valor de siempre');
   // Aceptar, pagar, entregar: cada uno le llega al comprador por su WhatsApp, con la clave del negocio.
   const avisos = [];
   for (const estado of ['aceptado', 'pagado', 'entregado']) {
@@ -452,7 +456,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
     assert.deepEqual([e.body.from, e.body.to], ['+5493410000001', '+5493410000009']);
     avisos.push(e.body.text.body);
   }
-  assert.match(avisos[0], /Tu pedido N\.º 1 fue aceptado por Panadería La Espiga/);
+  assert.match(avisos[0], /^¡Listo! Panadería La Espiga aceptó tu pedido N\.º 1\.\nCómo pagar: Transferencia al alias LA\.ESPIGA\.PAN \(ficticio\)\nRetiro: Calle Ficticia 123, de 9 a 20\nCualquier duda/, 'retira en el local: va el retiro, no el envío');
   assert.match(avisos[1], /recibió el pago de tu pedido N\.º 1/);
   assert.match(avisos[2], /figura como entregado/);
   const p = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos[0];
@@ -504,4 +508,23 @@ test('consultas (ZL-146): cada negocio ve las suyas, las mueve de estado y no pu
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1`, { estado: 'ganada' }, { sinCabecera: true })).status, 403, 'sin la cabecera del mismo origen no se cambia');
   assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/consultas`)).status, 404);
   assert.deepEqual((await pedir('otro@example.com', 'GET', `/api/n/${b.id}/consultas`)).datos.consultas, []);
+});
+
+test('consultas (ZL-148): «La atiendo» calla al asistente en esa charla, «Devolver al asistente» lo vuelve a encender; reclamos se resuelven', async () => {
+  const { pedir, a, d, n } = await armar();
+  const CHARLA = 'yc:5493410000001:5493410000009';
+  await n.memoria.put(CHARLA, { idioma: 'es', humanoHasta: 0, nombre: 'Ana' });
+  await d.catalogo(a.id).ejecutar('crearConsulta', [CHARLA, { tipo: 'persona', resumen: 'Reclamo (ficticio).', canal: 'wa' }]);
+  const r = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1`, { estado: 'atendiendo' });
+  assert.equal(r.status, 200);
+  assert.ok(r.datos.pausaHasta > T0, 'el asistente se calla');
+  assert.ok((await n.memoria.get(CHARLA)).humanoHasta > T0);
+  const l = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/consultas`)).datos;
+  assert.ok(l.consultas[0].pausaHasta > T0, 'la tarjeta muestra hasta cuándo');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1/devolver`, {})).status, 200);
+  assert.equal((await n.memoria.get(CHARLA)).humanoHasta, 0, 'vuelve el asistente');
+  assert.equal((await n.memoria.get(CHARLA)).nombre, 'Ana', 'la memoria de la persona queda');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/1`, { estado: 'resuelta' })).datos.estado, 'resuelta');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/99/devolver`, {})).status, 400, 'una consulta que no es suya no se toca');
+  assert.equal((await pedir('otro@example.com', 'POST', `/api/n/${a.id}/consultas/1/devolver`, {})).status, 404);
 });

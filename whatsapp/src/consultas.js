@@ -18,7 +18,8 @@ export const ESQUEMA_CONSULTAS = [
 ];
 
 export const TIPOS_CONSULTA = ['consulta', 'persona'];
-export const ESTADOS_CONSULTA = ['nueva', 'atendiendo', 'ganada', 'perdida'];
+// «resuelta» es para un pase a una persona (un reclamo, una duda): ganada y perdida son para quien quería avanzar.
+export const ESTADOS_CONSULTA = ['nueva', 'atendiendo', 'ganada', 'perdida', 'resuelta'];
 const ABIERTAS = ['nueva', 'atendiendo'];
 
 const texto = (v, max) => String(v ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -70,6 +71,13 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
       if (!f) throw new ErrorCatalogo('esa consulta no existe');
       sql.exec('UPDATE consultas SET estado = ?, nota = ?, actualizado = ? WHERE id = ?', estado, texto(nota, 300) || f.nota, reloj(), f.id);
       return armar(una('SELECT * FROM consultas WHERE id = ?', f.id));
+    },
+
+    /** Una consulta por número (para la app: responder, devolver al asistente). */
+    consulta(numero) {
+      const f = una('SELECT * FROM consultas WHERE id = ?', Number(numero));
+      if (!f) throw new ErrorCatalogo('esa consulta no existe');
+      return armar(f);
     },
 
     /** ¿La charla tiene una consulta abierta? (para no volver a pedir el nombre ni duplicar). */

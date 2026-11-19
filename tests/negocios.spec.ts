@@ -74,6 +74,9 @@ test.beforeAll(async () => {
 test.describe('app de negocios (ZL-121)', () => {
   test('la dueña carga un producto, le cambia el stock y lo ve en el historial', async ({ page }) => {
     await montar(page, 'duena@example.com');
+    // ZL-148: arranca en Inicio; Productos es una de las tres secciones.
+    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Conexiones']);
+    await page.getByRole('tab', { name: 'Productos' }).click();
     await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();
     await expect(page.getByText('Asistente activo')).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Asistente' })).toHaveCount(0, { timeout: 1000 });
@@ -93,14 +96,15 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByLabel('Stock', { exact: true })).toHaveText('0');
     await page.getByRole('button', { name: 'Restar uno a Pan francés' }).click();
     await expect(page.getByRole('status')).toContainText('no hay tanto stock');
-    await page.getByRole('tab', { name: 'Historial' }).click();
+    await page.getByRole('button', { name: 'Historial', exact: true }).click();
     await expect(page.locator('tbody tr')).toHaveCount(6);
     await expect(page.locator('tbody tr').first()).toContainText('duena@example.com');
   });
 
   test('importa un Excel con vista previa, después en serio, y encuentra los productos', async ({ page }) => {
     await montar(page, 'duena@example.com');
-    await page.getByRole('tab', { name: 'Importar Excel' }).click();
+    await page.getByRole('tab', { name: 'Productos' }).click();
+    await page.getByRole('button', { name: 'Importar Excel', exact: true }).click();
     await page.getByLabel('Elegir planilla').setInputFiles('whatsapp/test/productos-prueba.xlsx');
     await expect(page.getByText('productos-prueba.xlsx · 4 filas')).toBeVisible();
     await expect(page.getByLabel('Qué es la columna Precio de venta')).toHaveValue('precio');
@@ -124,7 +128,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByLabel('Mensaje de prueba').fill('¿tienen pan?');
     await page.getByRole('button', { name: 'Enviar' }).click();
     await expect(page.locator('.burbuja.asis').last()).toContainText('tenemos pan francés');
-    await page.getByRole('tab', { name: 'Administración' }).click();
+    await page.getByRole('tab', { name: 'Admin' }).click();
     await page.getByLabel('Nombre del negocio').fill('Chocolatería Ficticia');
     await page.getByLabel('Correos de quienes entran').fill('dueno@example.com');
     await page.getByRole('button', { name: 'Crear' }).click();
@@ -156,7 +160,8 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('WhatsApp (ZL-136): la dueña conecta su número sola, ve el estado y lo desconecta; la página es accesible', async ({ page }) => {
     await montar(page, 'duena@example.com');
-    await page.getByRole('tab', { name: 'WhatsApp' }).click();
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'WhatsApp', exact: true }).click();
     await expect(page.getByText('Todavía no hay un número de WhatsApp conectado.')).toBeVisible();
     await expect(page.getByRole('link', { name: 'YCloud' })).toHaveAttribute('href', 'https://www.ycloud.com/console#/entry/register');
     await page.getByLabel('Tu número de WhatsApp Business (con código de país)').fill('+54 9 341 000-0001');
@@ -175,7 +180,8 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('Instagram (ZL-137): la dueña pide la invitación y «Conectar Instagram» la lleva a Instagram con la app compartida; la página es accesible', async ({ page }) => {
     const { n } = await montar(page, 'duena@example.com');
-    await page.getByRole('tab', { name: 'Instagram' }).click();
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'Instagram', exact: true }).click();
     await expect(page.getByText('Todavía no hay una cuenta de Instagram conectada.')).toBeVisible();
     // Sin app compartida registrada, se usa la del estudio (ZL-140): el botón ya se puede usar.
     await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toBeEnabled();
@@ -187,7 +193,8 @@ test.describe('app de negocios (ZL-121)', () => {
     // El equipo registra la app compartida: el botón lleva a Instagram con esa app y vuelve a zustrolabs.com.
     await n.apps.put('3000000000000003', { secreto: 'secreto-app-compartida', nombre: 'Clientes', compartida: true });
     await page.reload();
-    await page.getByRole('tab', { name: 'Instagram' }).click();
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'Instagram', exact: true }).click();
     let destino = '';
     await page.route('https://www.instagram.com/**', async (route) => { destino = route.request().url(); await route.fulfill({ status: 200, body: 'instagram' }); });
     await page.getByRole('button', { name: 'Conectar Instagram' }).click();
@@ -199,17 +206,18 @@ test.describe('app de negocios (ZL-121)', () => {
     const CHARLA = 'yc:5493410000001:5493410000009';
     let panId = '';
     const { negocio, deps } = await montar(page, 'duena@example.com', async (n, neg, d) => {
-      await n.negocios.guardar(neg.id, { pedidos: true });
+      await n.negocios.guardar(neg.id, { pedidos: true, ajustes: { reservaHoras: 48 } });
       const cat = d.catalogo(neg.id);
       panId = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'duena@example.com'])).valor.id;
       await cat.ejecutar('carrito', [CHARLA, [{ id: panId, cantidad: 3 }], { canal: 'wa' }]);
       await cat.ejecutar('confirmar', [CHARLA, { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 123' }]);
     });
     const stock = async () => (await deps.catalogo(negocio.id).ejecutar('obtener', [panId])).valor;
-    await expect(page.getByRole('tab', { name: 'Pedidos' })).toBeVisible();
-    await page.getByRole('tab', { name: 'Pedidos' }).click();
+    await expect(page.getByRole('tab', { name: 'Inicio' })).toHaveAttribute('aria-selected', 'true');
     const tarjeta = page.locator('article.pedido');
-    await expect(tarjeta.getByRole('heading', { name: 'N.º 1 · Ana' })).toBeVisible();
+    await expect(tarjeta.getByRole('heading', { name: 'Pedido N.º 1 · Ana' })).toBeVisible();
+    await expect(page.locator('.resumen')).toContainText('1pedidos para aceptar');
+    await expect(tarjeta.getByRole('link', { name: 'Responder por WhatsApp' })).toHaveAttribute('href', 'https://wa.me/5493410000009');
     await expect(tarjeta).toContainText('3 × Pan francés — $ 7.500');
     await expect(tarjeta).toContainText('Total: $ 7.500');
     await expect(tarjeta).toContainText('Envío: Calle Ficticia 123');
@@ -217,13 +225,15 @@ test.describe('app de negocios (ZL-121)', () => {
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
     expect((await stock()).reservado).toBe(3);
-    await tarjeta.getByLabel('Guardarlo sin pagar').selectOption('48');
+    // Aceptar con un toque: cuánto se guarda sin pagar sale de «Cómo vendés» (48 h en este negocio).
     await tarjeta.getByRole('button', { name: 'Aceptar' }).click();
     // Sin un número conectado, no se le puede avisar al comprador: lo dice.
     await expect(page.getByText(/Pedido N\.º 1: aceptado\. No le pudimos avisar/)).toBeVisible();
     await page.getByRole('button', { name: /Aceptados/ }).click();
-    await expect(tarjeta).toContainText('Se libera en 48 h');
-    await tarjeta.getByRole('button', { name: 'Marcar pagado' }).click();
+    await expect(tarjeta).toContainText('Guardado hasta el');
+    const vence = (await deps.catalogo(negocio.id).ejecutar('pedido', [1])).valor.vence - Date.now();
+    expect(Math.round(vence / 3600_000)).toBe(48);
+    await tarjeta.getByRole('button', { name: 'Ya pagó' }).click();
     await page.getByRole('button', { name: /Pagados/ }).click();
     await tarjeta.getByRole('button', { name: 'Entregado' }).click();
     await expect.poll(async () => { const p = await stock(); return [p.stock, p.reservado]; }).toEqual([7, 0]);
@@ -240,11 +250,10 @@ test.describe('app de negocios (ZL-121)', () => {
       await cat.ejecutar('carrito', ['ig:17841400000000001.900', [{ id: panId, cantidad: 2 }], { canal: 'ig' }]);
       await cat.ejecutar('confirmar', ['ig:17841400000000001.900', { nombre: 'Beto', entrega: 'retiro' }]);
     });
-    await page.getByRole('tab', { name: 'Pedidos' }).click();
     const tarjeta = page.locator('article.pedido');
-    await tarjeta.getByLabel('Motivo del pedido 1').fill('hoy no hay horno');
     await tarjeta.getByRole('button', { name: 'Rechazar' }).click();
-    await tarjeta.getByRole('button', { name: '¿Seguro? Tocá de nuevo' }).click();
+    await tarjeta.getByLabel('Motivo').fill('hoy no hay horno');
+    await tarjeta.getByRole('button', { name: 'Confirmar rechazo' }).click();
     await expect(page.getByText(/Pedido N\.º 1: rechazado/)).toBeVisible();
     expect((await deps.catalogo(negocio.id).ejecutar('obtener', [panId])).valor.reservado).toBe(0);
     expect((await deps.catalogo(negocio.id).ejecutar('pedido', [1])).valor.eventos.at(-1).detalle).toBe('hoy no hay horno');
@@ -255,23 +264,29 @@ test.describe('app de negocios (ZL-121)', () => {
     await montar(page, 'duena@example.com', async (n, neg, d) => {
       await d.catalogo(neg.id).ejecutar('crearConsulta', [CHARLA, { tipo: 'consulta', nombre: 'Ana Pérez', resumen: 'Torta para 20 personas el sábado (dato ficticio).', canal: 'wa' }]);
     });
-    await page.getByRole('tab', { name: 'Pedidos y consultas' }).click();
+    await page.getByRole('tab', { name: 'Inicio' }).click();
     const tarjeta = page.locator('article.consulta');
     await expect(tarjeta.getByRole('heading', { name: 'Consulta N.º 1 · Ana Pérez' })).toBeVisible();
     await expect(tarjeta).toContainText('Quiere avanzar');
     await expect(tarjeta).toContainText('Torta para 20 personas');
-    await expect(tarjeta).toContainText('Respondé desde el WhatsApp del negocio al +5493410000009.');
+    await expect(tarjeta.getByRole('link', { name: 'Responder por WhatsApp' })).toHaveAttribute('href', 'https://wa.me/5493410000009');
     await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toHaveCount(0);
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
-    await tarjeta.getByRole('button', { name: 'La atiendo' }).click();
-    await expect(page.getByText('Consulta N.º 1: la estoy atendiendo.')).toBeVisible();
+    // «La atiendo yo» calla al asistente en esa charla; «Devolver al asistente» lo vuelve a encender (ZL-148).
+    await tarjeta.getByRole('button', { name: 'La atiendo yo' }).click();
+    await expect(page.getByRole('status')).toContainText('Consulta N.º 1: la estás atendiendo. El asistente no se mete');
+    await expect(tarjeta.locator('.pausa')).toContainText('El asistente está callado en esta charla');
+    await tarjeta.getByRole('button', { name: 'Devolver al asistente' }).click();
+    await expect(page.getByRole('status')).toContainText('el asistente vuelve a responder');
+    await expect(tarjeta.locator('.pausa')).toHaveCount(0);
     await tarjeta.getByRole('button', { name: 'Ganada' }).click();
     await expect(page.getByText('No hay consultas para responder.')).toBeVisible();
   });
 
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {
     await montar(page, 'duena@example.com');
+    await page.getByRole('tab', { name: 'Productos' }).click();
     await page.getByRole('button', { name: '+ Nuevo producto' }).click();
     await page.getByRole('dialog').getByLabel('Nombre *').fill('=HYPERLINK("http://malo.example.com")');
     await page.getByRole('dialog').getByRole('button', { name: 'Guardar' }).click();
@@ -291,10 +306,30 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('sin scroll horizontal y sin problemas graves de accesibilidad', async ({ page }) => {
     await montar(page, 'equipo@example.com');
-    await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Hola/ })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     const graves = r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
     expect(graves.map((v) => `${v.id}: ${v.nodes.map((x) => x.target.join(' ')).join(', ')}`)).toEqual([]);
+  });
+
+  test('celular (ZL-148): la barra de secciones va abajo, sin scroll horizontal; «Cómo vendés» se guarda y es accesible', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { negocio, n } = await montar(page, 'duena@example.com');
+    const barra = await page.locator('nav.tabs').boundingBox();
+    expect(barra && barra.y + barra.height).toBeGreaterThan(800);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'Cómo vendés' }).click();
+    await page.getByLabel('¿Cómo entregás?').selectOption('retiro');
+    await page.getByLabel('Retiro: dónde y cuándo').fill('Calle Ficticia 123, de 9 a 20');
+    await page.getByLabel('Cómo se paga').fill('Efectivo o transferencia al alias FICTICIO');
+    await page.getByLabel('Cuánto te guardo un pedido aceptado sin pagar').selectOption('2');
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.getByRole('status')).toContainText('Guardado');
+    const aj = (await n.negocios.get(negocio.id)).ajustes;
+    expect([aj.entrega, aj.retiro, aj.reservaHoras]).toEqual(['retiro', 'Calle Ficticia 123, de 9 a 20', 2]);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
   });
 });

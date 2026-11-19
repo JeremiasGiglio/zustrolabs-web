@@ -10,6 +10,7 @@ import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
+import { ajustesDeVenta } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 
@@ -31,10 +32,21 @@ const json = (data, status = 200) => resp(JSON.stringify(data), status, 'applica
 const error = (mensaje, status = 400, campo) => json({ error: mensaje, ...(campo && { campo }) }, status);
 
 /** Lo que se le manda al comprador cuando el negocio cambia el estado de su pedido (texto fijo, sin IA). */
-export function textoEstado(p, estado, motivo, negocio) {
+export function textoEstado(p, estado, motivo, negocio, ajustes = null) {
   const n = `N.º ${p.numero}`;
   const porque = motivo ? ` (${motivo})` : '';
-  if (estado === 'aceptado') return `Tu pedido ${n} fue aceptado por ${negocio}. En un rato te escriben por acá para coordinar el pago y la entrega.`;
+  if (estado === 'aceptado') {
+    // ZL-148: con los ajustes de venta, el comprador recibe en el mismo mensaje cómo pagar y cómo se entrega: el negocio
+    // no tiene que escribir nada a mano.
+    const aj = ajustes ?? {};
+    const envio = p.comprador?.entrega === 'envio';
+    const partes = [`¡Listo! ${negocio} aceptó tu pedido ${n}.`];
+    if (aj.pago) partes.push(`Cómo pagar: ${aj.pago}`);
+    if (envio && aj.envio) partes.push(`Envío: ${aj.envio}`);
+    if (!envio && aj.retiro) partes.push(`Retiro: ${aj.retiro}`);
+    partes.push(aj.pago || (envio ? aj.envio : aj.retiro) ? 'Cualquier duda, escribinos por acá.' : 'En un rato te escriben por acá para coordinar el pago y la entrega.');
+    return partes.join('\n');
+  }
   if (estado === 'rechazado') return `Lo siento: ${negocio} no puede tomar tu pedido ${n}${porque}.`;
   if (estado === 'pagado') return `${negocio} recibió el pago de tu pedido ${n}. ¡Gracias!`;
   if (estado === 'entregado') return `Tu pedido ${n} figura como entregado. ¡Gracias por tu compra!`;
@@ -165,7 +177,7 @@ export async function appNegocios(request, env, deps) {
     const cuentas = [];
     for (const c of negocio.cuentas) cuentas.push({ id: c, username: (await deps.cuentas?.get(c))?.username ?? null });
     return json({
-      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
+      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ajustes: ajustesDeVenta(negocio.ajustes), ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
       resumen: r.valor ?? null,
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
@@ -253,24 +265,57 @@ export async function appNegocios(request, env, deps) {
     const b = await leerJson(request);
     if (!b || !['aceptado', 'rechazado', 'pagado', 'entregado', 'cancelado'].includes(b.estado)) return error('estado inválido');
     const motivo = String(b.motivo ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 200);
-    const r = await ejecutar('cambiarEstado', [Number(mo[1]), b.estado, email, { motivo, horas: b.horas ?? null }]);
+    // Aceptar con un toque (ZL-148): cuánto se guarda sin pagar sale de los ajustes del negocio, no de cada pedido.
+    const aj = ajustesDeVenta(negocio.ajustes);
+    const r = await ejecutar('cambiarEstado', [Number(mo[1]), b.estado, email, { motivo, horas: b.horas ?? aj.reservaHoras }]);
     if (r.resp) return r.resp;
     // Se le avisa al comprador por el mismo canal (dentro de las 24 h de Meta). Si falla, el estado igual quedó.
-    const texto = textoEstado(r.valor, b.estado, motivo, negocio.nombre);
+    const texto = textoEstado(r.valor, b.estado, motivo, negocio.nombre, aj);
     const aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
     return json({ ...r.valor, aviso });
   }
+  // Ajustes de venta (ZL-148): los carga el propio negocio (entrega, pago, cuánto se guarda un pedido sin pagar).
+  if (request.method === 'GET' && sub === '/ajustes') return json(ajustesDeVenta(negocio.ajustes));
+  if (request.method === 'PUT' && sub === '/ajustes') {
+    const b = await leerJson(request);
+    if (!b) return error('pedido inválido');
+    const r = await deps.negocios.guardar(negocio.id, { ajustes: ajustesDeVenta({ ...negocio.ajustes, ...b }) });
+    if (r?.error) return error(r.error);
+    return json(r.negocio.ajustes);
+  }
+
   // Consultas (ZL-146): lo que el asistente le pasa al negocio cuando el cierre no es un pedido o hace falta alguien.
+  // ZL-148: cada una dice si el asistente está callado en esa charla y hasta cuándo.
   if (request.method === 'GET' && sub === '/consultas') {
     const r = await ejecutar('consultas', [{ estado: url.searchParams.get('estado') ?? '', cuantos: Number(url.searchParams.get('cuantos') ?? 100) }]);
-    return r.resp ?? json(r.valor);
+    if (r.resp) return r.resp;
+    for (const c of r.valor.consultas) {
+      if (deps.charlasNegocio?.pausa && ['nueva', 'atendiendo'].includes(c.estado)) c.pausaHasta = await deps.charlasNegocio.pausa(c.charla).catch(() => 0);
+    }
+    return json(r.valor);
   }
-  const mc = /^\/consultas\/(\d{1,9})$/.exec(sub);
+  const mc = /^\/consultas\/(\d{1,9})(\/devolver)?$/.exec(sub);
+  if (mc && request.method === 'POST' && mc[2]) {
+    // Devolver al asistente: vuelve a responder en esa charla ya (solo charlas de ESTE negocio: salen de su consulta).
+    const k = await ejecutar('consulta', [Number(mc[1])]);
+    if (k.resp) return k.resp;
+    if (!deps.charlasNegocio?.devolver) return error('sin memoria', 503);
+    await deps.charlasNegocio.devolver(k.valor.charla);
+    return json({ ok: true, pausaHasta: 0 });
+  }
   if (mc && request.method === 'POST') {
     const b = await leerJson(request);
-    if (!b || !['nueva', 'atendiendo', 'ganada', 'perdida'].includes(b.estado)) return error('estado inválido');
+    if (!b || !['nueva', 'atendiendo', 'ganada', 'perdida', 'resuelta'].includes(b.estado)) return error('estado inválido');
     const r = await ejecutar('cambiarConsulta', [Number(mc[1]), b.estado, String(b.nota ?? '')]);
-    return r.resp ?? json(r.valor);
+    if (r.resp) return r.resp;
+    // «La atiendo»: el asistente se calla en esa charla las horas de pausa de la ficha (para no pisarse con el negocio).
+    let pausaHasta;
+    if (b.estado === 'atendiendo' && deps.charlasNegocio?.pausar) {
+      const f = await deps.negocios.ficha(negocio.id);
+      const horas = (f?.texto && parsearFicha(f.texto).ficha?.pausaHoras) || 12;
+      pausaHasta = await deps.charlasNegocio.pausar(r.valor.charla, horas).catch(() => undefined);
+    }
+    return json({ ...r.valor, ...(pausaHasta && { pausaHasta }) });
   }
   let mp = /^\/productos\/(p[a-z0-9]{4,40})$/.exec(sub);
   if (mp && request.method === 'PUT') {
@@ -399,6 +444,8 @@ export async function administrar(request, ruta, deps, now) {
     if (b.limiteDia !== undefined) cambios.limiteDia = b.limiteDia;
     if (b.canales !== undefined) cambios.canales = leerCanales(b.canales);
     if (typeof b.pedidos === 'boolean') cambios.pedidos = b.pedidos;
+    // La invitación de Instagram ya se mandó (ZL-148): se borra del negocio.
+    if (b.invitacionIg === null) cambios.invitacionIg = null;
     const r = await deps.negocios.guardar(m[1], cambios);
     if (r.error) return error(r.error);
     return json({ ...r.negocio, acceso: cambios.emails && deps.acceso ? await deps.acceso(r.negocio.emails) : null });

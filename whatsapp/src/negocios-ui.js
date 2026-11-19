@@ -78,12 +78,31 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .pasos li{margin:.4rem 0}.wa-num{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.8rem 1rem;margin:.6rem 0}
 .wa-form{display:grid;gap:.35rem;max-width:32rem;margin-top:1rem}details{margin:.8rem 0}summary{cursor:pointer;font-weight:600}
 .vacio{padding:2rem 1rem;text-align:center;color:var(--gris);background:#fff;border:1px dashed var(--linea);border-radius:12px}
+.seg{display:inline-flex;flex-wrap:wrap;gap:.25rem;background:#EAECEF;border-radius:10px;padding:.2rem;margin:0 0 1rem}
+.seg button{border:0;background:none;border-radius:8px;padding:.4rem .8rem;cursor:pointer;color:var(--gris)}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--tinta);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.5rem;margin:0 0 1rem}
+.resumen div{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.6rem .8rem}
+.resumen strong{display:block;font-size:1.4rem;line-height:1.2}.resumen span{font-size:.82rem;color:var(--gris)}
+.tarjeta{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.9rem 1rem;margin-bottom:.7rem}
+.tarjeta h3{margin:0 0 .4rem}.tarjeta.nuevo{border-left:4px solid var(--rojo)}
+.tarjeta .acciones{margin-top:.6rem}
+.pausa{background:#FFF4E5;border:1px solid #F5D3A6;color:var(--alerta);border-radius:8px;padding:.4rem .6rem;font-size:.85rem;margin:.4rem 0}
+@media (max-width:699px){
+  .yo{display:none}.top{padding:.5rem .8rem}.top select{max-width:11rem}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;justify-content:space-around;border-top:1px solid var(--linea);border-bottom:0;padding:0 .2rem calc(.1rem + env(safe-area-inset-bottom));box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+  .tabs button{flex:1 1 0;padding:.65rem .2rem;font-size:.82rem;border-bottom:0;border-top:3px solid transparent}
+  .tabs button[aria-selected="true"]{border-top-color:var(--rojo)}
+  main{padding-bottom:5.5rem}
+  .tabla.apilada thead{display:none}.tabla.apilada tr{display:block;border-bottom:1px solid var(--linea);padding:.4rem 0}
+  .tabla.apilada td{display:block;border:0;padding:.1rem .7rem}.tabla.apilada td[data-t]::before{content:attr(data-t) ": ";color:var(--gris);font-size:.8rem}
+}
 @media (min-width:700px){.prod{grid-template-columns:64px 1fr}.foto{width:64px;height:64px}}`;
 
 /** El programa de la página (corre en el navegador). */
 function app() {
   'use strict';
-  const estado = { yo: null, negocio: null, datos: null, tab: 'productos', categoria: '', q: '', pausados: true };
+  const estado = { yo: null, negocio: null, datos: null, tab: 'inicio', sub: {}, categoria: '', q: '', pausados: true };
   const raiz = document.getElementById('app');
 
   function h(tag, props, ...hijos) {
@@ -153,11 +172,18 @@ function app() {
     }
     return svg;
   }
-  // Pedidos y consultas (ZL-139, ZL-146): siempre primero. Es lo único que el negocio tiene que mirar: lo que el
-  // asistente le deja listo para confirmar o responder.
-  const PESTANAS = () => [['pedidos', 'Pedidos y consultas']]
-    .concat([['productos', 'Productos'], ['importar', 'Importar Excel'], ['historial', 'Historial'], ['instagram', 'Instagram'], ['whatsapp', 'WhatsApp']])
-    .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Administración']] : []);
+  // ZL-148: tres secciones para el negocio (en el celular, una barra abajo). Inicio es lo único que tiene que mirar
+  // seguido: lo que el asistente le deja listo para confirmar o responder. El equipo ve además Asistente y Admin.
+  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['conexiones', 'Conexiones']]
+    .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Admin']] : []);
+  // Lo guardado con los nombres de antes lleva a la sección nueva.
+  const VIEJAS = { pedidos: ['inicio'], importar: ['productos', 'importar'], historial: ['productos', 'historial'], instagram: ['conexiones', 'instagram'], whatsapp: ['conexiones', 'whatsapp'] };
+  /** Botones para elegir una parte de una sección (Lista · Importar · Historial). */
+  function segmento(clave, opciones, alCambiar) {
+    const actual = estado.sub[clave] || opciones[0][0];
+    return h('div', { class: 'seg', role: 'group', 'aria-label': 'Ver' }, opciones.map(([id, t]) =>
+      h('button', { type: 'button', 'aria-pressed': id === actual ? 'true' : 'false', onclick: () => { estado.sub[clave] = id; recordar(); alCambiar ? alCambiar(id) : pintarVista(); } }, t)));
+  }
 
   function pintar() {
     poner(raiz);
@@ -177,7 +203,53 @@ function app() {
       h('main', { id: 'vista' }));
     pintarVista();
   }
-  function recordar() { try { localStorage.setItem('zl-negocios', JSON.stringify({ negocio: estado.negocio, tab: estado.tab })); } catch (e) { /* sin almacenamiento: no pasa nada */ } }
+  function recordar() { try { localStorage.setItem('zl-negocios', JSON.stringify({ negocio: estado.negocio, tab: estado.tab, sub: estado.sub })); } catch (e) { /* sin almacenamiento: no pasa nada */ } }
+
+  // ── Secciones (ZL-148) ──
+  function vistaSeccionProductos() {
+    const caja = h('section', {});
+    const cuerpo = h('div', {});
+    const id = estado.sub.productos || 'lista';
+    poner(cuerpo, id === 'importar' ? vistaImportar() : id === 'historial' ? vistaHistorial() : vistaProductos());
+    caja.append(segmento('productos', [['lista', 'Lista'], ['importar', 'Importar Excel'], ['historial', 'Historial']]), cuerpo);
+    return caja;
+  }
+  function vistaConexiones() {
+    const caja = h('section', {});
+    const cuerpo = h('div', {});
+    const id = estado.sub.conexiones || 'whatsapp';
+    poner(cuerpo, id === 'instagram' ? vistaInstagram() : id === 'ajustes' ? vistaAjustes() : vistaWhatsapp());
+    caja.append(segmento('conexiones', [['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['ajustes', 'Cómo vendés']]), cuerpo);
+    return caja;
+  }
+
+  // ── Cómo vendés (ZL-148): entrega, pago y cuánto se guarda un pedido aceptado. El asistente los usa solo. ──
+  function vistaAjustes() {
+    const a = estado.datos.negocio.ajustes || {};
+    const entrega = h('select', {}, [['ambos', 'Retiro y envío'], ['retiro', 'Solo retiro en el local'], ['envio', 'Solo envío']].map(([v, t]) => h('option', { value: v, selected: a.entrega === v }, t)));
+    const retiro = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: Calle 123, de lunes a sábado de 9 a 20' }, a.retiro || '');
+    const envio = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: zona centro $ 1.500, otras zonas a convenir; de 18 a 21' }, a.envio || '');
+    const pago = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: transferencia al alias MI.NEGOCIO o efectivo al retirar' }, a.pago || '');
+    const reserva = h('select', {}, [[2, '2 horas'], [24, '24 horas'], [48, '48 horas'], [168, '7 días']].map(([v, t]) => h('option', { value: v, selected: Number(a.reservaHoras || 24) === v }, t)));
+    retiro.value = a.retiro || ''; envio.value = a.envio || ''; pago.value = a.pago || '';
+    return h('section', {},
+      h('h2', {}, 'Cómo vendés'),
+      h('p', { class: 'ayuda' }, 'Lo cargás una vez. El asistente lo usa para responder, y cuando aceptás un pedido le manda al comprador cómo pagar y cómo recibirlo: no tenés que escribir nada a mano.'),
+      h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
+        e.preventDefault();
+        const r = await api(base() + '/ajustes', { metodo: 'PUT', cuerpo: { entrega: entrega.value, retiro: retiro.value, envio: envio.value, pago: pago.value, reservaHoras: Number(reserva.value) } });
+        estado.datos.negocio.ajustes = r;
+        aviso('Guardado. El asistente ya lo usa.');
+      }) },
+        etiqueta('¿Cómo entregás?', entrega), entrega,
+        etiqueta('Retiro: dónde y cuándo', retiro), retiro,
+        etiqueta('Envío: zonas, costo y horarios', envio), envio,
+        etiqueta('Cómo se paga', pago), pago,
+        h('p', { class: 'ayuda' }, 'Alias, link de pago o efectivo. Nunca pongas claves ni datos de tarjetas.'),
+        etiqueta('Cuánto te guardo un pedido aceptado sin pagar', reserva), reserva,
+        h('p', { class: 'ayuda' }, 'Pasado ese tiempo sin marcarlo pagado ni entregado, se cancela solo y los productos vuelven a la venta.'),
+        h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Guardar'))));
+  }
 
   function pintarVista() {
     document.querySelectorAll('.tabs button').forEach((b, i) => b.setAttribute('aria-selected', PESTANAS()[i][0] === estado.tab ? 'true' : 'false'));
@@ -188,8 +260,8 @@ function app() {
       return;
     }
     if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
-    const vistas = { pedidos: vistaPedidos, productos: vistaProductos, importar: vistaImportar, historial: vistaHistorial, instagram: vistaInstagram, whatsapp: vistaWhatsapp, asistente: vistaAsistente, admin: vistaAdmin };
-    v.append((vistas[estado.tab] || vistaProductos)());
+    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, conexiones: vistaConexiones, asistente: vistaAsistente, admin: vistaAdmin };
+    v.append((vistas[estado.tab] || vistaPedidos)());
   }
 
   async function cargarNegocio() {
@@ -454,7 +526,7 @@ function app() {
           !enSerio && (r.creados || r.actualizados || r.pausados)
             ? h('div', { class: 'acciones' }, h('button', { class: 'btn prim', onclick: conError(async (e) => { e.target.disabled = true; await probar(true); refrescarResumen(); }) }, 'Importar ahora'))
             : null,
-          enSerio ? h('div', { class: 'acciones' }, h('button', { class: 'btn', onclick: () => { estado.tab = 'productos'; pintar(); } }, 'Ver productos')) : null);
+          enSerio ? h('div', { class: 'acciones' }, h('button', { class: 'btn', onclick: () => { estado.tab = 'productos'; estado.sub.productos = 'lista'; recordar(); pintar(); } }, 'Ver productos')) : null);
       }
     }
     return caja;
@@ -464,127 +536,132 @@ function app() {
   function vistaHistorial() {
     const caja = h('section', {}, h('h2', {}, 'Historial'), h('p', { class: 'ayuda' }, 'Cada cambio de stock, precio o producto, con quién lo hizo. Los últimos 200.'));
     const cuerpo = h('tbody', {});
-    caja.append(h('div', { class: 'scroll' }, h('table', { class: 'tabla' },
+    caja.append(h('div', { class: 'scroll' }, h('table', { class: 'tabla apilada' },
       h('thead', {}, h('tr', {}, ['Cuándo', 'Producto', 'Qué', 'Antes', 'Después', 'Quién'].map((t) => h('th', {}, t)))), cuerpo)));
     const QUE = { alta: 'Alta', baja: 'Borrado', stock: 'Stock', precio: 'Precio', estado: 'A la venta', dato: 'Datos' };
     conError(async () => {
       const r = await api(base() + '/historial');
       if (!r.movimientos.length) cuerpo.append(h('tr', {}, h('td', { colspan: 6 }, 'Todavía no hay cambios.')));
-      for (const m of r.movimientos) cuerpo.append(h('tr', {}, h('td', {}, fecha(m.t)), h('td', {}, m.nombre), h('td', {}, (QUE[m.tipo] || m.tipo) + (m.detalle ? ' · ' + m.detalle : '')), h('td', {}, m.antes), h('td', {}, m.despues), h('td', {}, m.quien)));
+      // En el celular cada fila es una tarjeta (cada dato con su título); «Alta · alta» no se repite.
+      for (const m of r.movimientos) {
+        const que = (QUE[m.tipo] || m.tipo) + (m.detalle && m.detalle.toLowerCase() !== String(QUE[m.tipo] || m.tipo).toLowerCase() && m.detalle !== m.tipo ? ' · ' + m.detalle : '');
+        cuerpo.append(h('tr', {}, h('td', {}, fecha(m.t)), h('td', { 'data-t': 'Producto' }, m.nombre), h('td', { 'data-t': 'Qué' }, que),
+          m.antes !== null && m.antes !== undefined && m.antes !== '' ? h('td', { 'data-t': 'Antes' }, m.antes) : h('td', {}),
+          m.despues !== null && m.despues !== undefined && m.despues !== '' ? h('td', { 'data-t': 'Después' }, m.despues) : h('td', {}),
+          h('td', { 'data-t': 'Quién' }, m.quien)));
+      }
     })();
     return caja;
   }
 
-  // ── Pedidos (ZL-139): la bandeja del negocio. El asistente los arma; acá se aceptan, cobran y entregan. ──
+  // ── Inicio (ZL-139, ZL-146, ZL-148): lo que el asistente le deja al negocio. Pedidos para confirmar y consultas
+  // para responder, con un botón para cada cosa. Lo demás lo hace el asistente. ──
   const ESTADO_PEDIDO = { pendiente: 'Nuevo', aceptado: 'Aceptado', pagado: 'Pagado', entregado: 'Entregado', rechazado: 'Rechazado', cancelado: 'Cancelado', vencido: 'Vencido' };
   const CANAL_PEDIDO = { wa: 'WhatsApp', ig: 'Instagram' };
   const plata = (n) => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
-  const falta = (t) => {
-    const m = Math.max(0, Math.round((t - Date.now()) / 60000));
-    return m >= 120 ? Math.round(m / 60) + ' h' : m >= 60 ? '1 h ' + (m - 60) + ' min' : m + ' min';
-  };
+  const hora = (t) => new Date(t).toLocaleString('es-AR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   function sonar() {
     try {
       const c = new (window.AudioContext || window.webkitAudioContext)();
       [0, 0.18].forEach((d) => { const o = c.createOscillator(); const g = c.createGain(); o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(c.destination); o.start(c.currentTime + d); o.stop(c.currentTime + d + 0.12); });
     } catch (e) { /* sin audio: no pasa nada */ }
   }
-
-  // ── Consultas (ZL-146): el asistente guía la charla y, cuando la persona quiere avanzar o hace falta alguien del
-  // negocio, la deja acá con su nombre y un resumen. El negocio responde desde su WhatsApp o su Instagram. ──
-  const ESTADO_CONSULTA = { nueva: 'Nueva', atendiendo: 'La estoy atendiendo', ganada: 'Ganada', perdida: 'Perdida' };
-  const TIPO_CONSULTA = { consulta: 'Quiere avanzar', persona: 'Necesita a alguien del negocio' };
-  function dondeResponder(c) {
-    const m = /^yc:\d+:(\d+)$/.exec(c.charla || '');
-    if (m) return 'Respondé desde el WhatsApp del negocio al +' + m[1] + '.';
-    return c.canal === 'ig' || /^ig:/.test(c.charla || '') ? 'Respondé desde los mensajes directos de Instagram del negocio.' : 'Respondé por el mismo chat.';
+  /** El botón para responderle a esa persona desde la app del negocio (WhatsApp con su número, o Instagram). */
+  function botonResponder(charla, canal) {
+    const m = /^yc:\d+:(\d+)$/.exec(charla || '');
+    if (m) return h('a', { class: 'btn', href: 'https://wa.me/' + m[1], target: '_blank', rel: 'noopener' }, 'Responder por WhatsApp');
+    if (canal === 'ig' || /^ig:/.test(charla || '')) return h('a', { class: 'btn', href: 'https://www.instagram.com/direct/inbox/', target: '_blank', rel: 'noopener' }, 'Abrir Instagram');
+    return null;
   }
+  /** Dos toques para lo que no se deshace: el primero pide confirmar (y deja escribir el motivo). */
+  function dosPasos(texto, confirmar, alConfirmar, conMotivo) {
+    const motivo = conMotivo ? h('input', { type: 'text', maxlength: 200, placeholder: 'Motivo (opcional, lo ve el comprador)', 'aria-label': 'Motivo', hidden: true }) : null;
+    const b = h('button', { type: 'button', class: 'btn' }, texto);
+    b.onclick = () => {
+      if (b.dataset.seguro) return alConfirmar(motivo ? motivo.value : '');
+      b.dataset.seguro = '1'; b.textContent = confirmar; b.classList.add('peligro');
+      if (motivo) { motivo.hidden = false; motivo.focus(); }
+    };
+    return motivo ? [motivo, b] : [b];
+  }
+
+  const ESTADO_CONSULTA = { nueva: 'Nueva', atendiendo: 'La estás atendiendo', ganada: 'Ganada', perdida: 'Perdida', resuelta: 'Resuelta' };
+  const TIPO_CONSULTA = { consulta: 'Quiere avanzar', persona: 'Necesita a alguien del negocio' };
   function tarjetaConsulta(c, recargar) {
-    const nota = h('input', { type: 'text', maxlength: 300, value: c.nota || '', placeholder: 'Nota interna (opcional)', 'aria-label': 'Nota de la consulta ' + c.numero });
     const pasar = (nuevo) => conError(async () => {
-      await api(base() + '/consultas/' + c.numero, { metodo: 'POST', cuerpo: { estado: nuevo, nota: nota.value } });
-      aviso('Consulta N.º ' + c.numero + ': ' + ESTADO_CONSULTA[nuevo].toLowerCase() + '.');
+      const r = await api(base() + '/consultas/' + c.numero, { metodo: 'POST', cuerpo: { estado: nuevo } });
+      aviso('Consulta N.º ' + c.numero + ': ' + ESTADO_CONSULTA[nuevo].toLowerCase() + (r.pausaHasta ? '. El asistente no se mete en esa charla hasta ' + hora(r.pausaHasta) + '.' : '.'));
       await recargar();
     });
-    const botones = [];
-    if (c.estado === 'nueva') botones.push(h('button', { class: 'btn prim', onclick: pasar('atendiendo') }, 'La atiendo'));
-    if (['nueva', 'atendiendo'].includes(c.estado)) botones.push(h('button', { class: 'btn', onclick: pasar('ganada') }, 'Ganada'), h('button', { class: 'btn', onclick: pasar('perdida') }, 'Perdida'));
-    else botones.push(h('button', { class: 'btn', onclick: pasar('atendiendo') }, 'Reabrir'));
-    return h('article', { class: 'caja consulta' },
+    const devolver = conError(async () => {
+      await api(base() + '/consultas/' + c.numero + '/devolver', { metodo: 'POST', cuerpo: {} });
+      aviso('Listo: el asistente vuelve a responder en esa charla.');
+      await recargar();
+    });
+    const botones = [botonResponder(c.charla, c.canal)];
+    if (c.estado === 'nueva') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: pasar('atendiendo') }, 'La atiendo yo'));
+    if (c.tipo === 'persona') botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('resuelta') }, 'Resuelto'));
+    else botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('ganada') }, 'Ganada'), h('button', { type: 'button', class: 'btn', onclick: pasar('perdida') }, 'Perdida'));
+    return h('article', { class: 'tarjeta consulta' + (c.estado === 'nueva' ? ' nuevo' : '') },
       h('h3', {}, 'Consulta N.º ' + c.numero + ' · ' + (c.nombre || 'Sin nombre')),
       h('div', { class: 'chips' },
-        h('span', { class: 'chip ' + (c.estado === 'nueva' ? 'alerta' : c.estado === 'ganada' ? 'ok' : '') }, ESTADO_CONSULTA[c.estado] || c.estado),
+        h('span', { class: 'chip ' + (c.estado === 'nueva' ? 'alerta' : '') }, ESTADO_CONSULTA[c.estado] || c.estado),
         h('span', { class: 'chip' }, TIPO_CONSULTA[c.tipo] || c.tipo),
         h('span', { class: 'chip' }, CANAL_PEDIDO[c.canal] || c.canal || 'Chat'),
         h('span', { class: 'chip' }, fecha(c.actualizado))),
-      c.resumen ? h('p', {}, c.resumen) : null,
-      c.interes && c.interes !== c.resumen ? h('p', { class: 'ayuda' }, 'Le interesa: ' + c.interes) : null,
-      h('p', { class: 'ayuda' }, dondeResponder(c)),
-      nota,
+      c.resumen ? h('p', {}, c.resumen) : h('p', { class: 'ayuda' }, 'Sin resumen: mirá la charla en tu app.'),
+      c.pausaHasta ? h('div', { class: 'pausa' }, 'El asistente está callado en esta charla hasta ' + hora(c.pausaHasta) + '. ',
+        h('button', { type: 'button', class: 'btn', onclick: devolver }, 'Devolver al asistente')) : null,
       h('div', { class: 'acciones' }, botones));
+  }
+
+  function tarjetaPedido(p, recargar) {
+    const accion = (nuevo, extra) => conError(async () => {
+      const r = await api(base() + '/pedidos/' + p.numero, { metodo: 'POST', cuerpo: Object.assign({ estado: nuevo }, extra || {}) });
+      aviso('Pedido N.º ' + p.numero + ': ' + ESTADO_PEDIDO[nuevo].toLowerCase() + (r.aviso === true ? '. Le avisamos al comprador.' : r.aviso ? '. No le pudimos avisar (' + r.aviso + '): escribile vos.' : '.'));
+      await recargar();
+    });
+    const botones = [];
+    if (p.estado === 'pendiente') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('aceptado') }, 'Aceptar'), ...dosPasos('Rechazar', 'Confirmar rechazo', (m) => accion('rechazado', { motivo: m })(), true));
+    if (p.estado === 'aceptado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), h('button', { type: 'button', class: 'btn', onclick: accion('pagado') }, 'Ya pagó'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
+    if (p.estado === 'pagado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
+    const c = p.comprador || {};
+    const vence = p.vence ? (p.estado === 'pendiente' ? 'Si no lo aceptás antes del ' + hora(p.vence) + ', se cancela solo y los productos vuelven a la venta.' : 'Guardado hasta el ' + hora(p.vence) + ' si no paga.') : null;
+    return h('article', { class: 'tarjeta pedido' + (p.estado === 'pendiente' ? ' nuevo' : '') },
+      h('h3', {}, 'Pedido N.º ' + p.numero + ' · ' + (c.nombre || 'Sin nombre')),
+      h('div', { class: 'chips' },
+        h('span', { class: 'chip ' + (p.estado === 'pendiente' ? 'alerta' : ['pagado', 'entregado'].includes(p.estado) ? 'ok' : '') }, ESTADO_PEDIDO[p.estado] || p.estado),
+        h('span', { class: 'chip' }, CANAL_PEDIDO[p.canal] || p.canal || 'Chat'),
+        h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') : 'Retira en el local'),
+        h('span', { class: 'chip' }, fecha(p.creado))),
+      h('ul', {}, p.items.map((i) => h('li', {}, i.cantidad + ' × ' + i.nombre + (i.subtotal !== null ? ' — ' + plata(i.subtotal) : '')))),
+      h('p', {}, h('strong', {}, p.sinPrecio ? 'Total: a confirmar (hay productos sin precio)' : 'Total: ' + plata(p.total))),
+      vence ? h('p', { class: 'ayuda' }, vence) : null,
+      h('div', { class: 'acciones' }, botonResponder(p.charla, p.canal), botones));
   }
 
   function vistaPedidos() {
     const filtro = estado.filtroPedidos || 'pendiente';
     const conPedidos = estado.datos.negocio.pedidos || estado.yo.admin;
+    const resumen = h('div', { class: 'resumen', 'aria-live': 'polite' });
     const listaConsultas = h('div', { 'aria-live': 'polite' });
     const lista = h('div', { 'aria-live': 'polite' });
-    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Ver pedidos' });
+    const chips = h('div', { class: 'seg', role: 'group', 'aria-label': 'Ver pedidos' });
     const avisos = h('button', { class: 'btn', onclick: async () => {
       try { if (window.Notification && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) { /* nada */ }
       sonar(); aviso('Listo: con esta pestaña abierta, cada pedido o consulta nueva suena' + (window.Notification && Notification.permission === 'granted' ? ' y aparece un aviso.' : '.'));
     } }, 'Activar sonido y avisos');
     const caja = h('section', {},
-      h('h2', {}, 'Pedidos y consultas'),
-      h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos: los pedidos para confirmar y las consultas para responder.'),
+      h('h2', {}, 'Hola' + (estado.datos.negocio.nombre ? ', ' + estado.datos.negocio.nombre : '')),
+      h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos.'),
+      resumen,
       h('div', { class: 'acciones' }, avisos),
-      h('h3', {}, 'Consultas'),
+      h('h3', {}, 'Consultas para responder'),
       listaConsultas,
       conPedidos ? h('h3', {}, 'Pedidos') : null,
-      conPedidos ? h('p', { class: 'ayuda' }, 'El stock queda reservado mientras el pedido está abierto y se descuenta al marcarlo Entregado. El pago lo marcás vos: el asistente nunca lo da por hecho.') : null,
-      conPedidos && !estado.datos.negocio.pedidos ? h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Administración.') : null,
+      conPedidos && !estado.datos.negocio.pedidos ? h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Admin.') : null,
       conPedidos ? chips : null, conPedidos ? lista : null);
     let ultimos = null;
-
-    const accion = (p, nuevo, extra) => conError(async () => {
-      const r = await api(base() + '/pedidos/' + p.numero, { metodo: 'POST', cuerpo: Object.assign({ estado: nuevo }, extra || {}) });
-      aviso('Pedido N.º ' + p.numero + ': ' + ESTADO_PEDIDO[nuevo].toLowerCase() + (r.aviso === true ? '. Le avisamos al comprador.' : r.aviso ? '. No le pudimos avisar (' + r.aviso + '): escribile vos.' : ''));
-      await cargar();
-    });
-
-    function tarjeta(p) {
-      const motivo = h('input', { type: 'text', maxlength: 200, placeholder: 'Motivo (opcional, lo ve el comprador)', 'aria-label': 'Motivo del pedido ' + p.numero });
-      const horas = h('select', {},
-        [['2', '2 horas'], ['24', '24 horas'], ['48', '48 horas'], ['168', '7 días']].map(([v, t]) => h('option', { value: v, selected: v === '24' }, t)));
-      const dosPasos = (texto, nuevo) => {
-        const b = h('button', { class: 'btn' }, texto);
-        b.onclick = () => {
-          if (b.dataset.seguro) return accion(p, nuevo, { motivo: motivo.value })();
-          b.dataset.seguro = '1'; b.textContent = '¿Seguro? Tocá de nuevo';
-          setTimeout(() => { delete b.dataset.seguro; b.textContent = texto; }, 4000);
-        };
-        return b;
-      };
-      const botones = [];
-      if (p.estado === 'pendiente') {
-        botones.push(etiqueta('Guardarlo sin pagar', horas), horas, h('button', { class: 'btn prim', onclick: () => accion(p, 'aceptado', { horas: Number(horas.value) })() }, 'Aceptar'), dosPasos('Rechazar', 'rechazado'));
-      }
-      if (p.estado === 'aceptado') botones.push(h('button', { class: 'btn prim', onclick: accion(p, 'pagado') }, 'Marcar pagado'), h('button', { class: 'btn', onclick: accion(p, 'entregado') }, 'Entregado'), dosPasos('Cancelar', 'cancelado'));
-      if (p.estado === 'pagado') botones.push(h('button', { class: 'btn prim', onclick: accion(p, 'entregado') }, 'Entregado'), dosPasos('Cancelar', 'cancelado'));
-      const c = p.comprador || {};
-      return h('article', { class: 'caja pedido' },
-        h('h3', {}, 'N.º ' + p.numero + ' · ' + (c.nombre || 'Sin nombre')),
-        h('div', { class: 'chips' },
-          h('span', { class: 'chip ' + (p.estado === 'pendiente' ? 'alerta' : ['pagado', 'entregado'].includes(p.estado) ? 'ok' : '') }, ESTADO_PEDIDO[p.estado] || p.estado),
-          h('span', { class: 'chip' }, CANAL_PEDIDO[p.canal] || p.canal || 'Chat'),
-          h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') : 'Retira en el local'),
-          h('span', { class: 'chip' }, fecha(p.creado)),
-          p.vence ? h('span', { class: 'chip' }, 'Se libera en ' + falta(p.vence) + ' si nadie lo toca') : null),
-        h('ul', {}, p.items.map((i) => h('li', {}, i.cantidad + ' × ' + i.nombre + (i.subtotal !== null ? ' — ' + plata(i.subtotal) : '')))),
-        h('p', {}, h('strong', {}, p.sinPrecio ? 'Total: a confirmar (hay productos sin precio)' : 'Total: ' + plata(p.total))),
-        ['pendiente', 'aceptado', 'pagado'].includes(p.estado) ? motivo : null,
-        botones.length ? h('div', { class: 'acciones' }, botones) : null);
-    }
 
     async function cargar() {
       const k = await api(base() + '/consultas');
@@ -599,9 +676,13 @@ function app() {
       }
       ultimos = nuevos;
       document.title = (nuevos ? '(' + nuevos + ') ' : '') + 'Negocios · Zustro Labs';
+      poner(resumen,
+        h('div', {}, h('strong', {}, String(k.nuevas || 0)), h('span', {}, 'consultas nuevas')),
+        conPedidos ? h('div', {}, h('strong', {}, String(cuenta.pendiente || 0)), h('span', {}, 'pedidos para aceptar')) : null,
+        conPedidos ? h('div', {}, h('strong', {}, String((cuenta.aceptado || 0) + (cuenta.pagado || 0))), h('span', {}, 'pedidos para entregar')) : null);
       poner(chips, [['pendiente', 'Nuevos'], ['aceptado', 'Aceptados'], ['pagado', 'Pagados'], ['entregado', 'Entregados'], ['todos', 'Todos']].map(([id, t]) =>
-        h('button', { class: 'btn' + (id === filtro ? ' prim' : ''), 'aria-pressed': id === filtro ? 'true' : 'false', onclick: () => { estado.filtroPedidos = id; pintarVista(); } }, t + (id !== 'todos' && cuenta[id] ? ' (' + cuenta[id] + ')' : ''))));
-      poner(lista, r.pedidos.length ? r.pedidos.map(tarjeta) : h('div', { class: 'vacio' }, filtro === 'pendiente' ? 'No hay pedidos nuevos. Cuando el asistente arme uno, aparece acá y suena.' : 'No hay pedidos en esta lista.'));
+        h('button', { type: 'button', 'aria-pressed': id === filtro ? 'true' : 'false', onclick: () => { estado.filtroPedidos = id; pintarVista(); } }, t + (id !== 'todos' && cuenta[id] ? ' (' + cuenta[id] + ')' : ''))));
+      poner(lista, r.pedidos.length ? r.pedidos.map((p) => tarjetaPedido(p, cargar)) : h('div', { class: 'vacio' }, filtro === 'pendiente' ? 'No hay pedidos nuevos. Cuando el asistente arme uno, aparece acá y suena.' : 'No hay pedidos en esta lista.'));
     }
     conError(cargar)();
     // Mientras la pestaña está abierta, se mira cada 20 segundos.
@@ -811,7 +892,7 @@ function app() {
         h('div', { class: 'acciones' }, h('button', { class: 'btn prim', onclick: conError(async () => {
           const n = await api('/admin/negocios', { metodo: 'POST', cuerpo: { nombre: nombre.value, emails: emails.value } });
           aviso('Negocio creado' + textoAcceso(n.acceso)); nombre.value = ''; emails.value = '';
-          estado.yo = await api('/yo'); estado.negocio = n.id; estado.tab = 'productos'; recordar(); cargarNegocio();
+          estado.yo = await api('/yo'); estado.negocio = n.id; estado.tab = 'asistente'; recordar(); cargarNegocio();
         }) }, 'Crear'))),
       lista);
     conError(async () => {
@@ -833,15 +914,19 @@ function app() {
             h('span', { class: 'chip' }, 'IA este mes: ' + n.usoMes),
             // ZL-137: el negocio pidió que lo agreguemos como evaluador de la app compartida de Instagram.
             n.invitacionIg ? h('span', { class: 'chip alerta' }, 'Pidió invitación de Instagram: @' + n.invitacionIg.usuario + ' (' + fecha(n.invitacionIg.pedido) + ')') : null),
+          // ZL-148: invitación de evaluador pendiente: el enlace directo y un botón para darla por enviada.
+          n.invitacionIg ? h('p', { class: 'ayuda' }, 'Agregalo como Instagram Tester de la app y después marcalo como enviado: ',
+            h('a', { href: 'https://developers.facebook.com/apps/', target: '_blank', rel: 'noopener' }, 'apps de Meta → Roles de la app'), ' ',
+            h('button', { type: 'button', class: 'btn', onclick: conError(async () => { await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { invitacionIg: null } }); aviso('Listo: el negocio ya puede aceptarla.'); pintarVista(); }) }, 'Invitación enviada')) : null,
           etiqueta('Quiénes entran', em), em,
           h('p', { class: 'ayuda' }, 'Canales que contrató (con un canal apagado, el asistente no responde ahí)'),
           h('label', { class: 'check' }, ig, 'Instagram'),
-          h('label', { class: 'check' }, wa, 'WhatsApp (el número se conecta con whatsapp-cliente.ps1)'),
-          h('label', { class: 'check' }, pe, 'Pedidos por chat: el asistente arma pedidos y reserva stock (pestaña Pedidos y consultas)'),
-          h('p', { class: 'ayuda' }, 'Cuentas de Instagram'), marcas.length ? marcas : h('p', { class: 'ayuda' }, 'No hay cuentas conectadas libres. Conectalas con el script instagram-cliente.ps1.'),
+          h('label', { class: 'check' }, wa, 'WhatsApp (el negocio conecta su número en Conexiones → WhatsApp)'),
+          h('label', { class: 'check' }, pe, 'Pedidos por chat: el asistente arma pedidos con los productos cargados y reserva stock (se ven en Inicio)'),
+          h('p', { class: 'ayuda' }, 'Cuentas de Instagram'), marcas.length ? marcas : h('p', { class: 'ayuda' }, 'No hay cuentas conectadas libres. El negocio conecta su Instagram en Conexiones → Instagram.'),
           etiqueta('Tope de respuestas de la IA por día', lim), lim,
           h('div', { class: 'acciones' },
-            h('button', { class: 'btn', onclick: () => { estado.negocio = n.id; estado.tab = 'productos'; recordar(); cargarNegocio(); } }, 'Abrir'),
+            h('button', { class: 'btn', onclick: () => { estado.negocio = n.id; estado.tab = 'inicio'; recordar(); cargarNegocio(); } }, 'Abrir'),
             h('button', { class: 'btn prim', onclick: conError(async (e) => {
               const marcadas = [...e.target.closest('.caja').querySelectorAll('input[data-cuenta]:checked')].map((x) => x.value);
               const g = await api('/admin/negocios/' + n.id, { metodo: 'PUT', cuerpo: { emails: em.value, cuentas: marcadas, limiteDia: Number(lim.value), canales: { instagram: ig.checked, whatsapp: wa.checked }, pedidos: pe.checked } });
@@ -859,7 +944,10 @@ function app() {
     try { guardado = JSON.parse(localStorage.getItem('zl-negocios') || '{}'); } catch (e) { /* nada */ }
     const ids = estado.yo.negocios.map((n) => n.id);
     estado.negocio = ids.includes(guardado.negocio) ? guardado.negocio : ids[0] || null;
-    if (guardado.tab && (estado.yo.admin || !['asistente', 'admin'].includes(guardado.tab))) estado.tab = guardado.tab;
+    if (guardado.sub && typeof guardado.sub === 'object') estado.sub = guardado.sub;
+    const vieja = VIEJAS[guardado.tab];
+    if (vieja) { guardado.tab = vieja[0]; if (vieja[1]) estado.sub[vieja[0]] = vieja[1]; }
+    if (PESTANAS().some(([id]) => id === guardado.tab)) estado.tab = guardado.tab;
     if (estado.negocio) await cargarNegocio();
     else { estado.tab = 'admin'; pintar(); }
   })();
