@@ -280,28 +280,25 @@ test('botones y listas: hasta 3 opciones son botones, más son una lista; títul
   assert.deepEqual(pedidos.map((p) => p.type), ['interactive', 'text']);
 });
 
-test('entrada: un botón o una fila tocada vale su id; un audio llega como audio con su link', () => {
+test('entrada: un botón o una fila tocada vale su id; un audio llega marcado, sin su link', () => {
   const [b] = leerYCloud(entrante('', { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'SI', title: 'Sí, confirmo' } } }));
   assert.deepEqual([b.kind, b.text], ['text', 'SI']);
   const [l] = leerYCloud(entrante('', { type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: '2', title: '🎂 Tortas' } } }));
   assert.equal(l.text, '2');
   const [a] = leerYCloud(entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/abc', id: 'm1', mime_type: 'audio/ogg' } }));
-  assert.equal(a.kind, 'audio');
-  assert.match(a.media.link, /^https:\/\/api\.ycloud\.com/);
+  assert.deepEqual([a.kind, a.audio, a.media], ['otro', true, undefined]);
 });
 
-test('circuito: un audio se transcribe (con la clave del negocio) y se responde como texto; si no se puede, pide repetirlo', async () => {
-  const { n, negocio, ycloud, llamadas, admin, avisar, d } = await armar();
+test('circuito: a un audio el asistente responde que no escucha audios, sin bajarlo ni llamar a la IA', async () => {
+  const { n, negocio, ycloud, llamadas, admin, avisar } = await armar();
   const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
   await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
-  const bajados = [];
-  d.transcribir = async (media) => (bajados.push(media.link), media.link.endsWith('ok') ? '¿Tienen facturas sin TACC?' : null);
-  await avisar(clave, entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/ok', mime_type: 'audio/ogg' } }));
-  assert.deepEqual(llamadas.at(-1), ['Panadería La Espiga', '¿Tienen facturas sin TACC?']);
-  assert.match(textoYC(enviados(ycloud).at(-1).body), /Respuesta de Panadería La Espiga/);
-  await avisar(clave, entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/mal', mime_type: 'audio/ogg' } }));
-  assert.match(textoYC(enviados(ycloud).at(-1).body), /No pude escuchar bien el audio/);
-  assert.equal(bajados.length, 2);
+  await avisar(clave, entrante('hola'));
+  const antes = ycloud.length;
+  await avisar(clave, entrante('', { type: 'audio', audio: { link: 'https://api.ycloud.com/v2/whatsapp/media/download/abc', mime_type: 'audio/ogg' } }));
+  assert.equal(textoYC(enviados(ycloud).at(-1).body), 'Por ahora no puedo escuchar audios 🙈 ¿Me lo escribís?');
+  assert.ok(ycloud.slice(antes).every((p) => p.url.endsWith('/sendDirectly')), 'no se bajó el audio');
+  assert.equal(llamadas.length, 0);
 });
 
 test('circuito: tres mensajes seguidos reciben UNA respuesta, con los tres juntos para la IA', async () => {

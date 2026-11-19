@@ -319,8 +319,8 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     return { send: [pedirIdioma()], metrica: 'pide_idioma' };
   }
   if (cmd === 'menu') return { send: [msgTexto(ev.from, T.menu, neg ? perfil.menuOpciones(idioma) : null)], metrica: 'menu' };
-  // Un audio que no se pudo transcribir (ZL-149) pide repetirlo; una foto o un sticker, que lo escriba.
-  if (ev.kind === 'otro') return { send: [msgTexto(ev.from, ev.audio && T.sinAudio ? T.sinAudio : T.soloTexto)], metrica: ev.audio ? 'audio_fallido' : 'otro' };
+  // Un audio: el asistente avisa que no escucha audios; una foto o un sticker, que lo escriba.
+  if (ev.kind === 'otro') return { send: [msgTexto(ev.from, ev.audio && T.sinAudio ? T.sinAudio : T.soloTexto)], metrica: ev.audio ? 'audio' : 'otro' };
 
   // Los pasos fijos de un pedido (SÍ, retiro o envío, nombre, dirección, CANCELAR, PEDIDO) van antes que el menú y la
   // IA: «1» y «2» son retiro y envío mientras se pregunta eso. Sin memoria no hay pedidos (no se recordaría el paso).

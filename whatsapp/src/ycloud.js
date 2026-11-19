@@ -91,8 +91,8 @@ export function leerYCloud(payload) {
       : m.type === 'button' ? m.button?.payload ?? m.button?.text
       : m.type === 'interactive' ? (/^[A-Z0-9_]{1,20}$/.test(String(elegido?.id ?? '')) ? elegido.id : elegido?.title)
       : null;
-    // Un audio se transcribe antes de responder (index.js); el link se baja con la clave del negocio.
-    if (m.type === 'audio' && /^https:\/\//.test(String(m.audio?.link ?? ''))) return [{ ...base, kind: 'audio', media: { link: m.audio.link, tipo: String(m.audio.mime_type ?? '') } }];
+    // Un audio no se escucha: el asistente avisa que solo lee mensajes escritos (no se baja ni se guarda nada).
+    if (m.type === 'audio') return [{ ...base, kind: 'otro', audio: true }];
     return [texto && String(texto).trim() ? { ...base, kind: 'text', text: String(texto) } : { ...base, kind: 'otro' }];
   }
   if (tipo === ECO) {
