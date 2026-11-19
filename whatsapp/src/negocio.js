@@ -436,9 +436,9 @@ export function mensajesConHistorial(historial, texto) {
 // ───────────────────────── Textos fijos del negocio ─────────────────────────
 
 const V = {
-  vos: { escribi: 'escribí', Escribi: 'Escribí', responde: 'Respondé', queres: 'querés', contame: 'contame', necesitas: 'necesitás', proba: 'Probá', te: 'te', escribis: 'escribís', repetis: 'repetís', meDecis: 'me decís', tu: 'tu', mandas: 'mandás' },
-  tu: { escribi: 'escribe', Escribi: 'Escribe', responde: 'Responde', queres: 'quieres', contame: 'cuéntame', necesitas: 'necesitas', proba: 'Prueba', te: 'te', escribis: 'escribes', repetis: 'repites', meDecis: 'me dices', tu: 'tu', mandas: 'mandas' },
-  usted: { escribi: 'escriba', Escribi: 'Escriba', responde: 'Responda', queres: 'quiere', contame: 'cuénteme', necesitas: 'necesita', proba: 'Pruebe', te: 'le', escribis: 'escribe', repetis: 'repite', meDecis: 'me dice', tu: 'su', mandas: 'manda' },
+  vos: { escribi: 'escribí', Escribi: 'Escribí', responde: 'Respondé', queres: 'querés', contame: 'contame', necesitas: 'necesitás', proba: 'Probá', te: 'te', escribis: 'escribís', repetis: 'repetís', meDecis: 'me decís', tu: 'tu', mandas: 'mandás', Te: 'Te', decis: 'decís', escribime: 'escribime' },
+  tu: { escribi: 'escribe', Escribi: 'Escribe', responde: 'Responde', queres: 'quieres', contame: 'cuéntame', necesitas: 'necesitas', proba: 'Prueba', te: 'te', escribis: 'escribes', repetis: 'repites', meDecis: 'me dices', tu: 'tu', mandas: 'mandas', Te: 'Te', decis: 'dices', escribime: 'escríbeme' },
+  usted: { escribi: 'escriba', Escribi: 'Escriba', responde: 'Responda', queres: 'quiere', contame: 'cuénteme', necesitas: 'necesita', proba: 'Pruebe', te: 'le', escribis: 'escribe', repetis: 'repite', meDecis: 'me dice', tu: 'su', mandas: 'manda', Te: 'Le', decis: 'dice', escribime: 'escríbame' },
 };
 const NUMEROS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
 const sinEmojis = (s) => s.replace(/\p{Extended_Pictographic}|[️‍]/gu, '').replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?])/g, '$1').replace(/^ +| +$/gm, '');
@@ -466,6 +466,9 @@ function base(ficha, idioma = ficha.idioma) {
       devuelta: 'I’m back! 😊 How can I help?',
       sigoYo: 'While the team gets back to you, I’m still here 😊',
       sinAudio: 'I couldn’t make out that audio 🙈 Could you send it again or type it?',
+      seguirCarrito: 'Shall we go ahead with your order? 🛒 I’m holding it a few more minutes: reply YES to confirm or tell me what to change. (If you’d rather I don’t write, reply STOP.)',
+      seguirConsulta: 'Could you tell me your name so I can pass your enquiry on to the team? 🙌 (If you’d rather I don’t write, reply STOP.)',
+      baja: 'Done, I won’t write to you on my own again. Whenever you need something, just write 😊',
     };
   }
   if (idioma === 'hr') {
@@ -485,6 +488,9 @@ function base(ficha, idioma = ficha.idioma) {
       devuelta: 'Evo me opet! 😊 Kako vam mogu pomoći?',
       sigoYo: 'Dok vam se tim ne javi, tu sam ja 😊',
       sinAudio: 'Nisam uspio razumjeti audio 🙈 Možete li ga poslati ponovno ili napisati?',
+      seguirCarrito: 'Nastavljamo s narudžbom? 🛒 Čuvam je još nekoliko minuta: odgovorite DA za potvrdu ili mi recite što promijeniti. (Ako ne želite da vam pišem, odgovorite STOP.)',
+      seguirConsulta: 'Kako se zovete, da proslijedim vaš upit timu? 🙌 (Ako ne želite da vam pišem, odgovorite STOP.)',
+      baja: 'U redu, više vam neću pisati sam. Kad god trebate nešto, samo napišite 😊',
     };
   }
   const v = V[ficha.trato];
@@ -504,6 +510,9 @@ function base(ficha, idioma = ficha.idioma) {
     devuelta: `¡Acá estoy de nuevo! 😊 ¿En qué ${v.te} ayudo?`,
     sigoYo: `Mientras el equipo ${v.te} responde, sigo yo 😊`,
     sinAudio: `No pude escuchar bien el audio 🙈 ¿Me lo ${v.mandas} de nuevo o me lo ${v.escribis}?`,
+    seguirCarrito: `¿Seguimos con ${v.tu} pedido? 🛒 ${v.Te} lo guardo unos minutos más: ${v.responde.toLowerCase()} SÍ para confirmarlo o ${v.contame === 'contame' ? 'decime' : v.contame === 'cuéntame' ? 'dime' : 'dígame'} qué cambiar. (Si no ${v.queres} que ${v.te} escriba, ${v.responde.toLowerCase()} BAJA.)`,
+    seguirConsulta: `¿Me ${v.decis} ${v.tu} nombre así le paso ${v.tu} consulta al equipo? 🙌 (Si no ${v.queres} que ${v.te} escriba, ${v.responde.toLowerCase()} BAJA.)`,
+    baja: `Listo, no ${v.te} vuelvo a escribir por mi cuenta. Cuando ${v.necesitas} algo, ${v.escribime} 😊`,
   };
 }
 

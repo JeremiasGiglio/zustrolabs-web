@@ -39,7 +39,8 @@ NEGOCIOS_ACCESS_AUD = "c3a0c89ee2a7cb7e0b0564f472de9955d9508afa027ee7b0d840b86a1
 # Cron diario: renueva los tokens de Instagram que están por vencer (duran 60 días) y comprueba que cada cuenta
 # conectada siga suscripta a los avisos de mensajes (src/instagram.js, mantenerCuentas). Hora UTC.
 [triggers]
-crons = ["23 9 * * *"]
+# Cada 10 minutos (ZL-151): los recordatorios con permiso (seguimientos) de las charlas de los negocios.
+crons = ["23 9 * * *", "*/10 * * * *"]
 
 # Memoria: un solo Durable Object con almacenamiento SQLite (entra en el plan gratis). Guarda {idioma, humanoHasta}
 # por número (90 días), las charlas con PERSONA (30 días) y contadores cortos; una alarma diaria borra lo vencido.

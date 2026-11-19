@@ -558,3 +558,21 @@ test('alta fácil (ZL-150): formulario, plantillas, web y revisor son del equipo
   assert.equal(est.datos.charla, null, 'el semáforo del negocio no gasta IA');
   assert.ok(est.datos.controles.some((x) => x.id === 'ficha'));
 });
+
+test('avisos y números (ZL-151): el negocio suscribe su celular y ve los números de la semana', async () => {
+  const { pedir, a, d, n } = await armar();
+  const clave = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/push`);
+  assert.equal(clave.status, 200);
+  assert.match(clave.datos.clave, /^[A-Za-z0-9_-]{80,90}$/);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/push`)).datos.clave, clave.datos.clave, 'la misma clave siempre');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push`, { suscripcion: { endpoint: 'http://mal' } })).status, 400);
+  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } };
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push`, { suscripcion: sub })).datos.celulares, 1);
+  assert.equal((await n.negocios.suscripcionesPush(a.id))[0].email, 'duena@example.com');
+  await n.negocios.sumarMetrica(a.id, 'charlas');
+  await d.catalogo(a.id).ejecutar('crearConsulta', ['yc:1:2', { tipo: 'consulta', nombre: 'Ana' }]);
+  await d.catalogo(a.id).ejecutar('cambiarConsulta', [1, 'ganada']);
+  const num = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/numeros`)).datos;
+  assert.deepEqual([num.dias, num.charlas, num.consultas, num.ganadas, num.pedidos], [7, 1, 1, 1, 0]);
+  for (const r of ['/sw.js', '/manifest.webmanifest', '/icono.svg']) assert.equal((await pedir('duena@example.com', 'GET', r)).status, 200, r);
+});

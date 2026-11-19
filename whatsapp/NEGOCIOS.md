@@ -164,6 +164,20 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   minutos. Si nadie la tomó (no respondió desde su app ni tocó «La atiendo yo»), vuelve y lo dice una vez («Mientras el
   equipo te responde, sigo yo»). Si la tomó, se calla las horas de la ficha.
 
+## Que no se escape ninguna venta (ZL-151)
+
+- **Avisos al celular:** Web Push estándar (`src/push.js`, RFC 8291 + VAPID), sin servicios de terceros. Las claves
+  VAPID se crean solas y viven en el Durable Object. En Inicio, «Avisos en este celular» pide permiso, suscribe el
+  celular (`/api/n/<id>/push`) y manda uno de prueba. Llega un aviso por cada pedido nuevo, cada consulta que quiere
+  avanzar y cada pase al equipo, sin nombres ni números en la pantalla bloqueada. La app se instala en la pantalla de
+  inicio (manifiesto, ícono con el damero y service worker); en iPhone, los avisos andan solo con la app instalada.
+- **Seguimiento con permiso:** si una consulta queda sin nombre, un recordatorio a las 2 h; si un carrito queda sin
+  confirmar, a los 10 minutos (se guarda 20). Solo dentro de las 24 h del último mensaje, sin BAJA y sin alguien del
+  negocio atendiendo, como mucho dos por charla. Cada mensaje dice cómo cortarlo (BAJA). Lo manda el cron de cada 10
+  minutos (`seguimientos()` en `index.js`, índice `seg:` en el Durable Object).
+- **Números para el dueño:** en Inicio, los últimos 7 días: charlas atendidas, consultas, pedidos y ventas cerradas
+  (consultas ganadas más pedidos entregados, con el total vendido). `GET /api/n/<id>/numeros`.
+
 ## Lo que falta (próximas etapas)
 
 - **Pedidos, etapa 2:** avisos al celular con la app cerrada (Web Push), aviso por correo de pedido nuevo, el alias

@@ -7,7 +7,8 @@ import { FUNCIONES_LECTOR } from './lector.js';
 export const APP_HTML = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Negocios · Zustro Labs</title><meta name="robots" content="noindex"><meta name="theme-color" content="#C8102E">
-<link rel="stylesheet" href="/app.css"></head>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icono.svg"><link rel="apple-touch-icon" href="/icono.svg">
+<meta name="apple-mobile-web-app-capable" content="yes"><link rel="stylesheet" href="/app.css"></head>
 <body><div id="app"><p class="cargando">Cargando…</p></div><script src="/app.js"></script></body></html>`;
 
 export const APP_CSS = `:root{--rojo:#C8102E;--tinta:#1B2230;--gris:#5A6270;--linea:#E3E6EB;--fondo:#F6F7F9;--ok:#1E7B4E;--alerta:#9A5100}
@@ -584,6 +585,24 @@ function app() {
       [0, 0.18].forEach((d) => { const o = c.createOscillator(); const g = c.createGain(); o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(c.destination); o.start(c.currentTime + d); o.stop(c.currentTime + d + 0.12); });
     } catch (e) { /* sin audio: no pasa nada */ }
   }
+  /** Pide permiso, registra el service worker y suscribe este celular a los avisos del negocio (ZL-151). */
+  async function activarAvisos() {
+    sonar();
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !window.Notification) {
+      aviso('Este navegador no tiene avisos. En iPhone, primero agregá la app a la pantalla de inicio (Compartir → Agregar a inicio) y abrila desde ahí. Mientras, con esta pestaña abierta, suena.');
+      return;
+    }
+    if ((await Notification.requestPermission()) !== 'granted') { aviso('Sin permiso no te puedo avisar. Activá las notificaciones de este sitio en el navegador.', true); return; }
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    const { clave } = await api(base() + '/push');
+    const bytes = Uint8Array.from(atob(clave.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((clave.length + 3) % 4)), (c) => c.charCodeAt(0));
+    const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes }));
+    await api(base() + '/push', { metodo: 'POST', cuerpo: { suscripcion: sub.toJSON() } });
+    await api(base() + '/push/probar', { metodo: 'POST', cuerpo: {} });
+    aviso('Listo: te va a llegar un aviso por cada pedido o consulta nueva, aunque la app esté cerrada.');
+  }
+
   /** El botón para responderle a esa persona desde la app del negocio (WhatsApp con su número, o Instagram). */
   function botonResponder(charla, canal) {
     const m = /^yc:\d+:(\d+)$/.exec(charla || '');
@@ -665,14 +684,14 @@ function app() {
     const listaConsultas = h('div', { 'aria-live': 'polite' });
     const lista = h('div', { 'aria-live': 'polite' });
     const chips = h('div', { class: 'seg', role: 'group', 'aria-label': 'Ver pedidos' });
-    const avisos = h('button', { class: 'btn', onclick: async () => {
-      try { if (window.Notification && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) { /* nada */ }
-      sonar(); aviso('Listo: con esta pestaña abierta, cada pedido o consulta nueva suena' + (window.Notification && Notification.permission === 'granted' ? ' y aparece un aviso.' : '.'));
-    } }, 'Activar sonido y avisos');
+    // ZL-151: avisos al celular aunque la app esté cerrada (Web Push). Sin eso, con la pestaña abierta suena igual.
+    const avisos = h('button', { class: 'btn', onclick: conError(activarAvisos) }, 'Avisos en este celular');
+    const semana = h('div', { class: 'resumen', 'aria-label': 'Últimos 7 días' });
     const caja = h('section', {},
       h('h2', {}, 'Hola' + (estado.datos.negocio.nombre ? ', ' + estado.datos.negocio.nombre : '')),
       h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos.'),
       resumen,
+      h('h3', {}, 'Últimos 7 días'), semana,
       h('div', { class: 'acciones' }, avisos),
       h('h3', {}, 'Consultas para responder'),
       listaConsultas,
@@ -703,6 +722,14 @@ function app() {
       poner(lista, r.pedidos.length ? r.pedidos.map((p) => tarjetaPedido(p, cargar)) : h('div', { class: 'vacio' }, filtro === 'pendiente' ? 'No hay pedidos nuevos. Cuando el asistente arme uno, aparece acá y suena.' : 'No hay pedidos en esta lista.'));
     }
     conError(cargar)();
+    conError(async () => {
+      const n = await api(base() + '/numeros');
+      poner(semana,
+        h('div', {}, h('strong', {}, String(n.charlas)), h('span', {}, 'charlas atendidas')),
+        h('div', {}, h('strong', {}, String(n.consultas)), h('span', {}, 'consultas')),
+        conPedidos ? h('div', {}, h('strong', {}, String(n.pedidos)), h('span', {}, 'pedidos')) : null,
+        h('div', {}, h('strong', {}, String((n.ganadas || 0) + (n.entregados || 0))), h('span', {}, 'ventas cerradas' + (n.vendido ? ' · ' + plata(n.vendido) : ''))));
+    })();
     // Mientras la pestaña está abierta, se mira cada 20 segundos.
     estado.timerPedidos = setInterval(() => { if (!document.hidden) cargar().catch(() => {}); }, 20000);
     return caja;
@@ -906,7 +933,10 @@ function app() {
       for (const k of ['nombre', 'idioma', 'trato', 'objetivo', 'horario', 'saludo', 'vender', 'conocimiento', 'faq', 'nunca', 'persona']) f[k].value = c[k] == null ? '' : String(c[k]);
       f.emojis.value = c.emojis === false ? 'no' : 'si';
       f.precios.value = c.precios ? 'si' : 'no';
-      f.pausaHoras.value = String(c.pausaHoras || 12);
+      // Si la ficha tiene otras horas (por ejemplo 8), se agregan a la lista: guardar nunca las cambia sin querer.
+      const horas = String(c.pausaHoras || 12);
+      if (![...f.pausaHoras.options].some((x) => x.value === horas)) f.pausaHoras.append(h('option', { value: horas }, horas + ' horas'));
+      f.pausaHoras.value = horas;
       pintarMenu(c.menu && c.menu.length ? c.menu : [{ titulo: '', texto: '' }]);
     }
     const formulario = h('div', { class: 'wa-form', style: 'max-width:none' },
@@ -1079,6 +1109,8 @@ function app() {
   }
 
   // ── Arranque ──
+  // La app se puede instalar en la pantalla de inicio (ZL-151); el service worker también recibe los avisos.
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {}); } catch (e) { /* nada */ }
   conError(async () => {
     estado.yo = await api('/yo');
     let guardado = {};

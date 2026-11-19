@@ -73,6 +73,15 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
       return armar(una('SELECT * FROM consultas WHERE id = ?', f.id));
     },
 
+    /** Números para el dueño (ZL-151): consultas desde `desde` y cuántas se ganaron. */
+    numerosConsultas(desde) {
+      const d = Number(desde) || 0;
+      return {
+        consultas: una('SELECT COUNT(*) AS n FROM consultas WHERE creado >= ?', d)?.n ?? 0,
+        ganadas: una(`SELECT COUNT(*) AS n FROM consultas WHERE estado = 'ganada' AND actualizado >= ?`, d)?.n ?? 0,
+      };
+    },
+
     /** Una consulta por número (para la app: responder, devolver al asistente). */
     consulta(numero) {
       const f = una('SELECT * FROM consultas WHERE id = ?', Number(numero));

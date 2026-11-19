@@ -17,6 +17,7 @@ import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, norma
 import { agregarAAcceso, correosEnAcceso } from './acceso.js';
 import { pedidosDeCharla } from './pedidos-charla.js';
 import { consultasDeCharla } from './consultas.js';
+import { avisarCelulares } from './push.js';
 import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
 const MAX_CUERPO = 256_000;
@@ -148,6 +149,82 @@ function pedidosDe(env, deps, dueño, ficha, charla, canal) {
   if (!dueño?.pedidos) return null;
   const cat = catalogoDe(env, deps)(dueño.id);
   return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDeVenta(dueño.ajustes) }) : null;
+}
+
+const diaDe = (t) => new Date(t).toISOString().slice(0, 10);
+
+/**
+ * Después de responderle a alguien de un negocio (ZL-151): los números del día (charlas, audios, pases) y el aviso al
+ * celular del dueño cuando entra un pedido o una consulta. Nunca frena la charla si falla.
+ */
+async function despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, ev, r, now, charla) {
+  if (!dueño?.id || !a.negocios?.sumarMetrica) return;
+  try {
+    if (!['repetido', 'humano'].includes(r.metrica) && (!antes?.ultimo || diaDe(antes.ultimo) !== diaDe(now))) await a.negocios.sumarMetrica(dueño.id, 'charlas');
+    if (ev.audio) await a.negocios.sumarMetrica(dueño.id, 'audios');
+    if (r.handoff) await a.negocios.sumarMetrica(dueño.id, 'pases');
+    const canal = /^yc:/.test(charla) ? 'WhatsApp' : 'Instagram';
+    let aviso = null;
+    if (r.metrica === 'pedido_nuevo' && r.pedido) aviso = { titulo: 'Pedido nuevo', cuerpo: `Pedido N.º ${r.pedido} por ${canal}. Abrí la app para aceptarlo.` };
+    else if (r.consulta && r.handoff) aviso = { titulo: 'Alguien necesita al negocio', cuerpo: `Consulta N.º ${r.consulta} por ${canal}. El asistente espera 15 minutos a que la tomes.` };
+    else if (r.consulta && r.metrica === 'consulta') aviso = { titulo: 'Consulta nueva', cuerpo: `Consulta N.º ${r.consulta} por ${canal}: quiere avanzar.` };
+    if (aviso) await avisarNegocio(a, dueño.id, aviso, fetchImpl, now);
+  } catch (e) {
+    console.log(JSON.stringify({ canal: 'negocio', que: 'despues', error: String(e?.message ?? 'error').slice(0, 60) }));
+  }
+}
+
+/** Aviso a los celulares suscriptos del negocio (Web Push). Borra los que ya no existen. → cuántos se mandaron. */
+async function avisarNegocio(a, negocioId, aviso, fetchImpl, now) {
+  const subs = await a.negocios.suscripcionesPush(negocioId);
+  if (!subs.length) return 0;
+  const r = await avisarCelulares(subs, { ...aviso, url: '/' }, await a.negocios.vapid(), { fetchImpl, now });
+  if (r.muertas.length) await a.negocios.borrarPush(negocioId, r.muertas);
+  console.log(JSON.stringify({ canal: 'negocio', que: 'aviso_celular', enviados: r.enviados, muertas: r.muertas.length }));
+  return r.enviados;
+}
+
+/**
+ * Seguimiento con permiso (ZL-151), cada 10 minutos: los recordatorios que ya tocan. Solo dentro de las 24 h del
+ * último mensaje de la persona, sin BAJA, sin alguien del negocio atendiendo, y como mucho dos por charla.
+ */
+export async function seguimientos(env, deps, now) {
+  const a = almacen(env, deps);
+  const fetchImpl = deps.fetch ?? fetch;
+  if (!a.memoria?.seguimientos) return [];
+  const out = [];
+  for (const { num, estado: e } of await a.memoria.seguimientos(50, now)) {
+    const charla = e.seguir?.charla || num;
+    const listo = (motivo) => (out.push({ que: motivo }), a.memoria.put(num, { ...e, seguir: null }));
+    if (e.baja) { await listo('baja'); continue; }
+    if (e.humanoHasta && e.humanoHasta > now) { await listo('atiende_el_negocio'); continue; }
+    if (!e.ultimo || now - e.ultimo > 23 * 3600_000) { await listo('fuera_de_24h'); continue; }
+    // El negocio de esa charla: por el número de WhatsApp (YCloud) o por la cuenta de Instagram.
+    let negocio = null;
+    if (/^yc:/.test(charla)) {
+      const reg = ((await a.ycloud?.list?.()) ?? []).find((r) => normalizar(r.numero) === normalizar(numeroDeCharla(charla)));
+      negocio = reg ? await a.negocios.get(reg.negocio) : null;
+    } else {
+      const cuenta = /^ig:(\d+)\./.exec(charla)?.[1];
+      negocio = cuenta ? await a.negocios.deCuenta(cuenta) : null;
+    }
+    const f = negocio ? await a.negocios.ficha(negocio.id) : null;
+    const pf = f?.texto && f.activa ? parsearFicha(f.texto) : null;
+    if (!pf?.ok) { await listo('sin_negocio'); continue; }
+    if (e.seguir.tipo === 'carrito') {
+      const cat = catalogoDe(env, deps)(negocio.id);
+      const r = cat ? await cat.ejecutar('carritoDe', [charla]).catch(() => null) : null;
+      if (!r?.ok || !r.valor) { await listo('sin_carrito'); continue; }
+    }
+    const T = perfilNegocio(pf.ficha).textos(e.idioma);
+    const texto = e.seguir.tipo === 'carrito' ? T.seguirCarrito : T.seguirConsulta;
+    const enviado = await avisarComprador(env, a, negocio, charla, texto, fetchImpl);
+    await a.memoria.put(num, { ...e, seguir: null, seguidos: (e.seguidos ?? 0) + 1 });
+    if (enviado === true) await a.negocios.sumarMetrica?.(negocio.id, 'seguimientos');
+    out.push({ que: enviado === true ? 'enviado' : 'no_enviado', tipo: e.seguir.tipo });
+  }
+  if (out.length) console.log(JSON.stringify({ canal: 'negocio', que: 'seguimientos', r: out }));
+  return out;
 }
 
 /** Cuánto espera el asistente a que terminen de llegar los mensajes de una ráfaga antes de responder (ZL-149). */
@@ -322,7 +399,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
     const fichaEstudio = !cliente && cuenta ? await fichaDelEstudio(a, ev.cuenta) : null;
     if (fichaEstudio?.motivo) log({ ok: fichaEstudio.motivo !== 'ficha_invalida', que: `estudio_${fichaEstudio.motivo}` });
     const negocio = cliente || Boolean(fichaEstudio?.texto);
-    let perfil, preguntarEv = preguntar, charlasEv = charlas, pedidosEv = null, consultasEv = null;
+    let perfil, preguntarEv = preguntar, charlasEv = charlas, pedidosEv = null, consultasEv = null, dueñoEv = null;
     if (negocio) {
       const f = cliente ? await a.fichas?.get(ev.cuenta) : fichaEstudio;
       if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
@@ -330,6 +407,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
       perfil = perfilNegocio(pf.ficha);
       const dueño = await a.negocios?.deCuenta(ev.cuenta);
+      dueñoEv = dueño;
       // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
       preguntarEv = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'Instagram');
@@ -347,8 +425,10 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       // Un negocio: audio a texto y ráfagas en un solo mensaje (ZL-149).
       const listo = negocio ? await prepararEvento(ev, { env, deps, memoria: a.memoria, clave: ev.from, bajar: (m) => fetchImpl(m.url), log }) : ev;
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
+      const antes = negocio && dueñoEv ? await memoria?.get(ev.from) : null;
       const r = await atender(listo, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
       for (const m of r.send) await mandar(m);
+      if (negocio && dueñoEv) await despuesDeAtender(env, a, deps, fetchImpl, dueñoEv, antes, listo, r, now, ev.from);
       // Aviso por correo (sin número ni texto). Si falla, la charla igual queda en el panel; el motivo va al registro.
       let avisado, avisoError;
       if (r.avisar) {
@@ -459,6 +539,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
       const listo = await prepararEvento(ev, { env, deps, memoria: a.memoria, clave: claveMemoria(ev.from), bajar: (m) => fetchImpl(m.link, { headers: { 'X-API-Key': reg.apiKey } }), log });
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
+      const antes = await memoria?.get(ev.from);
       const r = await atender(listo, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa') });
       // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente. (Un pase al equipo
       // también pausa, pero ese aviso sí va: lo puso el propio asistente.)
@@ -467,6 +548,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
         if (st?.humanoHasta && st.humanoHasta > now) { log({ ok: true, que: 'contesto_el_duenio' }); continue; }
       }
       for (const m of r.send) await mandar(m);
+      await despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, listo, r, now, ev.from);
       log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio: true, ...(r.pedido && { pedido: r.pedido }), ...(r.consulta && { consulta: r.consulta }), idioma: r.idioma, fuera: r.fuera, notas: r.notas, handoff: r.handoff });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
@@ -781,6 +863,7 @@ export default {
         charlasNegocio: pausasDeCharla(a, deps.now),
         verificar: (id, op) => datosVerificar(env, deps, id, deps.now ?? Date.now(), op),
         ...(deps.llamarWeb && { llamarWeb: deps.llamarWeb }),
+        avisarCelulares: (id, aviso) => avisarNegocio(a, id, aviso, fetchImpl, deps.now ?? Date.now()),
       });
     }
     if (url.hostname === (env.PANEL_HOST || PANEL_HOST)) {
@@ -796,7 +879,9 @@ export default {
   },
 
   /** Cron diario: renueva los tokens de Instagram que están por vencer y comprueba que cada cuenta siga suscripta. */
-  async scheduled(_evento, env, _ctx, deps = {}) {
+  async scheduled(evento, env, _ctx, deps = {}) {
+    // Cada 10 minutos (ZL-151): los recordatorios con permiso. Una vez por día: el mantenimiento de Instagram.
+    if (evento?.cron === '*/10 * * * *') return seguimientos(env, deps, deps.now ?? Date.now());
     const fetchImpl = deps.fetch ?? fetch;
     const { cuentas } = almacen(env, deps);
     if (!cuentas) { console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', error: 'sin memoria' })); return []; }

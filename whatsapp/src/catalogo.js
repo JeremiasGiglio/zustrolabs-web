@@ -163,6 +163,7 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
   return {
     ...pedidos,
     ...consultas,
+    numeros(desde) { return { ...pedidos.numerosPedidos(desde), ...consultas.numerosConsultas(desde) }; },
 
     resumen() {
       const r = una(`SELECT COUNT(*) AS total, SUM(activo) AS activos,
@@ -400,7 +401,9 @@ export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar'
   // Pedidos (ZL-139): pedidos.js.
   'carrito', 'carritoDe', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
   // Consultas (ZL-146): consultas.js.
-  'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta', 'consulta'];
+  'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta', 'consulta',
+  // Números para el dueño (ZL-151).
+  'numeros'];
 
 /**
  * Corre una operación y devuelve {ok: true, valor} o {ok: false, error, campo}: los errores para mostrar cruzan el RPC

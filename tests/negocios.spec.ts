@@ -221,7 +221,11 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('tab', { name: 'Inicio' })).toHaveAttribute('aria-selected', 'true');
     const tarjeta = page.locator('article.pedido');
     await expect(tarjeta.getByRole('heading', { name: 'Pedido N.º 1 · Ana' })).toBeVisible();
-    await expect(page.locator('.resumen')).toContainText('1pedidos para aceptar');
+    await expect(page.locator('.resumen').first()).toContainText('1pedidos para aceptar');
+    // ZL-151: los números de la semana y el botón de avisos al celular.
+    await expect(page.getByRole('heading', { name: 'Últimos 7 días' })).toBeVisible();
+    await expect(page.getByLabel('Últimos 7 días')).toContainText('1pedidos');
+    await expect(page.getByRole('button', { name: 'Avisos en este celular' })).toBeVisible();
     await expect(tarjeta.getByRole('link', { name: 'Responder por WhatsApp' })).toHaveAttribute('href', 'https://wa.me/5493410000009');
     await expect(tarjeta).toContainText('3 × Pan francés — $ 7.500');
     await expect(tarjeta).toContainText('Total: $ 7.500');

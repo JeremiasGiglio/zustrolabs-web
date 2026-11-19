@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import worker from '../src/index.js';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
+import { crearCatalogo, ejecutarCatalogo } from '../src/catalogo.js';
+import { sqlPrueba } from './sqlite.js';
 import { claveMemoria, crearWebhook, enviarYCloud, firmarYCloud, firmaYCloud, idCharla, leerYCloud, normalizar, numeroE164 } from '../src/ycloud.js';
 
 // ZL-149: con opciones, YCloud recibe botones o una lista: el texto va en interactive.body.text.
@@ -308,7 +310,7 @@ test('circuito: tres mensajes seguidos reciben UNA respuesta, con los tres junto
   await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
   await avisar(clave, entrante('hola'));
   const antes = enviados(ycloud).length;
-  d.rafagaMs = 30;
+  d.rafagaMs = 400;
   d.esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
   await Promise.all([avisar(clave, entrante('quiero una torta')), avisar(clave, entrante('para el sábado')), avisar(clave, entrante('de chocolate'))]);
   assert.equal(enviados(ycloud).length - antes, 1, 'una sola respuesta');
@@ -327,4 +329,45 @@ test('circuito: el menú va con botones (lista) y el pedido sin elegir entrega s
   // Tocar el botón 2 es como escribir «2».
   await avisar(clave, entrante('', { type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: '2', title: 'Tortas' } } }));
   assert.match(textoYC(enviados(ycloud).at(-1).body), /dos días de anticipación/);
+});
+
+// ——— Seguimiento con permiso, números y avisos (ZL-151) ———
+
+test('seguimiento: una consulta sin nombre recibe UN recordatorio a las 2 h (dentro de las 24 h); BAJA lo corta', async () => {
+  const { seguimientos } = await import('../src/index.js');
+  const { n, d, negocio, ycloud, admin, avisar } = await armar();
+  const { clave } = await (await admin('POST', '/ycloud', { negocio: negocio.id, numero: NEGOCIO_TEL, apiKey: CLAVE_API })).json();
+  await n.negocios.guardarFicha(negocio.id, { texto: FICHA, activa: true });
+  // La base del negocio, para registrar la consulta.
+  const { sql, transaccion } = sqlPrueba();
+  const base = crearCatalogo(sql, transaccion, () => T0);
+  d.catalogo = () => ({ ejecutar: async (op, args) => ejecutarCatalogo(base, op, args) });
+  d.preguntarNegocio = () => async () => ({ respuesta: '¡Buenísimo!', persona: false, fuera_de_tema: false, vacia: false, notas: [], memoria: { nombre: '', resumen: 'Quiere una torta (ficticio).' }, avanzar: 'consulta' });
+  await avisar(clave, entrante('hola'));
+  await avisar(clave, entrante('quiero encargar una torta'));
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /¿me decís tu nombre\?/);
+  const antes = enviados(ycloud).length;
+  // Todavía no toca.
+  assert.deepEqual(await seguimientos(ENV, { ...d, now: T0 + 60 * 60_000 }, T0 + 60 * 60_000), []);
+  const r = await seguimientos(ENV, { ...d, now: T0 + 2 * 3600_000 + 60_000 }, T0 + 2 * 3600_000 + 60_000);
+  assert.deepEqual(r, [{ que: 'enviado', tipo: 'consulta' }]);
+  assert.equal(enviados(ycloud).length, antes + 1);
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /¿Me decís tu nombre así le paso tu consulta al equipo\?[\s\S]*BAJA/);
+  // No se repite solo.
+  assert.deepEqual(await seguimientos(ENV, { ...d, now: T0 + 3 * 3600_000 }, T0 + 3 * 3600_000), []);
+  // BAJA: confirma y no vuelve a escribir por su cuenta.
+  await avisar(clave, entrante('BAJA'));
+  assert.match(textoYC(enviados(ycloud).at(-1).body), /no te vuelvo a escribir por mi cuenta/);
+  assert.equal((await n.memoria.get(claveMemoria(idCharla(NEGOCIO_TEL, PERSONA_TEL)))).baja, true);
+});
+
+test('seguimiento: fuera de las 24 h del último mensaje no se manda nada', async () => {
+  const { seguimientos } = await import('../src/index.js');
+  const { n, d } = await armar();
+  const num = claveMemoria(idCharla(NEGOCIO_TEL, PERSONA_TEL));
+  await n.memoria.put(num, { idioma: 'es', humanoHasta: 0, ultimo: T0, seguir: { cuando: T0 + 60_000, tipo: 'consulta', charla: idCharla(NEGOCIO_TEL, PERSONA_TEL) } });
+  const a2 = adaptadores(crearAtencion(almacenPrueba()), () => T0);
+  assert.ok(a2);
+  const r = await seguimientos(ENV, { ...d, now: T0 + 25 * 3600_000 }, T0 + 25 * 3600_000);
+  assert.deepEqual(r, [{ que: 'fuera_de_24h' }]);
 });
