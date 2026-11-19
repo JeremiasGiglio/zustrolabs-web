@@ -12,7 +12,9 @@ import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
 import { ajustesDeVenta } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
+import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
+import { ICONO_SVG, MANIFIESTO, suscripcionValida, SW_JS } from './push.js';
 
 export const NEGOCIOS_HOST = 'negocios.zustrolabs.com';
 const MAX_JSON = 2_000_000;
@@ -142,6 +144,10 @@ export async function appNegocios(request, env, deps) {
   if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return resp(APP_HTML, 200, 'text/html; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.js') return resp(appJs(), 200, 'text/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/app.css') return resp(APP_CSS, 200, 'text/css; charset=utf-8');
+  // App instalable y avisos al celular (ZL-151).
+  if (request.method === 'GET' && url.pathname === '/sw.js') return resp(SW_JS, 200, 'text/javascript; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/manifest.webmanifest') return resp(MANIFIESTO, 200, 'application/manifest+json');
+  if (request.method === 'GET' && url.pathname === '/icono.svg') return resp(ICONO_SVG, 200, 'image/svg+xml');
   if (!url.pathname.startsWith('/api/')) return error('no existe', 404);
 
   // Cambios: mismo origen y cabecera propia (una página de otro sitio no puede mandarla sin permiso de CORS).
@@ -274,6 +280,32 @@ export async function appNegocios(request, env, deps) {
     const aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
     return json({ ...r.valor, aviso });
   }
+  // Avisos al celular (ZL-151): la clave pública, suscribir este celular y un aviso de prueba.
+  if (request.method === 'GET' && sub === '/push') {
+    if (!deps.negocios.vapid) return error('sin memoria', 503);
+    return json({ clave: (await deps.negocios.vapid()).publica, celulares: (await deps.negocios.suscripcionesPush(negocio.id)).length });
+  }
+  if (request.method === 'POST' && sub === '/push') {
+    const b = await leerJson(request);
+    if (!suscripcionValida(b?.suscripcion)) return error('este navegador no mandó una suscripción válida');
+    const n = await deps.negocios.suscribirPush(negocio.id, b.suscripcion, email);
+    return json({ ok: true, celulares: n });
+  }
+  if (request.method === 'POST' && sub === '/push/probar') {
+    const enviados = deps.avisarCelulares ? await deps.avisarCelulares(negocio.id, { titulo: 'Avisos activados', cuerpo: 'Así te va a llegar cada pedido o consulta nueva.' }) : 0;
+    return json({ enviados });
+  }
+
+  // Números de los últimos 7 días (ZL-151): charlas, consultas, pedidos, ventas cerradas.
+  if (request.method === 'GET' && sub === '/numeros') {
+    const dias = 7;
+    const desde = now - dias * 86_400_000;
+    const m = deps.negocios.metricas ? await deps.negocios.metricas(negocio.id, dias) : {};
+    const c = (await ejecutar('numeros', [desde])).valor ?? {};
+    const uso = (await deps.negocios.uso(negocio.id)).filter((u) => u.dia >= new Date(desde).toISOString().slice(0, 10)).reduce((x, u) => x + u.n, 0);
+    return json({ dias, charlas: m.charlas ?? 0, audios: m.audios ?? 0, pases: m.pases ?? 0, seguimientos: m.seguimientos ?? 0, respuestas: uso, ...c });
+  }
+
   // Ajustes de venta (ZL-148): los carga el propio negocio (entrega, pago, cuánto se guarda un pedido sin pagar).
   if (request.method === 'GET' && sub === '/ajustes') return json(ajustesDeVenta(negocio.ajustes));
   if (request.method === 'PUT' && sub === '/ajustes') {
@@ -362,6 +394,52 @@ export async function appNegocios(request, env, deps) {
     if (r.resp) return r.resp;
     if (!r.valor) return error('no existe', 404);
     return new Response(r.valor.datos, { status: 200, headers: { 'content-type': r.valor.tipo, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" } });
+  }
+
+  // El semáforo del negocio (ZL-150): qué anda y qué falta, en Conexiones. Sin charla de prueba (no gasta IA).
+  if (request.method === 'GET' && sub === '/estado') {
+    if (!deps.verificar) return error('sin memoria', 503);
+    return json(await deps.verificar(negocio.id, { charla: false }));
+  }
+
+  // Alta fácil (ZL-150): la ficha por formulario, desde la web y desde plantillas, y el revisor. Solo el equipo.
+  if (sub.startsWith('/ficha/')) {
+    if (!admin) return error('la ficha del asistente la maneja el equipo de Zustro Labs', 403);
+    if (request.method === 'GET' && sub === '/ficha/plantillas') return json({ plantillas: PLANTILLAS.map((p) => ({ id: p.id, nombre: p.nombre, campos: p.campos })) });
+    const b = request.method === 'POST' ? await leerJson(request) : null;
+    if (request.method !== 'POST' || !b) return error('pedido inválido');
+    if (sub === '/ficha/campos') {
+      const r = camposDeFicha(String(b.texto ?? ''));
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (sub === '/ficha/armar') {
+      const texto = fichaDeCampos(b.campos ?? {});
+      return json({ texto, ...resumenFicha(parsearFicha(texto)) });
+    }
+    if (sub === '/ficha/web') {
+      try {
+        const r = await armarDesdeWeb(env, b.url, { fetchImpl: deps.fetch ?? fetch, ...(deps.llamarWeb && { llamar: deps.llamarWeb }) });
+        return json(r, r.error ? 400 : 200);
+      } catch (e) {
+        return error(`no pude armarla: ${String(e?.message ?? 'error').slice(0, 60)}`, 502);
+      }
+    }
+    if (sub === '/ficha/revisar') {
+      const texto = String(b.texto ?? '');
+      const pf = parsearFicha(texto);
+      const resumen = (await ejecutar('resumen', [])).valor ?? {};
+      const conflictos = revisarFicha(texto, { pedidos: negocio.pedidos === true, productos: resumen.activos ?? 0 });
+      if (!pf.ok || b.charlas === false) return json({ ...resumenFicha(pf), conflictos, charlas: [] });
+      // Cada charla de prueba arranca de cero, con los productos del negocio. No se manda nada a nadie.
+      const charlas = [];
+      for (const prueba of CHARLAS_DE_PRUEBA) {
+        const r = await deps.probar(pf.ficha, negocio.id, [prueba.mensaje], null);
+        const ultima = r.charla.at(-1) ?? {};
+        charlas.push({ mensaje: prueba.mensaje, respuestas: ultima.respuestas ?? [], que: ultima.que, ...evaluarPrueba(prueba, ultima) });
+      }
+      return json({ ...resumenFicha(pf), conflictos, charlas });
+    }
+    return error('no existe', 404);
   }
 
   // Lo que sigue es solo del equipo: la ficha del asistente y la charla de prueba.

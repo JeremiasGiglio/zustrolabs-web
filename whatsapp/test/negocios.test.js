@@ -530,3 +530,49 @@ test('consultas (ZL-148): «La atiendo» calla al asistente en esa charla, «Dev
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/99/devolver`, {})).status, 400, 'una consulta que no es suya no se toca');
   assert.equal((await pedir('otro@example.com', 'POST', `/api/n/${a.id}/consultas/1/devolver`, {})).status, 404);
 });
+
+test('alta fácil (ZL-150): formulario, plantillas, web y revisor son del equipo; el negocio ve su semáforo', async () => {
+  const { pedir, a, d } = await armar();
+  const FICHA_P = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/ficha/campos`, { texto: FICHA_P })).status, 403);
+  const c = await pedir('equipo@example.com', 'POST', `/api/n/${a.id}/ficha/campos`, { texto: FICHA_P });
+  assert.equal(c.datos.campos.nombre, 'Panadería La Espiga');
+  const m = await pedir('equipo@example.com', 'POST', `/api/n/${a.id}/ficha/armar`, { campos: { ...c.datos.campos, objetivo: 'pedidos' } });
+  assert.match(m.datos.texto, /- Objetivo: pedidos/);
+  assert.equal(m.datos.ok, true);
+  assert.equal((await pedir('equipo@example.com', 'GET', `/api/n/${a.id}/ficha/plantillas`)).datos.plantillas.length, 3);
+  d.llamarWeb = async () => ({ salida: { nombre: 'Ficticia', trato: 'vos', objetivo: 'consultas', saludo: 'Soy el asistente de Ficticia', menu: [{ titulo: 'Uno', texto: '¿Sí?' }], vender: '', conocimiento: 'x', faq: '', nunca: '', persona: '', horario: '' } });
+  const fetchAntes = d.fetch;
+  d.fetch = async (url, o) => (String(url).startsWith('https://ficticia.example.com') ? new Response(`<p>${'Página de un negocio ficticio. '.repeat(10)}</p>`, { headers: { 'content-type': 'text/html' } }) : fetchAntes(url, o));
+  const w = await pedir('equipo@example.com', 'POST', `/api/n/${a.id}/ficha/web`, { url: 'https://ficticia.example.com' });
+  assert.equal(w.status, 200, JSON.stringify(w.datos));
+  assert.equal(w.datos.campos.nombre, 'Ficticia');
+  const rev = await pedir('equipo@example.com', 'POST', `/api/n/${a.id}/ficha/revisar`, { texto: FICHA_P });
+  assert.equal(rev.status, 200);
+  assert.ok(rev.datos.conflictos.some((x) => /Objetivo/.test(x.texto)));
+  assert.equal(rev.datos.charlas.length, 7);
+  assert.ok(rev.datos.charlas.every((x) => typeof x.ok === 'boolean' && Array.isArray(x.respuestas)));
+  const est = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/estado`);
+  assert.equal(est.status, 200);
+  assert.equal(typeof est.datos.verde, 'boolean');
+  assert.equal(est.datos.charla, null, 'el semáforo del negocio no gasta IA');
+  assert.ok(est.datos.controles.some((x) => x.id === 'ficha'));
+});
+
+test('avisos y números (ZL-151): el negocio suscribe su celular y ve los números de la semana', async () => {
+  const { pedir, a, d, n } = await armar();
+  const clave = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/push`);
+  assert.equal(clave.status, 200);
+  assert.match(clave.datos.clave, /^[A-Za-z0-9_-]{80,90}$/);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/push`)).datos.clave, clave.datos.clave, 'la misma clave siempre');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push`, { suscripcion: { endpoint: 'http://mal' } })).status, 400);
+  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } };
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push`, { suscripcion: sub })).datos.celulares, 1);
+  assert.equal((await n.negocios.suscripcionesPush(a.id))[0].email, 'duena@example.com');
+  await n.negocios.sumarMetrica(a.id, 'charlas');
+  await d.catalogo(a.id).ejecutar('crearConsulta', ['yc:1:2', { tipo: 'consulta', nombre: 'Ana' }]);
+  await d.catalogo(a.id).ejecutar('cambiarConsulta', [1, 'ganada']);
+  const num = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/numeros`)).datos;
+  assert.deepEqual([num.dias, num.charlas, num.consultas, num.ganadas, num.pedidos], [7, 1, 1, 1, 0]);
+  for (const r of ['/sw.js', '/manifest.webmanifest', '/icono.svg']) assert.equal((await pedir('duena@example.com', 'GET', r)).status, 200, r);
+});

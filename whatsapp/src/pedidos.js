@@ -275,6 +275,14 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
       return { pedidos: lista.map(armar), cuenta };
     },
 
+    /** Números para el dueño (ZL-151): pedidos confirmados y entregados desde `desde`, y cuánto se vendió. */
+    numerosPedidos(desde) {
+      const d = Number(desde) || 0;
+      const r = una(`SELECT COUNT(*) AS n FROM pedidos WHERE numero IS NOT NULL AND creado >= ?`, d);
+      const e = una(`SELECT COUNT(*) AS n, SUM(total) AS total FROM pedidos WHERE estado = 'entregado' AND actualizado >= ?`, d);
+      return { pedidos: r?.n ?? 0, entregados: e?.n ?? 0, vendido: redondo(e?.total ?? 0) };
+    },
+
     /** Un pedido con su historia. */
     pedido(numero) {
       transaccion(() => vencerAhora());

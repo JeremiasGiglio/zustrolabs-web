@@ -17,7 +17,11 @@
 // - neguso:<id>:<día> → respuestas de la IA de ese negocio ese día: 40 días (para el tope diario y para facturar).
 // Este módulo no importa nada de Cloudflare: se prueba con un almacenamiento simulado (ver test/).
 
+import { clavesVapid } from './push.js';
+
 export const DIA_MS = 24 * 3600_000;
+/** Índice de seguimientos: `seg:<hora con 15 dígitos>:<num>`, así se ordenan por hora. */
+const claveSeguimiento = (cuando, num) => `seg:${String(Math.max(0, Math.floor(cuando))).padStart(15, '0')}:${num}`;
 
 /**
  * Los ajustes de venta que carga el propio negocio (ZL-148): cuánto se guarda un pedido aceptado sin pagar, si hace
@@ -92,10 +96,17 @@ export function crearAtencion(storage) {
         // ZL-149: cuándo el asistente le pasó la charla al equipo (para volver a los 15 minutos si nadie la tomó).
         ...(Number.isFinite(datos?.pase) && datos.pase > 0 && { pase: datos.pase }),
         // ZL-151: seguimiento con permiso (un recordatorio, como mucho dos) y BAJA.
-        ...(datos?.seguir && Number.isFinite(datos.seguir.cuando) && ['carrito', 'consulta'].includes(datos.seguir.tipo) && { seguir: { cuando: datos.seguir.cuando, tipo: datos.seguir.tipo, negocio: corto(datos.seguir.negocio, 40) } }),
+        ...(datos?.seguir && Number.isFinite(datos.seguir.cuando) && ['carrito', 'consulta'].includes(datos.seguir.tipo) && { seguir: { cuando: datos.seguir.cuando, tipo: datos.seguir.tipo, negocio: corto(datos.seguir.negocio, 40), charla: corto(datos.seguir.charla, 80) } }),
         ...(Number.isFinite(datos?.seguidos) && datos.seguidos > 0 && { seguidos: Math.min(9, datos.seguidos) }),
         ...(datos?.baja === true && { baja: true }),
       };
+      // El índice de seguimientos (ZL-151): una clave por recordatorio pendiente, ordenada por hora, para que el cron
+      // encuentre los vencidos sin recorrer toda la memoria.
+      const antes = await s.get(`wa:${num}`);
+      const viejo = antes?.seguir?.cuando;
+      const nuevo = contacto.seguir?.cuando;
+      if (viejo && viejo !== nuevo) await s.delete(claveSeguimiento(viejo, num));
+      if (nuevo && viejo !== nuevo) await s.put(claveSeguimiento(nuevo, num), { num, vence: nuevo + DIA_MS });
       await s.put(`wa:${num}`, { idioma, humanoHasta, ...(pedido && { pedido }), ...contacto, vence: now + RETENCION_MEMORIA_MS });
     },
     /**
@@ -116,6 +127,61 @@ export function crearAtencion(storage) {
       if (!r?.lista?.length || r.lista.at(-1).id !== String(id)) return null;
       await s.delete(k);
       return r.lista.map((x) => x.t);
+    },
+    /** Los seguimientos que ya tocan (ZL-151): [{num, estado}], como mucho `limite`. */
+    async seguimientosVencidos(now, limite = 50) {
+      const out = [];
+      const lista = await s.list({ prefix: 'seg:', end: claveSeguimiento(now + 1, ''), limit: limite });
+      for (const [k, v] of lista) {
+        if (k > claveSeguimiento(now, '\uffff')) continue;
+        const e = vigente(await s.get(`wa:${v.num}`), now);
+        if (!e?.seguir || claveSeguimiento(e.seguir.cuando, v.num) !== k) { await s.delete(k); continue; }
+        out.push({ num: v.num, estado: e });
+        if (out.length >= limite) break;
+      }
+      return out;
+    },
+    /** Claves VAPID de los avisos al celular (ZL-151): se crean solas la primera vez. Solo la pública sale de acá. */
+    async vapid() {
+      let v = await s.get('vapid');
+      if (!v) { v = await clavesVapid(); await s.put('vapid', v); }
+      return v;
+    },
+    /** Celulares suscriptos a los avisos de un negocio (como mucho 10; el más nuevo reemplaza al mismo endpoint). */
+    async suscribirPush(id, sub, email, now) {
+      const k = `push:${id}`;
+      const lista = ((await s.get(k))?.lista ?? []).filter((x) => x.endpoint !== sub.endpoint);
+      lista.push({ endpoint: String(sub.endpoint).slice(0, 600), keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) }, email: String(email ?? '').slice(0, 120), creado: now });
+      await s.put(k, { lista: lista.slice(-10) });
+      return lista.length;
+    },
+    async suscripcionesPush(id) {
+      return (await s.get(`push:${id}`))?.lista ?? [];
+    },
+    async borrarPush(id, endpoints) {
+      const k = `push:${id}`;
+      const lista = ((await s.get(k))?.lista ?? []).filter((x) => !endpoints.includes(x.endpoint));
+      await s.put(k, { lista });
+      return lista.length;
+    },
+    /** Números del negocio por día (ZL-151): charlas, audios, seguimientos, pases. 120 días. */
+    async sumarMetrica(id, clave, now) {
+      if (!['charlas', 'audios', 'seguimientos', 'pases'].includes(clave)) return 0;
+      const k = `negmet:${id}:${diaDe(now)}`;
+      const x = (await s.get(k)) ?? {};
+      x[clave] = (x[clave] ?? 0) + 1;
+      x.vence = now + 120 * DIA_MS;
+      await s.put(k, x);
+      return x[clave];
+    },
+    async metricas(id, dias, now) {
+      const desde = diaDe(now - (dias - 1) * DIA_MS);
+      const tot = { charlas: 0, audios: 0, seguimientos: 0, pases: 0 };
+      for (const [k, v] of await s.list({ prefix: `negmet:${id}:` })) {
+        if (k.split(':').pop() < desde || !vigente(v, now)) continue;
+        for (const c of Object.keys(tot)) tot[c] += v[c] ?? 0;
+      }
+      return tot;
     },
     /** BORRAR: memoria, charla y contador de ese número. */
     async borrar(num) {
@@ -350,6 +416,7 @@ export function adaptadores(a, reloj = () => Date.now()) {
     delete: (n) => a.borrar(n),
     visto: (id) => a.visto(id, reloj()),
     sumarRafaga: (n, item) => a.sumarRafaga(n, item, reloj()),
+    seguimientos: (limite, now) => a.seguimientosVencidos(now ?? reloj(), limite),
     tomarRafaga: (n, id) => a.tomarRafaga(n, id, reloj()),
     contar: (n) => a.contar(n, reloj()),
   };
@@ -388,6 +455,12 @@ export function adaptadores(a, reloj = () => Date.now()) {
     borrarFicha: (id) => a.borrarFichaNegocio(id),
     contarUso: (id) => a.contarUsoNegocio(id, reloj()),
     uso: (id) => a.usoNegocio(id, reloj()),
+    vapid: () => a.vapid(),
+    suscribirPush: (id, sub, email) => a.suscribirPush(id, sub, email, reloj()),
+    suscripcionesPush: (id) => a.suscripcionesPush(id),
+    borrarPush: (id, endpoints) => a.borrarPush(id, endpoints),
+    sumarMetrica: (id, clave) => a.sumarMetrica(id, clave, reloj()),
+    metricas: (id, dias = 7) => a.metricas(id, dias, reloj()),
   };
   // Ficha por cuenta de Instagram (lo que usan el Worker y el script): es la ficha del negocio dueño de esa cuenta.
   // Cargar una ficha en una cuenta que todavía no es de ningún negocio crea el negocio con ese nombre.

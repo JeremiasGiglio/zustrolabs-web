@@ -14,10 +14,11 @@ equipo ve además Asistente y Admin.
 | Productos → Lista | el negocio y el equipo | Alta y edición (nombre, código, categoría, descripción, precio, unidad, stock, foto), a la venta o pausado, stock con − y +, búsqueda, exportar a Excel (CSV con «;», como lo abre Excel en Argentina). |
 | Productos → Importar Excel | el negocio y el equipo | .xlsx o .csv leídos en el navegador (sin librerías). Reconoce las columnas por el título, se pueden corregir, **muestra qué va a pasar** antes de guardar, y actualiza por código o por nombre, o reemplaza (lo que no viene se **pausa**, no se borra). Hasta 3.000 filas por vez. Planilla modelo para bajar. |
 | Productos → Historial | el negocio y el equipo | Cada cambio de stock, precio o producto, con el correo de quién lo hizo y cuándo (en el celular, en tarjetas). |
+| Conexiones → Estado | el negocio y el equipo | El semáforo (ZL-150): ficha, canales, cuentas, números y productos, con qué hacer si algo está en rojo. No corre la charla de prueba (no gasta IA). |
 | Conexiones → WhatsApp | el negocio y el equipo | El negocio conecta su número de WhatsApp Business solo: pasos de YCloud (coexistencia), su número y su clave de API, «Conectar». Ve si está conectado, el último mensaje y si se calla cuando contesta él; «Desconectar». La clave no se vuelve a mostrar (ZL-136). |
 | Conexiones → Instagram | el negocio y el equipo | El negocio pide la invitación con su usuario, la acepta en Instagram y aprieta «Conectar Instagram» (app compartida de Zustro Labs, sin Facebook). En Admin aparece el pedido con el enlace a Meta y «Invitación enviada» (ZL-137, `INSTAGRAM_CLIENTES.md`). |
 | Conexiones → Cómo vendés | el negocio y el equipo | Lo carga el negocio (ZL-148): si hace retiro, envío o los dos; dónde y cuándo se retira; zonas, costo y horarios de envío; cómo se paga; cuánto se guarda un pedido aceptado sin pagar (2 h, 24 h, 48 h o 7 días). |
-| Asistente | solo el equipo | La ficha del negocio (la misma de `fichas/PLANTILLA.md`), revisarla, activarla y una charla de prueba con los productos cargados. **El negocio no edita la ficha**: lo suyo (entrega, pago) va en «Cómo vendés». |
+| Asistente | solo el equipo | La ficha del negocio (la misma de `fichas/PLANTILLA.md`) **por formulario** o en Markdown (ZL-150): empezar desde una **plantilla por rubro** (comercio con pedidos, servicios con consultas, turnos) o **armarla desde la web** del negocio (la IA lee la página y propone; lo que falta queda como [COMPLETAR …]). **Revisar todo** marca lo que choca con el sistema y corre 7 charlas de prueba (precio, objeción, cierre, pase, reclamo, fuera de tema). Activarla y una charla de prueba con los productos cargados. **El negocio no edita la ficha**: lo suyo (entrega, pago) va en «Cómo vendés». |
 | Admin | solo el equipo | Nuevo negocio, quiénes entran (correos), **qué canales contrató (Instagram, WhatsApp o los dos)**, pedidos por chat, qué cuentas de Instagram son suyas, tope diario de respuestas de la IA y cuánto usó hoy y en el mes. Con un canal apagado, el asistente no responde por ahí (registro `canal_apagado`). |
 
 ## Cómo está armado (y por qué)
@@ -162,6 +163,20 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 - **Pase con red:** cuando el asistente le pasa la charla al equipo (o la persona escribe PERSONA), se calla 15
   minutos. Si nadie la tomó (no respondió desde su app ni tocó «La atiendo yo»), vuelve y lo dice una vez («Mientras el
   equipo te responde, sigo yo»). Si la tomó, se calla las horas de la ficha.
+
+## Que no se escape ninguna venta (ZL-151)
+
+- **Avisos al celular:** Web Push estándar (`src/push.js`, RFC 8291 + VAPID), sin servicios de terceros. Las claves
+  VAPID se crean solas y viven en el Durable Object. En Inicio, «Avisos en este celular» pide permiso, suscribe el
+  celular (`/api/n/<id>/push`) y manda uno de prueba. Llega un aviso por cada pedido nuevo, cada consulta que quiere
+  avanzar y cada pase al equipo, sin nombres ni números en la pantalla bloqueada. La app se instala en la pantalla de
+  inicio (manifiesto, ícono con el damero y service worker); en iPhone, los avisos andan solo con la app instalada.
+- **Seguimiento con permiso:** si una consulta queda sin nombre, un recordatorio a las 2 h; si un carrito queda sin
+  confirmar, a los 10 minutos (se guarda 20). Solo dentro de las 24 h del último mensaje, sin BAJA y sin alguien del
+  negocio atendiendo, como mucho dos por charla. Cada mensaje dice cómo cortarlo (BAJA). Lo manda el cron de cada 10
+  minutos (`seguimientos()` en `index.js`, índice `seg:` en el Durable Object).
+- **Números para el dueño:** en Inicio, los últimos 7 días: charlas atendidas, consultas, pedidos y ventas cerradas
+  (consultas ganadas más pedidos entregados, con el total vendido). `GET /api/n/<id>/numeros`.
 
 ## Lo que falta (próximas etapas)
 

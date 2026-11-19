@@ -52,6 +52,13 @@ export class Atencion extends DurableObject {
   borrarFichaNegocio(id) { return this.a.borrarFichaNegocio(id); }
   async contarUsoNegocio(id, now) { await this.#alarma(); return this.a.contarUsoNegocio(id, now); }
   usoNegocio(id, now) { return this.a.usoNegocio(id, now); }
+  seguimientosVencidos(now, limite) { return this.a.seguimientosVencidos(now, limite); }
+  vapid() { return this.a.vapid(); }
+  async suscribirPush(id, sub, email, now) { await this.#alarma(); return this.a.suscribirPush(id, sub, email, now); }
+  suscripcionesPush(id) { return this.a.suscripcionesPush(id); }
+  borrarPush(id, endpoints) { return this.a.borrarPush(id, endpoints); }
+  async sumarMetrica(id, clave, now) { await this.#alarma(); return this.a.sumarMetrica(id, clave, now); }
+  metricas(id, dias, now) { return this.a.metricas(id, dias, now); }
 }
 
 // Durable Object «Catalogo»: UNA instancia por negocio (idFromName(id del negocio)), con su propia base SQLite. Así

@@ -19,6 +19,9 @@ export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
 /** Cuánto espera el asistente callado a que alguien del negocio tome una charla que le pasó (ZL-149). */
 export const PASE_MS = 15 * 60_000;
+/** Cuándo va el recordatorio de un carrito sin confirmar (se guarda 20 min) y de una consulta sin nombre (ZL-151). */
+export const SEGUIR_CARRITO_MS = 10 * 60_000;
+export const SEGUIR_CONSULTA_MS = 2 * 3600_000;
 /** Respuestas de la IA por número y por día; pasado eso, se sugiere PERSONA (tope de gasto y de abuso). */
 export const TOPE_DIARIO = 40;
 // eslint-disable-next-line no-control-regex
@@ -222,7 +225,7 @@ const juntar = (...partes) => partes.filter((x) => String(x ?? '').trim()).join(
 // `consultas` (ZL-146): consultasDeCharla() de consultas.js, para registrar consultas y pases al equipo de un negocio.
 export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
-  const estado = (memoria && (await memoria.get(ev.from))) || null;
+  let estado = (memoria && (await memoria.get(ev.from))) || null;
   // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
   const unico = perfil.idiomas.length === 1 ? perfil.idiomas[0] : null;
   // El nombre o la bandera de un idioma como mensaje entero vale como el botón (en Instagram no hay botones);
@@ -247,6 +250,14 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
   const neg = perfil.negocio === true;
   const recordar = (entrada, salida, extra = {}) => recordarCharla(memoria, ev.from, estado, now, idioma, neg, entrada, salida, extra);
   const pasarAlEquipo = (tipo, extra = {}) => pase(memoria, consultas, ev.from, estado, now, horas, idioma, tipo, extra);
+
+  // Seguimiento con permiso (ZL-151): si la persona escribe, el recordatorio pendiente ya no va. BAJA corta los
+  // recordatorios para siempre (el asistente sigue respondiendo si escribe).
+  if (neg && memoria && estado?.seguir) { estado = { ...estado, seguir: null }; await guardar(estado); }
+  if (neg && memoria && ev.kind === 'text' && /^(baja|stop|unsubscribe|no me escribas( mas| más)?)[.!]*$/i.test(String(ev.text ?? '').trim())) {
+    await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, baja: true, seguir: null });
+    return { send: [msgTexto(ev.from, T.baja)], metrica: 'baja' };
+  }
 
   if (cmd === 'borrar') {
     await memoria?.delete(ev.from);
@@ -456,6 +467,11 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
         metrica = 'consulta_nombre';
       }
     }
+    // Seguimiento con permiso (ZL-151): si queda a medias (falta el nombre de una consulta, o un carrito sin confirmar),
+    // un recordatorio más tarde, dentro de las 24 h. Como mucho dos por charla, y nunca después de BAJA.
+    const puedeSeguir = !estado?.baja && (estado?.seguidos ?? 0) < 2;
+    if (puedeSeguir && metrica === 'consulta_nombre') aprendido.seguir = { cuando: now + SEGUIR_CONSULTA_MS, tipo: 'consulta', charla: ev.from };
+    if (puedeSeguir && metrica === 'ia_pedido' && pedido?.pedido?.paso === 'confirmar') aprendido.seguir = { cuando: now + SEGUIR_CARRITO_MS, tipo: 'carrito', charla: ev.from };
     // Volvió el asistente después de un pase que nadie tomó (ZL-149): lo dice una vez y sigue.
     if (estado?.pase && metrica !== 'persona_auto' && (!estado.humanoHasta || estado.humanoHasta <= now)) {
       respuesta = juntar(Te.sigoYo, respuesta);
