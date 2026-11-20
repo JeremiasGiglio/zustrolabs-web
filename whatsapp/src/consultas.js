@@ -61,7 +61,9 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
         ? filas('SELECT * FROM consultas WHERE estado = ? ORDER BY actualizado DESC LIMIT ?', estado, n)
         : filas(`SELECT * FROM consultas ORDER BY CASE WHEN estado IN ('nueva','atendiendo') THEN 0 ELSE 1 END, actualizado DESC LIMIT ?`, n);
       const nuevas = una(`SELECT COUNT(*) AS n FROM consultas WHERE estado = 'nueva'`)?.n ?? 0;
-      return { consultas: lista.map(armar), nuevas };
+      // ZL-159: cuántas abiertas hay en total, para el «Ver más» de la app.
+      const abiertas = una(`SELECT COUNT(*) AS n FROM consultas WHERE estado IN ('nueva','atendiendo')`)?.n ?? 0;
+      return { consultas: lista.map(armar), nuevas, abiertas };
     },
 
     /** Lo que hace el negocio desde la app: atendiendo, ganada o perdida, con una nota opcional. */

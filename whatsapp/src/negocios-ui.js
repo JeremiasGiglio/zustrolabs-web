@@ -881,9 +881,14 @@ function app() {
     let ultimos = null;
 
     async function cargar() {
-      const k = await api(base() + '/consultas');
+      // ZL-159: las abiertas de a 20, con «Ver más».
+      const cuantasK = estado.cuantasConsultas || 20;
+      const k = await api(base() + '/consultas?' + new URLSearchParams({ cuantos: String(cuantasK) }));
       const abiertas = k.consultas.filter((c) => ['nueva', 'atendiendo'].includes(c.estado));
       poner(listaConsultas, abiertas.length ? abiertas.map((c) => tarjetaConsulta(c, cargar)) : h('div', { class: 'vacio' }, 'No hay consultas para responder. Cuando alguien quiera avanzar o necesite a alguien del negocio, aparece acá y suena.'));
+      if ((k.abiertas || 0) > abiertas.length && cuantasK < 200) {
+        listaConsultas.append(h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: conError(async () => { estado.cuantasConsultas = Math.min(200, cuantasK + 20); await cargar(); }) }, 'Ver más consultas (' + abiertas.length + ' de ' + k.abiertas + ')')));
+      }
       // ZL-159: de a 50, con «Ver más» (antes se veían los últimos 100 y el resto no aparecía).
       const cuantos = estado.cuantosPedidos || 50;
       const r = conPedidos ? await api(base() + '/pedidos?' + new URLSearchParams({ ...(filtro === 'todos' ? {} : { estado: filtro }), cuantos: String(cuantos) })) : { pedidos: [], cuenta: {} };

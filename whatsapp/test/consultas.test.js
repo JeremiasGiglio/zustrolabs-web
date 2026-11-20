@@ -32,6 +32,15 @@ test('consultas: una abierta por charla; lo nuevo completa sin borrar y «person
   assert.equal(c.consultaAbierta('yc:1:2').numero, 3);
 });
 
+test('consultas (ZL-159): la app pide de a pocas y sabe cuántas abiertas hay en total para el «Ver más»', () => {
+  const { c, reloj } = armar();
+  for (let i = 0; i < 5; i++) { c.crearConsulta(`ig:9.${i}`, { nombre: `Persona ${i}` }); reloj.t += 1000; }
+  c.cambiarConsulta(1, 'perdida');
+  const r = c.consultas({ cuantos: 2 });
+  assert.equal(r.consultas.length, 2);
+  assert.equal(r.abiertas, 4, 'la cerrada no cuenta');
+});
+
 test('consultas: estados y datos controlados; los textos se recortan y no llevan caracteres de control', () => {
   const { c } = armar();
   const r = c.crearConsulta('yc:1:2', { tipo: 'cualquiera', nombre: 'A'.repeat(200), resumen: 'linea1\nlinea2\u0000' });
