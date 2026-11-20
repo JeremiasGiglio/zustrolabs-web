@@ -83,7 +83,8 @@ export function leerYCloud(payload) {
     const m = payload.whatsappInboundMessage;
     if (!m?.from || !m?.to) return [];
     // Reacciones (👍 a un mensaje del dueño) y avisos del sistema: no son mensajes para contestar.
-    if (['reaction', 'system', 'unsupported', 'request_welcome'].includes(m.type)) return [];
+    // ZL-157: un sticker tampoco se contesta (antes recibía «solo leo mensajes de texto»).
+    if (['reaction', 'system', 'unsupported', 'request_welcome', 'sticker'].includes(m.type)) return [];
     const base = { id: `yc:${m.wamid ?? m.id ?? payload.id}`, from: idCharla(m.to, m.from), ts: Math.floor(Date.parse(m.sendTime ?? payload.createTime ?? '') / 1000) || 0 };
     // ZL-149: un botón o una fila de lista tocada llega con nuestro id («2», «SI», «CANCELAR»): vale como si lo escribiera.
     const elegido = m.interactive?.button_reply ?? m.interactive?.list_reply ?? null;

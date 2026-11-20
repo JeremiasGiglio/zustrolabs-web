@@ -443,7 +443,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   assert.equal(vio.at(-1).compras, undefined, 'antes de confirmar no había pedidos');
   // ZL-154: la IA ve lo que pidió esta persona y en qué estado está, para responder «¿ya salió mi pedido?».
   await escribir('¿ya salió mi pedido?');
-  assert.match(vio.at(-1).compras.texto, /^- Pedido N\.º 1 del \d\d\/\d\d · esperando que el negocio lo confirme; el negocio lo confirma antes del \d\d\/\d\d,? \d\d:\d\d · retira en el local · \[ref p[a-z0-9]+\] 3 × Pan francés · total \$ 7\.500$/);
+  assert.match(vio.at(-1).compras.texto, /^- Pedido N\.º 1 del \d\d\/\d\d · esperando que el negocio lo confirme · retira en el local · \[ref p[a-z0-9]+\] 3 × Pan francés · total \$ 7\.500$/);
   // El panel del negocio: lo ve; otro negocio no.
   let lista = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos;
   assert.deepEqual(lista.cuenta, { pendiente: 1 });
@@ -622,4 +622,81 @@ test('reportes (ZL-152): cada mensaje cuenta con la hora del negocio; el reporte
   assert.match(x.headers.get('content-disposition'), /^attachment; filename="reporte-mes-\d{4}-\d{2}-01-al-\d{4}-\d{2}-\d{2}\.xlsx"$/);
   assert.deepEqual([...new Uint8Array(x.datos).slice(0, 2)], [0x50, 0x4b]);
   assert.equal((await pedir('otro@example.com', 'GET', `/api/n/${a.id}/reporte`)).status, 404, 'el de otro negocio, no');
+});
+
+test('ZL-157: el pedido pendiente espera al dueño; pasadas las 24 h el aviso queda guardado, la app da el mensaje listo y el comprador lo recibe al volver a escribir; con un pedido abierto, una foto va al dueño', async () => {
+  const { d, a, pedir: pedirT0, enviados } = await armar();
+  // La sesión de Access vale una hora: en este test pasan días.
+  const pedir = (email, metodo, ruta, cuerpo) => pedirT0(email, metodo, ruta, cuerpo, { token: { exp: Math.floor(d.now / 1000) + 3600 } });
+  const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { canales: { instagram: true, whatsapp: true }, pedidos: true })).status, 200);
+  await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Pan francés', precio: 2500, stock: 10 });
+  await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000001', apiKey: CLAVE_YC });
+  const clave = /\/ycloud\/([0-9a-f]{24})$/.exec(enviados.find((e) => e.url.endsWith('/webhookEndpoints')).body.url)[1];
+  const ia = [];
+  d.preguntarNegocio = (f, cat) => async (texto, idioma, opts = {}) => {
+    ia.push(texto);
+    const c = await cat(texto, { refs: opts.carrito !== undefined });
+    const ref = /\[ref (p[a-z0-9]+)\] Pan francés/.exec(c.texto)?.[1];
+    return { respuesta: 'Sí, decime.', persona: false, fuera_de_tema: false, vacia: false, notas: [], ...(/pan/.test(texto) && { pedido: { cambia: true, items: [{ ref, cantidad: 3 }] } }) };
+  };
+  let n = 0;
+  const llega = async (mensaje) => {
+    const t = new Date(d.now).toISOString();
+    const cuerpo = JSON.stringify({ id: `ev${++n}`, type: 'whatsapp.inbound_message.received', createTime: t, whatsappInboundMessage: { id: `m${n}`, wamid: `w${n}`, from: '+5493410000009', to: '+5493410000001', sendTime: t, ...mensaje } });
+    const antes = enviados.length;
+    const r = await worker.fetch(new Request(`https://zustrolabs.com/api/whatsapp/ycloud/${clave}`, { method: 'POST', headers: { 'YCloud-Signature': await firmarYCloud(cuerpo, FIRMA_FALSA, d.now / 1000) }, body: cuerpo }), ENV, {}, d);
+    assert.equal(r.status, 200);
+    return enviados.slice(antes).filter((e) => e.url.endsWith('/sendDirectly')).map((e) => textoYC(e.body));
+  };
+  const escribir = async (texto) => (await llega({ type: 'text', text: { body: texto } })).join('\n---\n');
+  await escribir('hola');
+  await escribir('quiero 3 kilos de pan');
+  await escribir('sí');
+  await escribir('1');
+  assert.match(await escribir('Ana'), /Tu pedido N\.º 1 quedó registrado/);
+  // Tres días después sigue pendiente, con los productos reservados.
+  d.now = T0 + 3 * 24 * 3600_000;
+  let lista = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos;
+  assert.equal(lista.pedidos[0].estado, 'pendiente');
+  assert.equal(lista.pedidos[0].vence, null);
+  // Lo acepta: pasaron más de 24 h, así que ni se intenta mandar (Meta lo rechazaría sin avisarnos).
+  const antes = enviados.length;
+  const r = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'aceptado', horas: 48 });
+  assert.equal(r.status, 200);
+  assert.ok(!enviados.slice(antes).some((e) => e.url.endsWith('/sendDirectly')));
+  assert.equal(r.datos.aviso.pendiente, true);
+  assert.equal(r.datos.aviso.fuera24h, true);
+  assert.match(r.datos.aviso.enlace, /^https:\/\/wa\.me\/5493410000009\?text=/);
+  assert.match(decodeURIComponent(r.datos.aviso.enlace.split('?text=')[1]), /^¡Listo! Panadería La Espiga aceptó tu pedido N\.º 1\./);
+  // La tarjeta lo sigue mostrando aunque se recargue la app.
+  lista = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos;
+  assert.match(lista.pedidos[0].avisoPendiente.texto, /aceptó tu pedido N\.º 1/);
+  // El comprador vuelve a escribir: primero se entera de su pedido, en el mismo mensaje de la respuesta.
+  const t = await escribir('che, ¿y mi pedido?');
+  assert.match(t, /^¡Listo! Panadería La Espiga aceptó tu pedido N\.º 1\.[\s\S]*\n\nSí, decime\.$/);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos.pedidos[0].avisoPendiente, undefined, 'ya le llegó');
+  // Dentro de las 24 h, el aviso sale solo.
+  const pago = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'pagado' });
+  assert.equal(pago.datos.aviso, true);
+  // Con el pedido abierto, una foto (el comprobante) no la ve la IA ni se contesta: es para el dueño.
+  const consultasIa = ia.length;
+  assert.deepEqual(await llega({ type: 'image', image: { id: 'img1' } }), []);
+  assert.equal(ia.length, consultasIa);
+  // Pasadas otras 24 h, «Ya se lo mandé» borra el aviso guardado.
+  d.now += 25 * 3600_000;
+  const ent = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'entregado' });
+  assert.equal(ent.datos.aviso.pendiente, true);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1/avisado`, {})).status, 200);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos.pedidos[0].avisoPendiente, undefined);
+  // Sin pedido abierto, una foto vuelve a recibir «solo leo mensajes de texto».
+  const foto = await llega({ type: 'image', image: { id: 'img2' } });
+  assert.equal(foto.length, 1);
+  assert.match(foto[0], /solo leo mensajes de texto/);
+  // ZL-158: la app cuenta cada mensaje que mandó el sistema por WhatsApp este mes (Meta cobra pasando los 1.000).
+  const mandados = enviados.filter((e) => e.url.endsWith('/sendDirectly')).length;
+  const mes = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/numeros`)).datos.whatsappMes;
+  assert.deepEqual([mes.enviados, mes.gratis, mes.aviso], [mandados, 1000, 800]);
+  assert.ok(mandados >= 8);
 });

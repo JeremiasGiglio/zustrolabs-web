@@ -46,6 +46,7 @@ test('lectura: un mensaje de texto, uno que no es texto, un botón, un eco del d
   const [t] = leerYCloud(entrante('¿Tienen facturas?'));
   assert.deepEqual({ from: t.from, kind: t.kind, text: t.text, ts: t.ts }, { from: 'yc:5493410000001:5493410000009', kind: 'text', text: '¿Tienen facturas?', ts: T0 / 1000 });
   assert.equal(leerYCloud(entrante('', { type: 'image', text: undefined, image: { id: 'x' } }))[0].kind, 'otro');
+  assert.deepEqual(leerYCloud(entrante('', { type: 'sticker', text: undefined, sticker: { id: 'x' } })), [], 'ZL-157: un sticker no se contesta');
   assert.equal(leerYCloud(entrante('', { type: 'button', text: undefined, button: { text: 'Sí' } }))[0].text, 'Sí');
   assert.deepEqual(leerYCloud(eco('ya te contesto yo')), [{ eco: true, from: 'yc:5493410000001:5493410000009', ts: T0 / 1000 }]);
   // Una reacción (👍 a un mensaje del dueño) no es un mensaje para contestar.

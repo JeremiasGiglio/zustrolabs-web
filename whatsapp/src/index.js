@@ -8,7 +8,7 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
 import { conAjustes, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
-import { ajustesDeVenta } from './atencion.js';
+import { ajustesDeVenta, limiteDiaDe } from './atencion.js';
 import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
@@ -90,22 +90,51 @@ function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
   const catalogo = consultaCatalogo(env, deps, dueño?.id, ficha);
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
   return async (texto, idioma, opciones) => {
-    if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > (dueño.limiteDia ?? 300)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
+    if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > limiteDiaDe(dueño)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
     return ia(texto, idioma, opciones);
   };
 }
 
 /**
+ * ZL-158: el cupo de IA antes de responder. Cada negocio tiene el suyo (LIMITE_NEGOCIO, 60 por minuto: uno con mucho
+ * movimiento no frena a los demás) y hay uno de seguridad para toda la cuenta (LIMITE_GLOBAL, 1.000 por minuto). Si
+ * un cupo está lleno, se espera y se reintenta (dos veces, 4 s) en vez de pedirle a la persona que vuelva a escribir.
+ * `deps.esperaCupoMs`: en Cloudflare 4 s; en las pruebas, 0.
+ */
+export function cupoDeIa(env, negocioId, deps = {}, intentos = 3) {
+  const espera = deps.esperaCupoMs ?? (deps.rafagaMs ? 4000 : 0);
+  const dormir = deps.dormir ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  return async () => {
+    for (let i = 1; i <= intentos; i++) {
+      const negocio = !negocioId || !env.LIMITE_NEGOCIO?.limit || (await env.LIMITE_NEGOCIO.limit({ key: `ia:${negocioId}` })).success;
+      const global = negocio && (await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success;
+      if (negocio && global) return 'ok';
+      if (i < intentos && espera > 0) await dormir(espera);
+    }
+    console.log(JSON.stringify({ canal: 'ia', que: 'cupo_lleno', negocio: Boolean(negocioId) }));
+    return 'global';
+  };
+}
+
+/** ZL-157: Meta deja escribirle solo dentro de las 24 h de su último mensaje; con media hora de margen. */
+export const VENTANA_SEGURA_MS = 23.5 * 3600_000;
+
+/**
  * Le avisa al comprador por el mismo canal del pedido (ZL-139): Instagram con el token de la cuenta del negocio, o
  * WhatsApp con la clave de YCloud del número del negocio. Solo cuentas y números de ESE negocio. → true o el motivo.
+ * ZL-157: fuera de las 24 h de su último mensaje ni se intenta (YCloud acepta el envío y Meta lo rechaza después, sin
+ * que nos enteremos): devuelve 'fuera_24h' y quien llama guarda el aviso para cuando vuelva a escribir.
  */
-async function avisarComprador(env, a, negocio, charla, texto, fetchImpl = fetch) {
+async function avisarComprador(env, a, negocio, charla, texto, fetchImpl = fetch, now = Date.now()) {
   const msg = { to: charla, text: { body: String(texto).slice(0, 1000) } };
   try {
+    const e = a.memoria ? await a.memoria.get(claveMemoria(charla)) : null;
+    if (!e?.ultimo || now - e.ultimo > VENTANA_SEGURA_MS) return 'fuera_24h';
     if (/^yc:\d+:\d+$/.test(charla)) {
       const reg = ((await a.ycloud?.list?.()) ?? []).find((r) => r.negocio === negocio.id && normalizar(r.numero) === normalizar(numeroDeCharla(charla)));
       if (!reg) return 'el número ya no está conectado';
       await enviarYCloud(reg.apiKey, msg, fetchImpl);
+      await contarEnviadoWa(a, negocio, now);
       return true;
     }
     const cuenta = /^ig:(\d+)\./.exec(charla)?.[1];
@@ -147,7 +176,33 @@ function pausasDeCharla(a, now) {
       const e = await a.memoria.get(clave(charla));
       if (e) await a.memoria.put(clave(charla), { ...e, humanoHasta: 0, pase: null, consulta: null });
     },
+    /**
+     * ZL-157: un aviso de pedido que no pudo salir solo (fuera de las 24 h) queda guardado: el asistente se lo dice
+     * primero la próxima vez que esa persona escriba. Como mucho los 3 últimos.
+     */
+    /** ZL-157: los avisos guardados de esa charla (para que la app los muestre en la tarjeta del pedido). */
+    async avisos(charla) {
+      const e = await a.memoria.get(clave(charla));
+      return Array.isArray(e?.avisos) ? e.avisos : [];
+    },
+    /** ZL-157: el dueño ya se lo mandó él: se borran los avisos de ese pedido. */
+    async quitarAvisos(charla, numero) {
+      const e = await a.memoria.get(clave(charla));
+      if (!e?.avisos?.length) return;
+      await a.memoria.put(clave(charla), { ...e, avisos: e.avisos.filter((t) => !new RegExp(`N\\.º ${Number(numero)}(?!\\d)`).test(String(t))) });
+    },
+    async guardarAviso(charla, texto) {
+      const e = (await a.memoria.get(clave(charla))) ?? {};
+      await a.memoria.put(clave(charla), { ...e, humanoHasta: e.humanoHasta ?? 0, avisos: [...(e.avisos ?? []), String(texto)].slice(-3) });
+    },
   };
+}
+
+/** ZL-158: cada mensaje que manda el sistema por WhatsApp (Meta cobra pasando los 1.000 por número por mes). */
+async function contarEnviadoWa(a, negocio, now, n = 1) {
+  if (!negocio?.id || !a.negocios?.sumarMetrica) return;
+  const dia = diaLocal(now, ajustesDeVenta(negocio.ajustes).zona);
+  for (let i = 0; i < n; i++) await a.negocios.sumarMetrica(negocio.id, 'enviadosWa', dia).catch(() => {});
 }
 
 /** Pedidos por chat de un negocio (ZL-139), si los tiene encendidos y una base de productos. */
@@ -176,6 +231,12 @@ async function despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, ev, r, n
     if (r.metrica === 'pedido_nuevo' && r.pedido) aviso = { titulo: 'Pedido nuevo', cuerpo: `Pedido N.º ${r.pedido} por ${canal}. Abrí la app para aceptarlo.` };
     else if (r.consulta && r.handoff) aviso = { titulo: 'Alguien necesita al negocio', cuerpo: `Consulta N.º ${r.consulta} por ${canal}. El asistente espera 15 minutos a que la tomes.` };
     else if (r.consulta && r.metrica === 'consulta') aviso = { titulo: 'Consulta nueva', cuerpo: `Consulta N.º ${r.consulta} por ${canal}: quiere avanzar.` };
+    // ZL-157: con un pedido abierto, una foto, un archivo o un audio (el comprobante, casi siempre) es para el dueño.
+    else if (r.metrica === 'archivo_pedido' && r.pedido) aviso = { titulo: 'Te mandó un archivo', cuerpo: `Pedido N.º ${r.pedido} por ${canal}: te mandó ${r.archivo === 'audio' ? 'un audio' : 'una foto o un archivo'}. Miralo en tu ${canal}.` };
+    // ZL-158: el negocio llegó a su tope de respuestas del día: las charlas pasan al equipo; el dueño se entera una vez.
+    if (!aviso && r.notas?.includes?.('tope_negocio') && (await a.negocios.sumarMetrica(dueño.id, 'topes', dia)) === 1) {
+      aviso = { titulo: 'El asistente llegó a su tope de hoy', cuerpo: `Ya respondió ${limiteDiaDe(dueño)} mensajes hoy: lo que llegue hasta mañana te lo pasa a vos. Si pasa seguido, escribinos para subirlo.` };
+    }
     if (aviso) await avisarNegocio(a, dueño.id, aviso, fetchImpl, now);
   } catch (e) {
     console.log(JSON.stringify({ canal: 'negocio', que: 'despues', error: String(e?.message ?? 'error').slice(0, 60) }));
@@ -190,6 +251,41 @@ async function avisarNegocio(a, negocioId, aviso, fetchImpl, now) {
   if (r.muertas.length) await a.negocios.borrarPush(negocioId, r.muertas);
   console.log(JSON.stringify({ canal: 'negocio', que: 'aviso_celular', enviados: r.enviados, muertas: r.muertas.length }));
   return r.enviados;
+}
+
+/**
+ * ZL-157, cada 10 minutos: un pedido pendiente no se vence, así que al dueño se le recuerda al celular a la hora y a las
+ * 20 h (antes de que Meta cierre las 24 h para avisarle solo al comprador). Cada recordatorio sale una sola vez.
+ */
+export async function recordarPedidos(env, deps, now) {
+  const a = almacen(env, deps);
+  const fetchImpl = deps.fetch ?? fetch;
+  if (!a.negocios?.list || !a.negocios.suscripcionesPush) return [];
+  const out = [];
+  for (const negocio of await a.negocios.list()) {
+    if (!negocio?.pedidos) continue;
+    const cat = catalogoDe(env, deps)(negocio.id);
+    const r = cat ? await cat.ejecutar('recordatorios', [now]).catch(() => null) : null;
+    for (const p of r?.ok ? r.valor : []) {
+      const canal = /^yc:/.test(p.charla) ? 'WhatsApp' : 'Instagram';
+      let aviso;
+      if (p.tipo === '1h') {
+        aviso = { titulo: `Pedido N.º ${p.numero} espera tu respuesta`, cuerpo: `Lo pidieron hace una hora por ${canal}. Aceptalo o rechazalo: los productos siguen reservados.` };
+      } else {
+        const e = a.memoria ? await a.memoria.get(claveMemoria(p.charla)).catch(() => null) : null;
+        const cierra = (e?.ultimo ?? p.desde) + 24 * 3600_000;
+        const zona = ajustesDeVenta(negocio.ajustes).zona;
+        const hora = new Intl.DateTimeFormat('es-AR', { timeZone: zona, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(cierra));
+        aviso = cierra > now
+          ? { titulo: `Pedido N.º ${p.numero}: aceptalo antes de las ${hora}`, cuerpo: `A las ${hora} se cierran las 24 h de ${canal}: después el aviso no le llega solo y se lo tenés que mandar vos.` }
+          : { titulo: `Pedido N.º ${p.numero} sigue esperando`, cuerpo: `Cuando lo aceptes o lo rechaces, la app te deja el mensaje listo para mandárselo por ${canal}.` };
+      }
+      await avisarNegocio(a, negocio.id, aviso, fetchImpl, now);
+      out.push({ que: 'recordatorio', tipo: p.tipo });
+    }
+  }
+  if (out.length) console.log(JSON.stringify({ canal: 'pedidos', que: 'recordatorios', n: out.length }));
+  return out;
 }
 
 /**
@@ -226,7 +322,7 @@ export async function seguimientos(env, deps, now) {
     }
     const T = perfilNegocio(pf.ficha).textos(e.idioma);
     const texto = e.seguir.tipo === 'carrito' ? T.seguirCarrito : T.seguirConsulta;
-    const enviado = await avisarComprador(env, a, negocio, charla, texto, fetchImpl);
+    const enviado = await avisarComprador(env, a, negocio, charla, texto, fetchImpl, now);
     await a.memoria.put(num, { ...e, seguir: null, seguidos: (e.seguidos ?? 0) + 1 });
     if (enviado === true) await a.negocios.sumarMetrica?.(negocio.id, 'seguimientos', diaLocal(now, ajustesDeVenta(negocio.ajustes).zona));
     out.push({ que: enviado === true ? 'enviado' : 'no_enviado', tipo: e.seguir.tipo });
@@ -409,7 +505,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       // Por persona: pasado el límite, silencio (contestar cada mensaje sería otra forma de abuso).
       if (!(await env.LIMITE.limit({ key: esInstagram(ev.from) ? ev.from : `wa:${ev.from}` })).success) { log({ ok: true, que: 'limite' }); continue; }
       // El de toda la cuenta (los dos canales juntos) se mira recién antes de gastar IA (no corta la atención humana ni BORRAR).
-      const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
+      const cupo = cupoDeIa(env, negocio ? dueñoEv?.id : null, deps);
       // Un negocio: los mensajes seguidos van en uno solo (ZL-149).
       const listo = negocio ? await prepararEvento(ev, { deps, memoria: a.memoria, clave: ev.from }) : ev;
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
@@ -492,9 +588,9 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
   if (!eventos.length) return;
   const a = almacen(env, deps);
   const now = deps.now ?? Date.now();
-  const mandar = (m) => enviarYCloud(reg.apiKey, m, fetchImpl);
   // Igual que una cuenta de Instagram de cliente: sin negocio, sin WhatsApp encendido o sin ficha activa, no responde.
   const dueño = await a.negocios?.get(reg.negocio);
+  const mandar = async (m) => { await enviarYCloud(reg.apiKey, m, fetchImpl); await contarEnviadoWa(a, dueño, now); };
   if (!dueño) { log({ ok: true, que: 'sin_negocio' }); return; }
   if (!canalesDe(dueño).whatsapp) { log({ ok: true, que: 'canal_apagado' }); return; }
   const f = await a.negocios.ficha(dueño.id);
@@ -523,7 +619,8 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       if (memoria) {
         const estado = await memoria.get(ev.from);
         // Lo tomó el dueño: la pausa es la de la ficha y ya no vuelve el asistente a los 15 minutos (ZL-149).
-        await memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000, pase: 0 });
+        // ZL-157: si le escribió él, los avisos de pedido guardados ya no hacen falta.
+        await memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil.horasPausa ?? 12) * 3600_000, pase: 0, avisos: [] });
       }
       log({ ok: true, que: 'eco' });
       continue;
@@ -531,7 +628,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
     try {
       if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { log({ ok: false, que: 'config' }); continue; }
       if (!(await env.LIMITE.limit({ key: ev.from })).success) { log({ ok: true, que: 'limite' }); continue; }
-      const cupo = async () => ((await env.LIMITE_GLOBAL.limit({ key: 'ia' })).success ? 'ok' : 'global');
+      const cupo = cupoDeIa(env, dueño.id, deps);
       const listo = await prepararEvento(ev, { deps, memoria: a.memoria, clave: claveMemoria(ev.from) });
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
       const antes = await memoria?.get(ev.from);
@@ -854,7 +951,7 @@ export default {
       return appNegocios(request, env, {
         ...a, fetch: fetchImpl, now: deps.now, catalogo: catalogoDe(env, deps), esCliente: (c) => esCliente(env, c),
         probar: (ficha, negocioId, mensajes, estado) => probarFicha(env, ficha, mensajes, deps, negocioId, estado),
-        avisarComprador: (negocio, charla, texto) => avisarComprador(env, a, negocio, charla, texto, fetchImpl),
+        avisarComprador: (negocio, charla, texto) => avisarComprador(env, a, negocio, charla, texto, fetchImpl, deps.now ?? Date.now()),
         charlasNegocio: pausasDeCharla(a, deps.now),
         verificar: (id, op) => datosVerificar(env, deps, id, deps.now ?? Date.now(), op),
         ...(deps.llamarWeb && { llamarWeb: deps.llamarWeb }),
@@ -877,7 +974,13 @@ export default {
   /** Cron diario: renueva los tokens de Instagram que están por vencer y comprueba que cada cuenta siga suscripta. */
   async scheduled(evento, env, _ctx, deps = {}) {
     // Cada 10 minutos (ZL-151): los recordatorios con permiso. Una vez por día: el mantenimiento de Instagram.
-    if (evento?.cron === '*/10 * * * *') return seguimientos(env, deps, deps.now ?? Date.now());
+    if (evento?.cron === '*/10 * * * *') {
+      const now = deps.now ?? Date.now();
+      // ZL-157: los pedidos sin responder no se vencen: el dueño recibe recordatorios al celular.
+      const recordados = await recordarPedidos(env, deps, now).catch((e) => (console.log(JSON.stringify({ canal: 'pedidos', que: 'recordatorios', error: String(e?.message ?? 'error').slice(0, 60) })), []));
+      const seguidos = await seguimientos(env, deps, now);
+      return [...recordados, ...seguidos];
+    }
     const fetchImpl = deps.fetch ?? fetch;
     const { cuentas } = almacen(env, deps);
     if (!cuentas) { console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', error: 'sin memoria' })); return []; }

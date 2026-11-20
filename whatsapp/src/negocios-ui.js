@@ -92,6 +92,7 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .tarjeta .acciones{margin-top:.6rem}
 .contacto{margin:.4rem 0;font-size:.95rem;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;overflow-wrap:anywhere}
 .btn.chico{padding:.15rem .6rem;font-size:.8rem;min-height:0}
+.cita{white-space:pre-line;background:#fff;border:1px solid var(--linea);border-radius:8px;padding:.5rem .7rem;margin:.4rem 0}
 .pausa{background:#FFF4E5;border:1px solid #F5D3A6;color:var(--alerta);border-radius:8px;padding:.4rem .6rem;font-size:.85rem;margin:.4rem 0}
 @media (max-width:699px){
   .yo{display:none}.top{padding:.5rem .8rem}.top select{max-width:11rem}
@@ -292,7 +293,7 @@ function app() {
           tarjeta(s.charlas, 'charlas atendidas'), tarjeta(s.mensajes, 'mensajes recibidos'), tarjeta(s.respuestas, 'respuestas del asistente'),
           tarjeta(s.consultas, 'consultas'), tarjeta(s.ganadas, 'consultas ganadas'), tarjeta(s.pedidos, 'pedidos'),
           tarjeta(s.entregados, 'pedidos entregados'), tarjeta(plata(s.vendido), 'vendido'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null),
-        h('p', { class: 'ayuda' }, 'Por WhatsApp: ' + s.canales.whatsapp + ' mensajes · por Instagram: ' + s.canales.instagram + '. Pases al equipo: ' + s.pasesAlEquipo + '. Recordatorios enviados: ' + s.seguimientos + '.'),
+        h('p', { class: 'ayuda' }, 'Por WhatsApp: ' + s.canales.whatsapp + ' mensajes · por Instagram: ' + s.canales.instagram + '. Pases al equipo: ' + s.pasesAlEquipo + '. Recordatorios enviados: ' + s.seguimientos + '.' + (s.enviadosWa ? ' Mensajes que mandó el asistente por WhatsApp: ' + s.enviadosWa + '.' : '')),
         h('div', { class: 'caja' }, h('h3', {}, 'A qué hora te escriben'),
           h('p', { class: 'ayuda' }, s.mensajes ? 'Las horas con más mensajes: ' + r.horasPico.map(hs).join(', ') + '.' : 'Todavía no hay mensajes en este período.'),
           columnas(r.porHora, r.porHora.map((_, i) => hs(i)), (v) => 'Mensajes por hora del día. Más mensajes a las ' + r.horasPico.map(hs).join(', '), 3),
@@ -753,10 +754,30 @@ function app() {
       h('div', { class: 'acciones' }, botones));
   }
 
+  /**
+   * ZL-158: cuántos mensajes mandó el asistente por WhatsApp este mes. Meta da 1.000 gratis por número por mes; pasando
+   * eso cobra cada mensaje (en la cuenta de YCloud del negocio). A los 800 se avisa.
+   */
+  function lineaConsumoWa(w) {
+    if (!w) return null;
+    const pasado = w.enviados > w.gratis;
+    const cerca = w.enviados >= w.aviso;
+    const fmt = (x) => Number(x).toLocaleString('es-AR');
+    return h('p', { class: pasado || cerca ? 'chip alerta' : 'ayuda' },
+      'WhatsApp este mes: ' + fmt(w.enviados) + ' de ' + fmt(w.gratis) + ' mensajes gratis. ' +
+      (pasado ? 'Ya pasaste los gratis: Meta cobra cada mensaje que manda el asistente, en tu cuenta de YCloud.'
+        : cerca ? 'Te quedan ' + fmt(w.gratis - w.enviados) + '. Pasando los ' + fmt(w.gratis) + ', Meta cobra cada mensaje (en tu cuenta de YCloud). Lo que escribís vos desde tu app no cuenta.'
+          : 'Pasando los ' + fmt(w.gratis) + ', Meta cobra cada mensaje que manda el asistente. Lo que escribís vos desde tu app no cuenta.'));
+  }
+
   function tarjetaPedido(p, recargar) {
     const accion = (nuevo, extra) => conError(async () => {
       const r = await api(base() + '/pedidos/' + p.numero, { metodo: 'POST', cuerpo: Object.assign({ estado: nuevo }, extra || {}) });
-      aviso('Pedido N.º ' + p.numero + ': ' + ESTADO_PEDIDO[nuevo].toLowerCase() + (r.aviso === true ? '. Le avisamos al comprador.' : r.aviso ? '. No le pudimos avisar (' + r.aviso + '): escribile vos.' : '.'));
+      // ZL-157: si no le llegó solo, la tarjeta queda con el mensaje listo para mandarlo con un toque.
+      estado.avisosManuales = estado.avisosManuales || {};
+      if (r.aviso && r.aviso.pendiente) estado.avisosManuales[p.numero] = r.aviso;
+      else delete estado.avisosManuales[p.numero];
+      aviso('Pedido N.º ' + p.numero + ': ' + ESTADO_PEDIDO[nuevo].toLowerCase() + (r.aviso === true ? '. Le avisamos al comprador.' : r.aviso && r.aviso.pendiente ? '. Falta avisarle: mandale el mensaje desde la tarjeta.' : '.'));
       await recargar();
     });
     const botones = [];
@@ -764,7 +785,8 @@ function app() {
     if (p.estado === 'aceptado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), h('button', { type: 'button', class: 'btn', onclick: accion('pagado') }, 'Ya pagó'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
     if (p.estado === 'pagado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
     const c = p.comprador || {};
-    const vence = p.vence ? (p.estado === 'pendiente' ? 'Si no lo aceptás antes del ' + hora(p.vence) + ', se cancela solo y los productos vuelven a la venta.' : 'Guardado hasta el ' + hora(p.vence) + ' si no paga.') : null;
+    // ZL-157: un pedido pendiente no se vence: espera a que lo aceptes o lo rechaces (los productos quedan reservados).
+    const vence = p.estado === 'pendiente' ? 'Espera tu respuesta: los productos quedan reservados hasta que lo aceptes o lo rechaces.' : p.vence ? 'Guardado hasta el ' + hora(p.vence) + ' si no paga.' : null;
     return h('article', { class: 'tarjeta pedido' + (p.estado === 'pendiente' ? ' nuevo' : '') },
       h('h3', {}, 'Pedido N.º ' + p.numero + ' · ' + (c.nombre || 'Sin nombre')),
       h('div', { class: 'chips' },
@@ -775,7 +797,33 @@ function app() {
       h('ul', {}, p.items.map((i) => h('li', {}, i.cantidad + ' × ' + i.nombre + (i.subtotal !== null ? ' — ' + plata(i.subtotal) : '')))),
       h('p', {}, h('strong', {}, p.sinPrecio ? 'Total: a confirmar (hay productos sin precio)' : 'Total: ' + plata(p.total))),
       vence ? h('p', { class: 'ayuda' }, vence) : null,
+      cajaAvisoManual(p, recargar),
       h('div', { class: 'acciones' }, botonResponder(p.charla, p.canal, p.contacto), botones));
+  }
+
+  /**
+   * ZL-157: el aviso al comprador que no pudo salir solo (Meta no deja escribirle pasadas las 24 h de su último
+   * mensaje). El dueño lo manda desde su WhatsApp o su Instagram, que no tienen ese límite; y si el comprador vuelve a
+   * escribir antes, el asistente se lo dice primero.
+   */
+  function cajaAvisoManual(p, recargar) {
+    const a = (estado.avisosManuales || {})[p.numero] || p.avisoPendiente;
+    if (!a) return null;
+    const copiar = h('button', { type: 'button', class: 'btn' }, 'Copiar el mensaje');
+    copiar.onclick = () => {
+      try { navigator.clipboard.writeText(a.texto).then(() => { copiar.textContent = 'Copiado'; }, () => {}); } catch (e) { /* nada */ }
+    };
+    const listo = h('button', { type: 'button', class: 'btn' }, 'Ya se lo mandé');
+    listo.onclick = conError(async () => {
+      await api(base() + '/pedidos/' + p.numero + '/avisado', { metodo: 'POST', cuerpo: {} });
+      if (estado.avisosManuales) delete estado.avisosManuales[p.numero];
+      await recargar();
+    });
+    const mandar = a.enlace ? h('a', { class: 'btn prim', href: a.enlace, target: '_blank', rel: 'noopener' }, a.canal === 'whatsapp' ? 'Mandárselo por WhatsApp' : 'Abrir Instagram') : null;
+    return h('div', { class: 'pausa', role: 'status' },
+      h('p', {}, h('strong', {}, 'Falta avisarle al comprador: '), a.motivo + ', así que no le llega solo. Mandáselo vos desde tu ' + (a.canal === 'instagram' ? 'Instagram' : 'WhatsApp') + ' (ahí no hay límite). Si vuelve a escribir antes, el asistente se lo dice primero.'),
+      h('p', { class: 'cita' }, a.texto),
+      h('div', { class: 'acciones' }, mandar, a.canal === 'whatsapp' ? null : copiar, listo));
   }
 
   function vistaPedidos() {
@@ -788,11 +836,12 @@ function app() {
     // ZL-151: avisos al celular aunque la app esté cerrada (Web Push). Sin eso, con la pestaña abierta suena igual.
     const avisos = h('button', { class: 'btn', onclick: conError(activarAvisos) }, 'Avisos en este celular');
     const semana = h('div', { class: 'resumen', 'aria-label': 'Últimos 7 días' });
+    const consumo = h('div', { 'aria-live': 'polite' });
     const caja = h('section', {},
       h('h2', {}, 'Hola' + (estado.datos.negocio.nombre ? ', ' + estado.datos.negocio.nombre : '')),
       h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos.'),
       resumen,
-      h('h3', {}, 'Últimos 7 días'), semana,
+      h('h3', {}, 'Últimos 7 días'), semana, consumo,
       h('div', { class: 'acciones' }, avisos),
       h('h3', {}, 'Consultas para responder'),
       listaConsultas,
@@ -830,6 +879,7 @@ function app() {
         h('div', {}, h('strong', {}, String(n.consultas)), h('span', {}, 'consultas')),
         conPedidos ? h('div', {}, h('strong', {}, String(n.pedidos)), h('span', {}, 'pedidos')) : null,
         h('div', {}, h('strong', {}, String((n.ganadas || 0) + (n.entregados || 0))), h('span', {}, 'ventas cerradas' + (n.vendido ? ' · ' + plata(n.vendido) : ''))));
+      poner(consumo, lineaConsumoWa(n.whatsappMes));
     })();
     // Mientras la pestaña está abierta, se mira cada 20 segundos.
     estado.timerPedidos = setInterval(() => { if (!document.hidden) cargar().catch(() => {}); }, 20000);

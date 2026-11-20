@@ -522,3 +522,16 @@ test('Instagram (ZL-149): respuestas rápidas al mandar; al tocar una llega su i
   const [a] = leerWebhookIg(base({ attachments: [{ type: 'audio', payload: { url: 'https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1' } }] }));
   assert.deepEqual([a.kind, a.audio, a.media], ['otro', true, undefined], 'no se guarda ni se baja el link');
 });
+
+test('ZL-157: por Instagram, un ❤️, un sticker o una mención en una historia no se contestan; una publicación compartida tiene su respuesta', async () => {
+  const evs = leerWebhookIg(aviso([
+    { message: { mid: 'r1', attachments: [{ type: 'like_heart' }] } },
+    { message: { mid: 'r2', attachments: [{ type: 'image', payload: { url: 'https://example.com/s.png', sticker_id: 369239263222822 } }] } },
+    { message: { mid: 'r3', attachments: [{ type: 'story_mention', payload: { url: 'https://example.com/h' } }] } },
+    { message: { mid: 'r4', attachments: [{ type: 'share', payload: { url: 'https://example.com/p' } }] } },
+    { message: { mid: 'r5', attachments: [{ type: 'ig_reel', payload: { reel_video_id: '1' } }] } },
+    { message: { mid: 'r6', is_unsupported: true } },
+    { message: { mid: 'r7', text: 'me encantó esa torta', reply_to: { story: { id: '1', url: 'https://example.com/h' } } } },
+  ]));
+  assert.deepEqual(evs.map((e) => [e.id, e.kind]), [['r4', 'compartido'], ['r5', 'compartido'], ['r7', 'text']]);
+});

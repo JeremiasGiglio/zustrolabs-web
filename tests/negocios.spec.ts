@@ -212,11 +212,16 @@ test.describe('app de negocios (ZL-121)', () => {
     const CHARLA = 'yc:5493410000001:5493410000009';
     let panId = '';
     const { negocio, deps } = await montar(page, 'duena@example.com', async (n, neg, d) => {
-      await n.negocios.guardar(neg.id, { pedidos: true, ajustes: { reservaHoras: 48 } });
+      await n.negocios.guardar(neg.id, { pedidos: true, ajustes: { reservaHoras: 48 }, canales: { instagram: false, whatsapp: true } });
       const cat = d.catalogo(neg.id);
       panId = (await cat.ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'duena@example.com'])).valor.id;
       await cat.ejecutar('carrito', [CHARLA, [{ id: panId, cantidad: 3 }], { canal: 'wa' }]);
       await cat.ejecutar('confirmar', [CHARLA, { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 123' }]);
+      // ZL-157: la compradora escribió por última vez hace 30 h: Meta ya no deja avisarle solo.
+      await n.memoria.put('yc:5493410000001:5493410000009', { idioma: 'es', humanoHasta: 0, ultimo: Date.now() - 30 * 3600_000 });
+      // ZL-158: el asistente ya mandó 850 mensajes por WhatsApp este mes.
+      const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+      for (let i = 0; i < 850; i++) await n.negocios.sumarMetrica(neg.id, 'enviadosWa', hoy);
     });
     const stock = async () => (await deps.catalogo(negocio.id).ejecutar('obtener', [panId])).valor;
     await expect(page.getByRole('tab', { name: 'Inicio' })).toHaveAttribute('aria-selected', 'true');
@@ -233,16 +238,30 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(tarjeta).toContainText('3 × Pan francés — $ 7.500');
     await expect(tarjeta).toContainText('Total: $ 7.500');
     await expect(tarjeta).toContainText('Envío: Calle Ficticia 123');
+    // ZL-157: un pedido pendiente no se vence: espera la respuesta del negocio.
+    await expect(tarjeta).toContainText('Espera tu respuesta: los productos quedan reservados hasta que lo aceptes o lo rechaces.');
+    // ZL-158: cuánto lleva del cupo gratis de WhatsApp del mes, con aviso a partir de 800.
+    await expect(page.locator('.chip.alerta', { hasText: 'WhatsApp este mes' })).toContainText('WhatsApp este mes: 850 de 1.000 mensajes gratis. Te quedan 150.');
     await expect(page.getByRole('button', { name: 'Nuevos (1)' })).toBeVisible();
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
     expect((await stock()).reservado).toBe(3);
     // Aceptar con un toque: cuánto se guarda sin pagar sale de «Cómo vendés» (48 h en este negocio).
     await tarjeta.getByRole('button', { name: 'Aceptar' }).click();
-    // Sin un número conectado, no se le puede avisar al comprador: lo dice.
-    await expect(page.getByText(/Pedido N\.º 1: aceptado\. No le pudimos avisar/)).toBeVisible();
+    // ZL-157: pasaron más de 24 h desde su último mensaje: el aviso no sale solo y la tarjeta deja el mensaje listo.
+    await expect(page.getByText('Pedido N.º 1: aceptado. Falta avisarle: mandale el mensaje desde la tarjeta.')).toBeVisible();
     await page.getByRole('button', { name: /Aceptados/ }).click();
     await expect(tarjeta).toContainText('Guardado hasta el');
+    const falta = tarjeta.getByRole('status');
+    await expect(falta).toContainText('Falta avisarle al comprador: pasaron más de 24 h desde su último mensaje');
+    await expect(falta).toContainText('¡Listo! Panadería La Espiga aceptó tu pedido N.º 1.');
+    await expect(falta.getByRole('link', { name: 'Mandárselo por WhatsApp' })).toHaveAttribute('href', /^https:\/\/wa\.me\/5493410000009\?text=%C2%A1Listo!%20Panader%C3%ADa/);
+    // Sigue ahí aunque se recargue la app, hasta que el dueño dice que ya se lo mandó.
+    await page.reload();
+    await page.getByRole('button', { name: /Aceptados/ }).click();
+    await expect(tarjeta.getByRole('status')).toContainText('Falta avisarle al comprador');
+    await tarjeta.getByRole('button', { name: 'Ya se lo mandé' }).click();
+    await expect(tarjeta.getByRole('status')).toHaveCount(0);
     const vence = (await deps.catalogo(negocio.id).ejecutar('pedido', [1])).valor.vence - Date.now();
     expect(Math.round(vence / 3600_000)).toBe(48);
     await tarjeta.getByRole('button', { name: 'Ya pagó' }).click();

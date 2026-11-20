@@ -192,10 +192,10 @@ const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
 /** Llama a la API de Claude. Devuelve { salida, uso } o tira un Error con un motivo corto (sin datos de la persona). */
 // `validar`: el control del formato de la salida. Por defecto, el del asistente de la landing; las fichas de negocio
 // (whatsapp/src/negocio.js) pasan el suyo, que tiene otros campos (ZL-125).
-export async function llamarClaude(cuerpo, { apiKey, fetchImpl = fetch, esperaMs = LIMITES.esperaMs, pausaMs = 1200, validar = cumpleEsquema } = {}) {
+export async function llamarClaude(cuerpo, { apiKey, fetchImpl = fetch, esperaMs = LIMITES.esperaMs, pausaMs = 1200, validar = cumpleEsquema, intentos = 3 } = {}) {
   if (!apiKey) throw new Error('config');
   let res, data;
-  for (let intento = 1; intento <= 2; intento++) {
+  for (let intento = 1; intento <= intentos; intento++) {
     res = await fetchImpl('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -204,8 +204,13 @@ export async function llamarClaude(cuerpo, { apiKey, fetchImpl = fetch, esperaMs
     });
     data = await res.json().catch(() => ({}));
     if (res.ok) break;
-    if (![429, 500, 502, 503, 529].includes(res.status) || intento === 2) throw new Error(`api-${res.status}`);
-    await dormir(pausaMs);
+    if (![429, 500, 502, 503, 529].includes(res.status) || intento === intentos) throw new Error(`api-${res.status}`);
+    // Tope de gasto del mes: reintentar no sirve.
+    if (data?.error?.details?.error_code === 'enforced_spend_limit_reached') throw new Error('api-tope-mensual');
+    // ZL-158: si la API dice cuánto esperar (retry-after), se respeta, hasta 8 segundos; si no, una pausa que crece.
+    const pide = Number(res.headers?.get?.('retry-after'));
+    // (`pausaMs` 0 = sin esperas, en las pruebas.)
+    await dormir(pausaMs <= 0 ? 0 : Number.isFinite(pide) && pide > 0 ? Math.min(pide * 1000, 8000) : pausaMs * intento);
   }
   if (data.stop_reason === 'refusal') throw new Error('rechazo');
   if (data.stop_reason === 'max_tokens') throw new Error('cortada');

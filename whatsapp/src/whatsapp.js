@@ -225,7 +225,28 @@ const juntar = (...partes) => partes.filter((x) => String(x ?? '').trim()).join(
  */
 // `pedidos` (ZL-139): pedidosDeCharla() de pedidos-charla.js, solo para un negocio con pedidos encendidos.
 // `consultas` (ZL-146): consultasDeCharla() de consultas.js, para registrar consultas y pases al equipo de un negocio.
-export async function atender(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null }) {
+export async function atender(ev, deps) {
+  const r = await atenderEvento(ev, deps);
+  const { memoria, perfil = PERFIL_ESTUDIO, now = Date.now() } = deps ?? {};
+  if (perfil.negocio !== true || !memoria || r.metrica === 'repetido') return r;
+  // ZL-157: cualquier mensaje de la persona (también una foto o un audio) abre las 24 h de Meta: queda anotado, así el
+  // aviso de su pedido sale solo mientras se puede.
+  let e = (await memoria.get(ev.from)) ?? null;
+  if (e && e.ultimo !== now && r.metrica !== 'borrar') {
+    e = { ...e, humanoHasta: e.humanoHasta ?? 0, ultimo: now };
+    await memoria.put(ev.from, e);
+  }
+  // ZL-157: los avisos de pedido que no pudieron salir (fuera de las 24 h) se dicen ahora, primero, en el mismo mensaje.
+  const avisos = Array.isArray(e?.avisos) ? e.avisos.filter(Boolean) : [];
+  if (!avisos.length || r.metrica === 'borrar') return r;
+  await memoria.put(ev.from, { ...e, avisos: [] });
+  const cuerpo = avisos.join('\n\n');
+  const i = r.send.findIndex((m) => typeof m.text?.body === 'string');
+  const send = i >= 0 ? r.send.map((m, j) => (j === i ? { ...m, text: { ...m.text, body: `${cuerpo}\n\n${m.text.body}` } } : m)) : [msgTexto(ev.from, cuerpo), ...r.send];
+  return { ...r, send, avisos: avisos.length };
+}
+
+async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
   let estado = (memoria && (await memoria.get(ev.from))) || null;
   // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
@@ -335,7 +356,15 @@ export async function atender(ev, { memoria, charlas = null, preguntar, now = Da
     if (neg) await recordar(ev.text, T.menu);
     return { send: [msgTexto(ev.from, T.menu, neg ? perfil.menuOpciones(idioma) : null)], metrica: 'menu' };
   }
-  // Un audio: el asistente avisa que no escucha audios; una foto o un sticker, que lo escriba.
+  // ZL-157: con un pedido abierto, una foto, un archivo o un audio (el comprobante, casi siempre) es para el negocio: la
+  // IA no lo mira ni contesta, y al dueño le llega un aviso.
+  if (ev.kind === 'otro' && neg && pedidos?.abierto) {
+    const n = await pedidos.abierto().catch(() => null);
+    if (n) return { send: [], metrica: 'archivo_pedido', pedido: n, archivo: ev.audio ? 'audio' : 'archivo' };
+  }
+  // ZL-157: una publicación de Instagram compartida: no la vemos, así que se le pregunta qué quiere saber.
+  if (ev.kind === 'compartido') return { send: [msgTexto(ev.from, T.compartido ?? T.soloTexto)], metrica: 'compartido' };
+  // Un audio: el asistente avisa que no escucha audios; una foto, que lo escriba.
   if (ev.kind === 'otro') return { send: [msgTexto(ev.from, ev.audio && T.sinAudio ? T.sinAudio : T.soloTexto)], metrica: ev.audio ? 'audio' : 'otro' };
 
   // Los pasos fijos de un pedido (SÍ, retiro o envío, nombre, dirección, CANCELAR, PEDIDO) van antes que el menú y la
