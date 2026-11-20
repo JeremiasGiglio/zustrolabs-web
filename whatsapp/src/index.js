@@ -7,10 +7,10 @@
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
-import { conAjustes, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { conAjustes, conAvisoDia, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
 import { ajustesDeVenta, limiteDiaDe } from './atencion.js';
 import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
-import { avisar, panel } from './panel.js';
+import { avisar, avisarEquipo, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
 import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, webhookDeYCloud } from './ycloud.js';
@@ -74,8 +74,8 @@ const catalogoDe = (env, deps) => deps.catalogo ?? ((id) => (env.CATALOGO ? env.
 const consultaCatalogo = (env, deps, negocioId, ficha) => {
   const cat = negocioId ? catalogoDe(env, deps)(negocioId) : null;
   if (!cat) return null;
-  return async (texto, { refs = false } = {}) => {
-    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios, refs }]);
+  return async (texto, { refs = false, contexto = '' } = {}) => {
+    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios, refs, contexto }]);
     return r?.ok ? r.valor : null;
   };
 };
@@ -86,7 +86,9 @@ const consultaCatalogo = (env, deps, negocioId, ficha) => {
  */
 function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
   // ZL-149: lo que carga el negocio en «Cómo vendés» (retiro, envío, pago) también lo sabe el asistente.
-  const ficha = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
+  const conVenta = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
+  // ZL-159: el aviso del día del dueño, mientras esté vigente.
+  const ficha = conAvisoDia(conVenta, dueño?.avisoDia, deps.now ?? Date.now());
   const catalogo = consultaCatalogo(env, deps, dueño?.id, ficha);
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
   return async (texto, idioma, opciones) => {
@@ -115,6 +117,9 @@ export function cupoDeIa(env, negocioId, deps = {}, intentos = 3) {
     return 'global';
   };
 }
+
+/** ZL-159: la pausa que puso el dueño (con la zona horaria del negocio, para decir cuándo vuelven). */
+const conPausa = (perfil, dueño) => (dueño?.pausa ? { ...perfil, pausa: { ...dueño.pausa, zona: ajustesDeVenta(dueño.ajustes).zona } } : perfil);
 
 /** ZL-157: Meta deja escribirle solo dentro de las 24 h de su último mensaje; con media hora de margen. */
 export const VENTANA_SEGURA_MS = 23.5 * 3600_000;
@@ -280,12 +285,49 @@ export async function recordarPedidos(env, deps, now) {
           ? { titulo: `Pedido N.º ${p.numero}: aceptalo antes de las ${hora}`, cuerpo: `A las ${hora} se cierran las 24 h de ${canal}: después el aviso no le llega solo y se lo tenés que mandar vos.` }
           : { titulo: `Pedido N.º ${p.numero} sigue esperando`, cuerpo: `Cuando lo aceptes o lo rechaces, la app te deja el mensaje listo para mandárselo por ${canal}.` };
       }
-      await avisarNegocio(a, negocio.id, aviso, fetchImpl, now);
+      const llegaron = await avisarNegocio(a, negocio.id, aviso, fetchImpl, now);
+      // ZL-159: si el negocio no tiene los avisos activados, nadie se entera: a la hora, se le avisa al equipo.
+      if (p.tipo === '1h' && !llegaron) {
+        await correoAlEquipo(env, deps)(`un pedido de ${negocio.nombre} espera sin que nadie se entere`, [
+          `El pedido N.º ${p.numero} de ${negocio.nombre} (por ${canal}) espera hace una hora y el negocio no tiene los avisos al celular activados.`,
+          'Conviene avisarle al negocio y ayudarlo a activar «Avisos en este celular» en Inicio.',
+        ]).catch(() => false);
+      }
       out.push({ que: 'recordatorio', tipo: p.tipo });
     }
   }
   if (out.length) console.log(JSON.stringify({ canal: 'pedidos', que: 'recordatorios', n: out.length }));
   return out;
+}
+
+/** ZL-159: el correo al equipo (en las pruebas, `deps.avisarEquipo`). */
+const correoAlEquipo = (env, deps) => deps.avisarEquipo ?? ((asunto, lineas) => avisarEquipo(env, asunto, lineas));
+
+/**
+ * ZL-159, una vez por día: el semáforo de cada negocio con algún canal encendido (sin charla de prueba, no gasta IA).
+ * Si algo está en rojo (un token vencido, un webhook borrado, una ficha apagada), un solo correo al equipo con todo.
+ */
+export async function revisarNegocios(env, deps, now) {
+  const a = almacen(env, deps);
+  if (!a.negocios?.list) return [];
+  const rojos = [];
+  for (const n of await a.negocios.list()) {
+    const c = canalesDe(n);
+    if (!c.instagram && !c.whatsapp) continue;
+    const r = await datosVerificar(env, deps, n.id, now, { charla: false }).catch(() => null);
+    const mal = (r?.controles ?? []).filter((x) => x.estado === 'mal');
+    if (mal.length) rojos.push({ nombre: n.nombre, mal: mal.map((x) => `${x.texto}${x.arreglo ? ` → ${x.arreglo}` : ''}`) });
+  }
+  if (rojos.length) {
+    await correoAlEquipo(env, deps)(`${rojos.length === 1 ? 'un negocio tiene' : `${rojos.length} negocios tienen`} algo en rojo`, [
+      'El semáforo de cada negocio, revisado hoy:',
+      '',
+      ...rojos.flatMap((x) => [`${x.nombre}:`, ...x.mal.map((m) => `  - ${m}`), '']),
+      'Detalle: Admin → el negocio → Verificar, o Conexiones → Estado.',
+    ]).catch(() => false);
+  }
+  console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', rojos: rojos.length }));
+  return rojos;
 }
 
 /**
@@ -489,8 +531,8 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
       const pf = parsearFicha(f.texto);
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
-      perfil = perfilNegocio(pf.ficha);
       const dueño = await a.negocios?.deCuenta(ev.cuenta);
+      perfil = conPausa(perfilNegocio(pf.ficha), dueño);
       dueñoEv = dueño;
       // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
@@ -597,7 +639,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
   if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); return; }
   const pf = parsearFicha(f.texto);
   if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); return; }
-  const perfil = perfilNegocio(pf.ficha);
+  const perfil = conPausa(perfilNegocio(pf.ficha), dueño);
   const preguntar = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'WhatsApp');
   // La memoria guarda cada charla con los números normalizados: así el eco del dueño pausa la misma charla aunque Meta
   // escriba el número de la persona distinto (con o sin el 9). Para responder se usa el número tal como vino.
@@ -986,6 +1028,8 @@ export default {
     if (!cuentas) { console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', error: 'sin memoria' })); return []; }
     const r = await mantenerCuentas(env, cuentas, fetchImpl, deps.now ?? Date.now()).catch((e) => [{ error: String(e?.name ?? 'Error').slice(0, 40) }]);
     console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', cuentas: r }));
+    // ZL-159: después del mantenimiento, el semáforo de todos los negocios; si algo está en rojo, correo al equipo.
+    await revisarNegocios(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', error: String(e?.message ?? 'error').slice(0, 60) })));
     return r;
   },
 };

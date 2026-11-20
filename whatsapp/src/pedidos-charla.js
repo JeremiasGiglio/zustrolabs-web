@@ -166,6 +166,11 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
       return { texto: lineas.join('\n'), montos: [...new Set(montos.filter(Boolean))] };
     },
 
+    /** ZL-159: BORRAR también borra sus datos de los pedidos cerrados (los abiertos los necesita el negocio). */
+    async olvidar() {
+      await op('olvidarCompradores', [{ charla }]).catch(() => null);
+    },
+
     /** ZL-157: el número del pedido abierto de esta persona (pendiente, aceptado o pagado), o null. */
     async abierto() {
       const lista = await op('comprasDe', [charla, 3]).catch(() => null);

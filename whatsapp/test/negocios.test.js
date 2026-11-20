@@ -700,3 +700,57 @@ test('ZL-157: el pedido pendiente espera al dueño; pasadas las 24 h el aviso qu
   assert.deepEqual([mes.enviados, mes.gratis, mes.aviso], [mandados, 1000, 800]);
   assert.ok(mandados >= 8);
 });
+
+test('ZL-159: roles, pausa con mensaje de ausencia (una vez por persona), aviso del día en la información del asistente y charla de prueba del dueño con tope', async () => {
+  const { d, a, pedir, enviados } = await armar();
+  const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  // El empleado: ve pedidos y productos, no configura.
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['empleado@example.com'], canales: { instagram: true, whatsapp: true } })).status, 200);
+  assert.equal((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.rol, 'empleado');
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.rol, 'dueño');
+  assert.equal((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}/pedidos`)).status, 200);
+  for (const [m, r, c] of [['PUT', '/ajustes', { pago: 'x' }], ['PUT', '/asistente', { pausa: null }], ['POST', '/whatsapp', { numero: '+5493410000001', apiKey: CLAVE_YC }], ['DELETE', `/instagram/${CUENTA_A}`]]) {
+    const x = await pedir('empleado@example.com', m, `/api/n/${a.id}${r}`, c);
+    assert.equal(x.status, 403, `${m} ${r}`);
+    assert.equal(x.datos.error, 'eso lo cambia el dueño del negocio');
+  }
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['duena@example.com', 'empleado@example.com'] })).datos.error, 'tiene que quedar al menos un dueño');
+  // Aviso del día: entra en lo que sabe el asistente mientras está vigente.
+  const vio = [];
+  d.preguntarNegocio = (f) => async (texto) => (vio.push(f.conocimiento), { respuesta: 'Te cuento.', persona: false, fuera_de_tema: false, vacia: false, notas: [] });
+  const av = await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { avisoDia: { texto: 'Hoy no hay medialunas. <b>', hasta: T0 + 3600_000 } });
+  assert.equal(av.status, 200);
+  assert.equal(av.datos.avisoDia.texto, 'Hoy no hay medialunas.', 'sin marcas');
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A] });
+  let n = 0;
+  const ig = async (texto, quien = '17841400000000101') => {
+    const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ sender: { id: quien }, recipient: { id: CUENTA_A }, timestamp: T0, message: { mid: `z${++n}`, text: texto } }] }] });
+    const antes = enviados.length;
+    await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'x-hub-signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d);
+    return enviados.slice(antes).filter((e) => /\/messages$/.test(e.url)).map((e) => e.body.message.text);
+  };
+  await ig('hola');
+  await ig('¿tienen medialunas?');
+  assert.match(vio.at(-1), /## Aviso de hoy \(lo carga el negocio, manda sobre lo de arriba\)\nHoy no hay medialunas\./);
+  // Pausa: a cada persona se le dice UNA vez cuándo vuelven (con el mensaje del dueño); la IA no responde.
+  const p = await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { pausa: { hasta: T0 + 2 * 86_400_000, mensaje: 'Estamos de vacaciones 🌴' } });
+  assert.equal(p.status, 200);
+  const consultas = vio.length;
+  const t1 = await ig('hola, ¿están?', '17841400000000102');
+  assert.equal(t1.length, 1);
+  assert.match(t1[0], /^Estamos de vacaciones 🌴\n\n\(Volvemos el .+ y te respondemos apenas estemos de vuelta\.\)$/);
+  assert.deepEqual(await ig('¿hola?', '17841400000000102'), [], 'la segunda vez, nada');
+  assert.equal(vio.length, consultas, 'sin IA durante la pausa');
+  // Encendido otra vez: responde la IA.
+  await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { pausa: null });
+  assert.equal((await ig('¿y facturas?', '17841400000000102')).length, 1);
+  assert.equal(vio.length, consultas + 1);
+  // Charla de prueba del dueño: con la ficha guardada, tope por día.
+  const pr = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['hola'] });
+  assert.equal(pr.status, 200, JSON.stringify(pr.datos));
+  assert.ok(pr.datos.charla[0].respuestas.length);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { texto: '# otra ficha', mensajes: [] })).status, 400, 'sin mensajes no; y la ficha no se cambia desde acá');
+  for (let i = 0; i < 40; i++) await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['hola'] });
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['hola'] })).status, 429);
+});

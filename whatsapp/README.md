@@ -27,6 +27,7 @@ Por Instagram pasa lo mismo, con dos diferencias: no hay botones (el idioma se e
 **Qué se guarda**
 Todo va en un solo Durable Object, `Atencion` (`src/atencion.js`), con almacenamiento SQLite, que entra en el plan gratis. Una alarma diaria borra lo vencido.
 - `{idioma, humanoHasta}` por número, durante 90 días. Nunca el texto.
+- En los negocios (ZL-159): nombre, dirección y notas de pedidos y consultas cerrados, 180 días; después se borran solos y quedan productos y total. Política modelo: `fichas/PRIVACIDAD_MODELO.md`.
 - El id de cada mensaje, durante 1 h, para no contestar dos veces un reintento de Meta.
 - Cuántas respuestas de la IA tuvo cada número en el día, durante 2 días.
 - Solo las charlas con PERSONA, durante 30 días desde el último mensaje. En Instagram, además, el nombre de usuario de quien escribió PERSONA (para que el equipo sepa a quién responde).

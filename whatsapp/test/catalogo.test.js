@@ -130,6 +130,29 @@ test('paraAsistente: con un catálogo grande busca lo que se parece al mensaje',
   assert.match(r.texto, /Hay 180 productos más/);
 });
 
+test('paraAsistente (ZL-159): con un catálogo grande entiende diminutivos y sigue el hilo de la charla', () => {
+  const c = nuevo();
+  c.importar(Array.from({ length: CATALOGO_ENTERO + 30 }, (_, i) => ({ nombre: `Producto genérico ${i}`, codigo: `G${i}` })), {}, YO);
+  c.crear({ nombre: 'Docena de facturas', categoria: 'Panadería', stock: 10 }, YO);
+  c.crear({ nombre: 'Torta de chocolate', categoria: 'Tortas', stock: 2 }, YO);
+  c.crear({ nombre: 'Torta de frutilla', categoria: 'Tortas', stock: 2 }, YO);
+  c.crear({ nombre: 'Alfajores de maicena', categoria: 'Dulces', stock: 2 }, YO);
+  assert.match(c.paraAsistente('¿tenés facturitas?').texto, /Docena de facturas/);
+  assert.match(c.paraAsistente('quiero 6 alfajorcitos').texto, /Alfajores de maicena/);
+  // «¿Y de chocolate?» después de preguntar por tortas: primero la torta de chocolate, y las tortas siguen a la vista.
+  const r = c.paraAsistente('¿y de chocolate?', { contexto: '¿qué tortas tienen?' });
+  const lineas = r.texto.split('\n');
+  assert.match(lineas[0], /Torta de chocolate/);
+  assert.match(r.texto, /Torta de frutilla/);
+  // Sin el contexto, la de frutilla no aparece.
+  assert.doesNotMatch(c.paraAsistente('¿y de chocolate?').texto, /Torta de frutilla/);
+});
+
+test('raizDe (ZL-159): diminutivos y plurales', async () => {
+  const { raizDe } = await import('../src/catalogo.js');
+  assert.deepEqual(['facturitas', 'alfajorcitos', 'bombones', 'cajas', 'tortas', 'pan', 'frutilla'].map(raizDe), ['factur', 'alfajor', 'bombon', 'caja', 'torta', 'pan', 'frutill']);
+});
+
 test('fotos: solo imágenes reales y livianas; al cambiar la foto se borra la anterior', () => {
   const c = nuevo();
   const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 1, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2, 3]);

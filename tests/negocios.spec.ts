@@ -75,11 +75,11 @@ test.describe('app de negocios (ZL-121)', () => {
   test('la dueña carga un producto, le cambia el stock y lo ve en el historial', async ({ page }) => {
     await montar(page, 'duena@example.com');
     // ZL-148: arranca en Inicio; Productos es una de las tres secciones.
-    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Reportes', 'Conexiones']);
+    // ZL-159: «Asistente» también para el negocio (pausa, aviso del día y charla de prueba).
+    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Reportes', 'Conexiones', 'Asistente']);
     await page.getByRole('tab', { name: 'Productos' }).click();
     await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();
     await expect(page.getByText('Asistente activo')).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Asistente' })).toHaveCount(0, { timeout: 1000 });
     await expect(page.getByText('Todavía no hay productos')).toBeVisible();
     await page.getByRole('button', { name: '+ Nuevo producto' }).click();
     const dlg = page.getByRole('dialog');
@@ -129,8 +129,9 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByLabel('Opción 2: título')).toHaveValue('🎂 Tortas por encargo');
     await page.getByRole('button', { name: 'Markdown' }).click();
     await expect(page.getByLabel('Ficha del negocio')).toHaveValue(/- Nombre: Panadería La Espiga[\s\S]*- Objetivo: consultas/);
-    await page.getByLabel('Mensaje de prueba').fill('¿tienen pan?');
-    await page.getByRole('button', { name: 'Enviar' }).click();
+    // La charla de prueba de la ficha (la del equipo es la segunda: arriba está la del dueño, ZL-159).
+    await page.getByLabel('Mensaje de prueba', { exact: true }).fill('¿tienen pan?');
+    await page.getByRole('button', { name: 'Enviar' }).last().click();
     await expect(page.locator('.burbuja.asis').last()).toContainText('tenemos pan francés');
     await page.getByRole('tab', { name: 'Admin' }).click();
     await page.getByLabel('Nombre del negocio').fill('Chocolatería Ficticia');
@@ -148,8 +149,8 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('button', { name: 'Markdown' }).click();
     await page.getByLabel('Ficha del negocio').fill(dos);
     const enviar = async (m: string) => {
-      await page.getByLabel('Mensaje de prueba').fill(m);
-      await page.getByRole('button', { name: 'Enviar' }).click();
+      await page.getByLabel('Mensaje de prueba', { exact: true }).fill(m);
+      await page.getByRole('button', { name: 'Enviar' }).last().click();
     };
     // ZL-153: no pregunta el idioma: «hello» ya arranca en inglés con el saludo y el menú.
     await enviar('hello');
@@ -436,5 +437,56 @@ test.describe('app de negocios (ZL-121)', () => {
     expect(errores.filter((e) => /Content Security Policy/i.test(e))).toEqual([]);
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
+  });
+
+  test('Asistente (ZL-159): la dueña lo pausa con un mensaje, deja un aviso del día y lo prueba; un empleado lo ve pero no lo cambia; accesible', async ({ page }) => {
+    const { negocio, n } = await montar(page, 'duena@example.com', async (n, neg) => {
+      await n.negocios.guardar(neg.id, { emails: ['duena@example.com', 'empleado@example.com'], empleados: ['empleado@example.com'] });
+    });
+    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await expect(page.getByText('Atendiendo: responde cada mensaje')).toBeVisible();
+    // Pausa de 3 días con mensaje de ausencia.
+    await page.getByText('Pausar el asistente (vacaciones, local cerrado)').click();
+    await page.getByLabel('¿Hasta cuándo?').selectOption('3');
+    await page.getByLabel('Mensaje de ausencia (opcional)').fill('Estamos de vacaciones 🌴');
+    await page.getByRole('button', { name: 'Pausar', exact: true }).click();
+    await expect(page.getByText(/^En pausa hasta el /)).toBeVisible();
+    await expect(page.locator('.cita', { hasText: 'Estamos de vacaciones' })).toBeVisible();
+    const guardado = await n.negocios.get(negocio.id);
+    expect(Math.round((guardado.pausa.hasta - Date.now()) / 86_400_000)).toBe(3);
+    // Aviso del día: el asistente lo tiene en cuenta.
+    await page.getByLabel('Aviso del día').fill('Hoy no hay medialunas.');
+    await page.getByRole('button', { name: 'Guardar el aviso' }).click();
+    await expect(page.locator('.cita', { hasText: 'Hoy no hay medialunas.' })).toBeVisible();
+    expect((await n.negocios.get(negocio.id)).avisoDia.texto).toBe('Hoy no hay medialunas.');
+    // La prueba como un cliente: con el asistente en pausa responde lo de la pausa.
+    await page.getByLabel('Mensaje de prueba para tu asistente').fill('hola');
+    await page.getByRole('button', { name: 'Enviar' }).click();
+    await expect(page.locator('.burbuja.asis').last()).toBeVisible();
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    await page.getByRole('button', { name: 'Volver a encenderlo' }).click();
+    await expect(page.getByText('Atendiendo: responde cada mensaje')).toBeVisible();
+    expect((await n.negocios.get(negocio.id)).pausa).toBeNull();
+  });
+
+  test('roles (ZL-159): un empleado ve el asistente y los pedidos, pero no lo pausa ni cambia cómo se vende', async ({ page }) => {
+    await montar(page, 'empleado@example.com', async (n, neg) => {
+      await n.negocios.guardar(neg.id, { emails: ['duena@example.com', 'empleado@example.com'], empleados: ['empleado@example.com'] });
+    });
+    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await expect(page.getByText('Atendiendo: responde cada mensaje')).toBeVisible();
+    await expect(page.getByText('Pausar el asistente (vacaciones, local cerrado)')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Guardar el aviso' })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await expect(page.getByText('Conectar WhatsApp o Instagram y cambiar cómo se vende lo hace el dueño del negocio.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cómo vendés' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toHaveCount(0);
+    // Y si igual lo intenta por fuera de la app, el servidor lo frena (lo prueba test/negocios.test.js).
+  });
+
+  test('Inicio (ZL-159): si ningún celular tiene los avisos, lo dice arriba', async ({ page }) => {
+    await montar(page, 'duena@example.com');
+    await expect(page.getByText('Ningún celular tiene los avisos activados')).toBeVisible();
   });
 });
