@@ -75,6 +75,8 @@ dialog form{padding:1rem 1.1rem}
 .oculto{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .foto .ini{font-weight:700;color:#9AA1AC;font-size:1.3rem}.vista-foto .foto{width:72px;height:72px}
+.formulario{display:grid;gap:.45rem;max-width:36rem;margin:.5rem 0}.formulario textarea{width:100%}
+[hidden]{display:none!important}
 .chat{display:grid;gap:.4rem;max-height:26rem;overflow:auto;padding:.5rem;background:var(--fondo);border-radius:10px;margin:.5rem 0}
 .burbuja{max-width:85%;padding:.5rem .7rem;border-radius:12px;white-space:pre-wrap;font-size:.92rem}
 .burbuja.cliente{justify-self:end;background:var(--tinta);color:#fff}.burbuja.asis{justify-self:start;background:#fff;border:1px solid var(--linea)}
@@ -190,8 +192,9 @@ function app() {
   }
   // ZL-148: tres secciones para el negocio (en el celular, una barra abajo). Inicio es lo único que tiene que mirar
   // seguido: lo que el asistente le deja listo para confirmar o responder. El equipo ve además Asistente y Admin.
-  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['reportes', 'Reportes'], ['conexiones', 'Conexiones']]
-    .concat(estado.yo.admin ? [['asistente', 'Asistente'], ['admin', 'Admin']] : []);
+  // ZL-159: «Asistente» también para el negocio (pausa, aviso del día y charla de prueba); el equipo además ve la ficha.
+  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente']]
+    .concat(estado.yo.admin ? [['admin', 'Admin']] : []);
   // Lo guardado con los nombres de antes lleva a la sección nueva.
   const VIEJAS = { pedidos: ['inicio'], importar: ['productos', 'importar'], historial: ['productos', 'historial'], instagram: ['conexiones', 'instagram'], whatsapp: ['conexiones', 'whatsapp'] };
   /** Botones para elegir una parte de una sección (Lista · Importar · Historial). */
@@ -233,6 +236,11 @@ function app() {
   function vistaConexiones() {
     const caja = h('section', {});
     const cuerpo = h('div', {});
+    // ZL-159: un empleado ve cómo está todo, pero conectar canales y cambiar cómo se vende lo hace el dueño.
+    if (estado.datos.negocio.rol === 'empleado') {
+      caja.append(h('p', { class: 'ayuda' }, 'Conectar WhatsApp o Instagram y cambiar cómo se vende lo hace el dueño del negocio.'), vistaEstado());
+      return caja;
+    }
     const id = estado.sub.conexiones || 'estado';
     poner(cuerpo, id === 'instagram' ? vistaInstagram() : id === 'ajustes' ? vistaAjustes() : id === 'whatsapp' ? vistaWhatsapp() : vistaEstado());
     caja.append(segmento('conexiones', [['estado', 'Estado'], ['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['ajustes', 'Cómo vendés']]), cuerpo);
@@ -362,7 +370,7 @@ function app() {
       return;
     }
     if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
-    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, reportes: vistaReportes, conexiones: vistaConexiones, asistente: vistaAsistente, admin: vistaAdmin };
+    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, reportes: vistaReportes, conexiones: vistaConexiones, asistente: () => (estado.yo.admin ? h('div', {}, vistaMiAsistente(), vistaAsistente()) : vistaMiAsistente()), admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaPedidos)());
   }
 
@@ -405,7 +413,23 @@ function app() {
         return;
       }
       for (const p of r.productos) lista.append(filaProducto(p, cargar));
-      if (r.total > r.productos.length) lista.append(h('li', { class: 'ayuda' }, 'Se muestran ' + r.productos.length + ' de ' + r.total + '. Buscá para encontrar el resto.'));
+      // ZL-159: con más de 200 productos, «Ver más» trae los siguientes (antes solo se podían encontrar buscando).
+      let mostrados = r.productos.length;
+      const mas = () => {
+        if (r.total <= mostrados) return null;
+        const li = h('li', { class: 'acciones' });
+        li.append(h('button', { type: 'button', class: 'btn', onclick: conError(async () => {
+          const sig = await api(base() + '/productos?' + new URLSearchParams({ q: estado.q, categoria: estado.categoria, pausados: estado.pausados ? '1' : '0', desde: String(mostrados) }));
+          li.remove();
+          for (const p of sig.productos) lista.append(filaProducto(p, cargar));
+          mostrados += sig.productos.length;
+          const otro = sig.productos.length ? mas() : null;
+          if (otro) lista.append(otro);
+        }) }, 'Ver más (' + mostrados + ' de ' + r.total + ')'));
+        return li;
+      };
+      const boton = mas();
+      if (boton) lista.append(boton);
     });
     buscar.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { estado.q = buscar.value; cargar(); }, 250); });
     cats.addEventListener('change', () => { estado.categoria = cats.value; cargar(); });
@@ -788,7 +812,7 @@ function app() {
     // ZL-157: un pedido pendiente no se vence: espera a que lo aceptes o lo rechaces (los productos quedan reservados).
     const vence = p.estado === 'pendiente' ? 'Espera tu respuesta: los productos quedan reservados hasta que lo aceptes o lo rechaces.' : p.vence ? 'Guardado hasta el ' + hora(p.vence) + ' si no paga.' : null;
     return h('article', { class: 'tarjeta pedido' + (p.estado === 'pendiente' ? ' nuevo' : '') },
-      h('h3', {}, 'Pedido N.º ' + p.numero + ' · ' + (c.nombre || 'Sin nombre')),
+      h('h3', {}, 'Pedido N.º ' + p.numero + ' · ' + (c.nombre || (c.olvidado ? 'Datos borrados por privacidad' : 'Sin nombre'))),
       h('div', { class: 'chips' },
         h('span', { class: 'chip ' + (p.estado === 'pendiente' ? 'alerta' : ['pagado', 'entregado'].includes(p.estado) ? 'ok' : '') }, ESTADO_PEDIDO[p.estado] || p.estado),
         h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') : 'Retira en el local'),
@@ -834,13 +858,19 @@ function app() {
     const lista = h('div', { 'aria-live': 'polite' });
     const chips = h('div', { class: 'seg', role: 'group', 'aria-label': 'Ver pedidos' });
     // ZL-151: avisos al celular aunque la app esté cerrada (Web Push). Sin eso, con la pestaña abierta suena igual.
-    const avisos = h('button', { class: 'btn', onclick: conError(activarAvisos) }, 'Avisos en este celular');
+    const avisos = h('button', { class: 'btn', onclick: conError(async () => { await activarAvisos(); await revisarAvisos(); }) }, 'Avisos en este celular');
+    // ZL-159: si ningún celular tiene los avisos, un pedido puede esperar sin que nadie se entere: se dice arriba.
+    const sinAvisos = h('div', { 'aria-live': 'polite' });
+    async function revisarAvisos() {
+      const r = await api(base() + '/push').catch(() => null);
+      poner(sinAvisos, r && !r.celulares ? h('p', { class: 'chip alerta' }, 'Ningún celular tiene los avisos activados: si entra un pedido con la app cerrada, no te enterás. Tocá «Avisos en este celular» en el celular del negocio.') : null);
+    }
     const semana = h('div', { class: 'resumen', 'aria-label': 'Últimos 7 días' });
     const consumo = h('div', { 'aria-live': 'polite' });
     const caja = h('section', {},
       h('h2', {}, 'Hola' + (estado.datos.negocio.nombre ? ', ' + estado.datos.negocio.nombre : '')),
       h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos.'),
-      resumen,
+      sinAvisos, resumen,
       h('h3', {}, 'Últimos 7 días'), semana, consumo,
       h('div', { class: 'acciones' }, avisos),
       h('h3', {}, 'Consultas para responder'),
@@ -854,7 +884,9 @@ function app() {
       const k = await api(base() + '/consultas');
       const abiertas = k.consultas.filter((c) => ['nueva', 'atendiendo'].includes(c.estado));
       poner(listaConsultas, abiertas.length ? abiertas.map((c) => tarjetaConsulta(c, cargar)) : h('div', { class: 'vacio' }, 'No hay consultas para responder. Cuando alguien quiera avanzar o necesite a alguien del negocio, aparece acá y suena.'));
-      const r = conPedidos ? await api(base() + '/pedidos' + (filtro === 'todos' ? '' : '?estado=' + filtro)) : { pedidos: [], cuenta: {} };
+      // ZL-159: de a 50, con «Ver más» (antes se veían los últimos 100 y el resto no aparecía).
+      const cuantos = estado.cuantosPedidos || 50;
+      const r = conPedidos ? await api(base() + '/pedidos?' + new URLSearchParams({ ...(filtro === 'todos' ? {} : { estado: filtro }), cuantos: String(cuantos) })) : { pedidos: [], cuenta: {} };
       const cuenta = r.cuenta || {};
       const nuevos = (cuenta.pendiente || 0) + (k.nuevas || 0);
       if (ultimos !== null && nuevos > ultimos) {
@@ -868,10 +900,15 @@ function app() {
         conPedidos ? h('div', {}, h('strong', {}, String(cuenta.pendiente || 0)), h('span', {}, 'pedidos para aceptar')) : null,
         conPedidos ? h('div', {}, h('strong', {}, String((cuenta.aceptado || 0) + (cuenta.pagado || 0))), h('span', {}, 'pedidos para entregar')) : null);
       poner(chips, [['pendiente', 'Nuevos'], ['aceptado', 'Aceptados'], ['pagado', 'Pagados'], ['entregado', 'Entregados'], ['todos', 'Todos']].map(([id, t]) =>
-        h('button', { type: 'button', 'aria-pressed': id === filtro ? 'true' : 'false', onclick: () => { estado.filtroPedidos = id; pintarVista(); } }, t + (id !== 'todos' && cuenta[id] ? ' (' + cuenta[id] + ')' : ''))));
+        h('button', { type: 'button', 'aria-pressed': id === filtro ? 'true' : 'false', onclick: () => { estado.filtroPedidos = id; estado.cuantosPedidos = 50; pintarVista(); } }, t + (id !== 'todos' && cuenta[id] ? ' (' + cuenta[id] + ')' : ''))));
       poner(lista, r.pedidos.length ? r.pedidos.map((p) => tarjetaPedido(p, cargar)) : h('div', { class: 'vacio' }, filtro === 'pendiente' ? 'No hay pedidos nuevos. Cuando el asistente arme uno, aparece acá y suena.' : 'No hay pedidos en esta lista.'));
+      const totalFiltro = filtro === 'todos' ? Object.values(cuenta).reduce((a, x) => a + x, 0) : cuenta[filtro] || 0;
+      if (totalFiltro > r.pedidos.length && cuantos < 500) {
+        lista.append(h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: conError(async () => { estado.cuantosPedidos = Math.min(500, cuantos + 50); await cargar(); }) }, 'Ver más pedidos (' + r.pedidos.length + ' de ' + totalFiltro + ')')));
+      }
     }
     conError(cargar)();
+    conError(revisarAvisos)();
     conError(async () => {
       const n = await api(base() + '/numeros');
       poner(semana,
@@ -1020,6 +1057,93 @@ function app() {
 
   // ── Asistente (solo el equipo). ZL-150: la ficha por formulario (o en Markdown), desde una plantilla o desde la web
   // del negocio, con un revisor que avisa lo que choca con el sistema y corre charlas de prueba. ──
+  /**
+   * ZL-159: el asistente en manos del dueño, sin pasar por el equipo: pausarlo (vacaciones, local cerrado) con un
+   * mensaje de ausencia, dejarle un aviso del día y probarlo como si fuera un cliente. Un empleado lo ve, no lo cambia.
+   */
+  function vistaMiAsistente() {
+    const n = estado.datos.negocio;
+    const dueño = n.rol !== 'empleado';
+    const caja = h('section', {}, h('h2', {}, 'Tu asistente'));
+    const guardar = async (cuerpo) => {
+      const r = await api(base() + '/asistente', { metodo: 'PUT', cuerpo });
+      n.pausa = r.pausa; n.avisoDia = r.avisoDia;
+      pintarVista();
+    };
+    const cuando = (t) => new Date(t).toLocaleString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    // Estado y pausa.
+    if (n.pausa) {
+      caja.append(h('p', { class: 'chip alerta' }, 'En pausa hasta el ' + cuando(n.pausa.hasta) + '. A quien escriba se le dice una vez cuándo vuelven, y nada más.'),
+        n.pausa.mensaje ? h('p', { class: 'cita' }, n.pausa.mensaje) : null,
+        dueño ? h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn prim', onclick: conError(() => guardar({ pausa: null })) }, 'Volver a encenderlo')) : null);
+    } else {
+      caja.append(h('p', { class: 'chip ok' }, 'Atendiendo: responde cada mensaje con tu información y tus productos.'));
+      if (dueño) {
+        const hasta = h('select', { 'aria-label': '¿Hasta cuándo?' },
+          [['manana', 'Hasta mañana a las 9'], ['1', '1 día'], ['3', '3 días'], ['7', '1 semana'], ['fecha', 'Elegir fecha y hora']].map(([v, t]) => h('option', { value: v }, t)));
+        const fecha = h('input', { type: 'datetime-local', 'aria-label': 'Fecha y hora en que vuelve', hidden: true });
+        hasta.onchange = () => { fecha.hidden = hasta.value !== 'fecha'; };
+        const mensaje = h('textarea', { maxlength: 300, rows: 2, 'aria-label': 'Mensaje de ausencia (opcional)', placeholder: 'Opcional. Por ejemplo: Estamos de vacaciones hasta el lunes 🌴' });
+        const calcular = () => {
+          const d = new Date();
+          if (hasta.value === 'manana') { d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime(); }
+          if (hasta.value === 'fecha') return fecha.value ? new Date(fecha.value).getTime() : NaN;
+          return d.getTime() + Number(hasta.value) * 86_400_000;
+        };
+        caja.append(h('details', {}, h('summary', {}, 'Pausar el asistente (vacaciones, local cerrado)'),
+          h('form', { class: 'formulario', onsubmit: conError(async (e) => {
+            e.preventDefault();
+            const t = calcular();
+            if (!(t > Date.now())) { aviso('Elegí una fecha que todavía no pasó.', true); return; }
+            await guardar({ pausa: { hasta: t, mensaje: mensaje.value } });
+          }) },
+            etiqueta('¿Hasta cuándo?', hasta), hasta, fecha,
+            etiqueta('Mensaje de ausencia (opcional)', mensaje), mensaje,
+            h('p', { class: 'ayuda' }, 'Mientras esté en pausa, a cada persona que escriba se le dice una vez cuándo vuelven. Tus pedidos y consultas siguen en la app.'),
+            h('button', { type: 'submit', class: 'btn' }, 'Pausar'))));
+      }
+    }
+    // Aviso del día.
+    caja.append(h('h3', {}, 'Aviso del día'));
+    if (n.avisoDia) {
+      caja.append(h('p', { class: 'cita' }, n.avisoDia.texto), h('p', { class: 'ayuda' }, 'El asistente lo tiene en cuenta hasta el ' + cuando(n.avisoDia.hasta) + '.'),
+        dueño ? h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: conError(() => guardar({ avisoDia: null })) }, 'Quitar el aviso')) : null);
+    } else if (dueño) {
+      const texto = h('textarea', { maxlength: 300, rows: 2, 'aria-label': 'Aviso del día', placeholder: 'Por ejemplo: Hoy no hay medialunas. Cerramos a las 18.' });
+      const dura = h('select', { 'aria-label': 'Cuánto dura el aviso' }, [['hoy', 'Hasta el final del día'], ['1', '24 horas'], ['3', '3 días'], ['7', '7 días']].map(([v, t]) => h('option', { value: v }, t)));
+      caja.append(h('form', { class: 'formulario', onsubmit: conError(async (e) => {
+        e.preventDefault();
+        if (!texto.value.trim()) { aviso('Escribí el aviso.', true); return; }
+        const d = new Date();
+        const hasta = dura.value === 'hoy' ? (d.setHours(23, 59, 0, 0), d.getTime()) : Date.now() + Number(dura.value) * 86_400_000;
+        await guardar({ avisoDia: { texto: texto.value, hasta } });
+      }) },
+        h('p', { class: 'ayuda' }, 'Algo de hoy que el asistente tiene que saber: lo que no hay, un horario distinto, una promo. Manda sobre la ficha.'),
+        texto, etiqueta('Cuánto dura', dura), dura, h('button', { type: 'submit', class: 'btn' }, 'Guardar el aviso')));
+    } else caja.append(h('p', { class: 'ayuda' }, 'Sin aviso del día.'));
+    // Probar como un cliente.
+    const chat = h('div', { class: 'chat' });
+    const msg = h('input', { type: 'text', placeholder: 'Escribí como si fueras un cliente', 'aria-label': 'Mensaje de prueba para tu asistente' });
+    let estadoPrueba = null;
+    caja.append(h('h3', {}, 'Probalo como si fueras un cliente'),
+      h('p', { class: 'ayuda' }, 'Charla de prueba con tu asistente y tus productos. No se le manda nada a nadie.'),
+      chat,
+      h('form', { class: 'barra', onsubmit: conError(async (e) => {
+        e.preventDefault();
+        const m = msg.value.trim();
+        if (!m) return;
+        msg.value = '';
+        chat.append(h('div', { class: 'burbuja cliente' }, m));
+        const r = await api(base() + '/prueba', { metodo: 'POST', cuerpo: { mensajes: [m], estado: estadoPrueba } });
+        estadoPrueba = r.estado || null;
+        const ultima = r.charla[r.charla.length - 1];
+        for (const t of ultima.respuestas) chat.append(h('div', { class: 'burbuja asis' }, t));
+        chat.scrollTop = chat.scrollHeight;
+      }) }, msg, h('button', { class: 'btn prim', type: 'submit' }, 'Enviar')),
+      h('div', { class: 'acciones' }, h('button', { class: 'btn', type: 'button', onclick: () => { estadoPrueba = null; poner(chat); msg.focus(); } }, 'Empezar de nuevo')));
+    return caja;
+  }
+
   function vistaAsistente() {
     const caja = h('section', {}, h('h2', {}, 'Asistente'),
       h('p', { class: 'ayuda' }, 'La ficha la maneja el equipo de Zustro Labs. El asistente responde con esta ficha, con «Cómo vendés» y con los productos del negocio.'));

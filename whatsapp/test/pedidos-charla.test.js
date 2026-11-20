@@ -264,3 +264,18 @@ test('ZL-154: la IA ve los últimos 3 pedidos de ESA persona, con su estado y su
   assert.match(r.texto, /• 3 × Pan francés — \$ 7\.500/);
   assert.equal(stock(pan).reservado, antes + 3);
 });
+
+test('BORRAR (ZL-159): borra la memoria y también el nombre de sus pedidos ya cerrados', async () => {
+  const { c, charlar } = armar();
+  const ana = charlar(ANA);
+  await ana('hola');
+  await ana('quiero 2 kilos de pan');
+  await ana('sí');
+  await ana('1');
+  const n = (await ana('Ana')).pedido;
+  c.cambiarEstado(n, 'aceptado', 'duena@example.com'); c.cambiarEstado(n, 'entregado', 'duena@example.com');
+  assert.equal(c.pedido(n).comprador.nombre, 'Ana');
+  await ana('borrar');
+  assert.equal(c.pedido(n).comprador.nombre, '');
+  assert.equal(c.pedido(n).comprador.olvidado, true);
+});

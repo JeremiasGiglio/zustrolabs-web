@@ -4,6 +4,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { crearAtencion, DIA_MS } from './atencion.js';
 import { crearCatalogo, ejecutarCatalogo } from './catalogo.js';
 
+/** ZL-159: cuánto se guardan el nombre y la dirección de un comprador en lo ya cerrado. */
+export const RETENCION_DATOS_MS = 180 * 86_400_000;
+
 export class Atencion extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -94,6 +97,10 @@ export class Catalogo extends DurableObject {
     const ultima = (await this.ctx.storage.get('fotos')) ?? 0;
     if (Date.now() - ultima >= DIA_MS) {
       this.c.limpiarFotos(Date.now() - DIA_MS);
+      // ZL-159: privacidad: los datos del comprador de lo cerrado hace más de 180 días se borran.
+      const antes = Date.now() - RETENCION_DATOS_MS;
+      this.c.olvidarCompradores({ antesDe: antes });
+      this.c.olvidarConsultas({ antesDe: antes });
       await this.ctx.storage.put('fotos', Date.now());
     }
     await this.programar(true);

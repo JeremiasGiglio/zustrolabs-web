@@ -64,3 +64,14 @@ test('consultas (ZL-154): la IA ve la consulta abierta de esa persona, en una l√
   c.cambiarConsulta(1, 'ganada');
   assert.equal(await k.abierta(), null);
 });
+
+test('privacidad (ZL-159): una consulta cerrada olvida el nombre y el resumen; una abierta no', () => {
+  const { c } = armar();
+  c.crearConsulta('yc:1:2', { tipo: 'consulta', nombre: 'Ana', interes: 'Torta', resumen: 'Quiere una torta (ficticio)' });
+  c.crearConsulta('yc:1:3', { tipo: 'consulta', nombre: 'Beto', interes: 'Pan', resumen: 'Pan para el s√°bado (ficticio)' });
+  c.cambiarConsulta(1, 'ganada');
+  assert.equal(c.olvidarConsultas({ charla: 'yc:1:2' }), 1);
+  assert.deepEqual([c.consulta(1).nombre, c.consulta(1).resumen, c.consulta(1).interes], ['', '', 'Torta']);
+  assert.equal(c.olvidarConsultas({ antesDe: Date.now() + 1e13 }), 0, 'la de Beto sigue abierta');
+  assert.equal(c.consulta(2).nombre, 'Beto');
+});

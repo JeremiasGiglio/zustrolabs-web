@@ -347,7 +347,7 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
      * mensaje), con precio solo si el negocio permite precios, y el stock como «hay stock», «quedan N» o «AGOTADO».
      * Devuelve el texto y los montos que la respuesta puede nombrar (controlarNegocio).
      */
-    paraAsistente(mensaje = '', { precios = false, refs = false } = {}) {
+    paraAsistente(mensaje = '', { precios = false, refs = false, contexto = '' } = {}) {
       // Lo vencido se libera antes de mostrar el stock (ZL-139).
       pedidos.vencer();
       const activos = una('SELECT COUNT(*) AS n FROM productos WHERE activo = 1').n;
@@ -356,13 +356,16 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
       if (activos <= CATALOGO_ENTERO) {
         elegidos = filas('SELECT * FROM productos WHERE activo = 1 ORDER BY categoria, nombre_n');
       } else {
-        const palabras = [...new Set(normalizar(mensaje).split(' ').filter((w) => w.length >= 3 && !VACIAS.has(w)))].slice(0, 6);
+        const palabrasDe = (t) => [...new Set(normalizar(t).split(' ').filter((w) => w.length >= 3 && !VACIAS.has(w)))];
+        const ahora = palabrasDe(mensaje).slice(0, 6);
+        // ZL-159: también lo último que escribió la persona, con menos peso: «¿y de chocolate?» sigue en las tortas.
+        const antes = palabrasDe(contexto).filter((w) => !ahora.includes(w)).slice(0, 6);
         const puntos = new Map();
-        for (const w of palabras) {
-          const raiz = (w.length > 4 ? w.slice(0, -1) : w).slice(0, 20); // «bombones» encuentra «bombón», «cajas» encuentra «caja»
+        for (const [w, peso] of [...ahora.map((w) => [w, 3]), ...antes.map((w) => [w, 1])]) {
+          const raiz = raizDe(w);
           for (const p of filas("SELECT * FROM productos WHERE activo = 1 AND (nombre_n LIKE ? OR lower(categoria) LIKE ? OR lower(descripcion) LIKE ?) LIMIT 200", patron(raiz), patron(raiz), patron(raiz))) {
             const prev = puntos.get(p.id) ?? { p, n: 0 };
-            prev.n += p.nombre_n.includes(raiz) ? 3 : 1;
+            prev.n += (p.nombre_n.includes(raiz) ? 3 : 1) * peso;
             puntos.set(p.id, prev);
           }
         }
@@ -389,6 +392,20 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
   };
 }
 
+/**
+ * La raíz para buscar (ZL-159): sin diminutivos (-ito, -cito) ni plurales. «facturitas» → «factur» (encuentra «facturas»),
+ * «alfajorcitos» → «alfajor», «medialunas» → «medialun», «bombones» → «bombon» (encuentra «bombón»).
+ */
+export function raizDe(w) {
+  let r = String(w);
+  const sin = r.replace(/(cit[oa]s?|it[oa]s?)$/, '');
+  if (sin !== r && sin.length >= 4) r = sin;
+  else if (r.length > 4) r = r.slice(0, -1); // «cajas» encuentra «caja»
+  if (r.length > 5 && /(es|s)$/.test(r)) r = r.replace(/(es|s)$/, '');
+  if (r.length > 5 && /[aeo]$/.test(r)) r = r.slice(0, -1);
+  return r.slice(0, 20);
+}
+
 /** webp, jpeg o png según los primeros bytes (no se confía en lo que dice el navegador). */
 export function tipoDeImagen(b) {
   if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
@@ -400,7 +417,7 @@ export function tipoDeImagen(b) {
 /** Operaciones que se pueden pedir al catálogo desde afuera (el Worker, por RPC). */
 export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
   // Pedidos (ZL-139): pedidos.js.
-  'carrito', 'carritoDe', 'comprasDe', 'recordatorios', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
+  'carrito', 'carritoDe', 'comprasDe', 'recordatorios', 'olvidarCompradores', 'olvidarConsultas', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
   // Consultas (ZL-146): consultas.js.
   'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta', 'consulta',
   // Números para el dueño (ZL-151).

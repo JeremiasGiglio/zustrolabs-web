@@ -94,6 +94,18 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
       return armar(f);
     },
 
+    /**
+     * Privacidad (ZL-159): borra el nombre y el resumen de las consultas cerradas (de esa charla, o cerradas antes de
+     * `antesDe`). Queda el tipo, el estado y el interés, para los reportes. → cuántas.
+     */
+    olvidarConsultas({ charla = null, antesDe = null } = {}) {
+      const cerradas = "estado NOT IN ('nueva','atendiendo') AND (nombre <> '' OR resumen <> '')";
+      const [donde, valor] = charla ? ['charla = ?', texto(charla, 80)] : ['actualizado < ?', Number(antesDe) || 0];
+      const n = una(`SELECT COUNT(*) AS n FROM consultas WHERE ${donde} AND ${cerradas}`, valor)?.n ?? 0;
+      if (n) sql.exec(`UPDATE consultas SET nombre = '', resumen = '' WHERE ${donde} AND ${cerradas}`, valor);
+      return n;
+    },
+
     /** ¿La charla tiene una consulta abierta? (para no volver a pedir el nombre ni duplicar). */
     consultaAbierta(charla) {
       return armar(una(`SELECT * FROM consultas WHERE charla = ? AND estado IN (${ABIERTAS.map(() => '?').join(',')}) ORDER BY id DESC LIMIT 1`, texto(charla, 80), ...ABIERTAS));
@@ -107,6 +119,10 @@ export function operacionesConsultas({ sql, reloj, ErrorCatalogo }) {
  */
 export function consultasDeCharla({ cat, charla, canal }) {
   return {
+    /** ZL-159: BORRAR también borra sus datos de las consultas cerradas. */
+    async olvidar() {
+      await cat.ejecutar('olvidarConsultas', [{ charla }]).catch(() => null);
+    },
     /** ZL-154: la consulta abierta de esta persona, en una línea para la IA (o null). Solo lectura. */
     async abierta() {
       const r = await cat.ejecutar('consultaAbierta', [charla]).catch(() => null);

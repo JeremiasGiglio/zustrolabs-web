@@ -151,6 +151,7 @@ Cloudflare → Workers & Pages → `zustrolabs-whatsapp` → Observability. Busc
 | `error` | Falló la IA o el envío (el motivo va al lado) | Leer el motivo; si es `esquema`, avisar al equipo |
 | Una respuesta con `"estudio":"ficha"` | La cuenta del estudio respondió con su ficha | Todo bien |
 | Ningún registro | Meta no está mandando nada | Revisar Live, `messages` y «Permitir acceso a los mensajes» |
+| `revision_diaria` con `rojos` > 0 (ZL-159) | El semáforo diario encontró algo en rojo en algún negocio; llega un correo al equipo | Seguir el «→» de cada línea del correo |
 
 ## 4. Para automatizar (lo que falta en los scripts)
 

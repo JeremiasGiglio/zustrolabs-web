@@ -30,6 +30,23 @@ const claveSeguimiento = (cuando, num) => `seg:${String(Math.max(0, Math.floor(c
  * cortos; lo que no se entiende vuelve al valor de siempre.
  */
 export const RESERVAS_HORAS = [2, 24, 48, 168];
+const limpio = (v, n) => String(v ?? '').replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u0009\u000B-\u001F\u007F<>]/g, ' ').replace(/[ \t]+/g, ' ').trim().slice(0, n);
+/** ZL-159: la pausa del asistente {hasta, mensaje}; null o una fecha pasada la quitan. Máximo 60 días. */
+export function pausaDe(p, now) {
+  const hasta = Number(p?.hasta);
+  if (!p || !Number.isFinite(hasta) || hasta <= now) return null;
+  return { hasta: Math.min(hasta, now + 60 * 86_400_000), mensaje: limpio(p.mensaje, 300), desde: now };
+}
+/** ZL-159: el aviso del día {texto, hasta}; vacío lo quita. Dura hasta `hasta` (como mucho 7 días). */
+export function avisoDiaDe(a, now) {
+  const texto = limpio(a?.texto, 300);
+  const hasta = Number(a?.hasta);
+  if (!texto || !Number.isFinite(hasta) || hasta <= now) return null;
+  return { texto, hasta: Math.min(hasta, now + 7 * 86_400_000) };
+}
+/** ZL-159: ¿ese correo es dueño del negocio? (los que no están en `empleados`). El equipo, siempre. */
+export const esDueño = (n, email, admin = false) => admin || ((n?.emails ?? []).includes(email) && !(n?.empleados ?? []).includes(email));
+
 /**
  * ZL-158: cuántas respuestas de IA por día tiene un negocio. 1.000 por defecto (un negocio con 100 charlas de 6
  * mensajes usa 600). Los negocios guardados con 300, el valor por defecto de antes, pasan a 1.000.
@@ -111,6 +128,8 @@ export function crearAtencion(storage) {
         ...(datos?.baja === true && { baja: true }),
         // ZL-153: el usuario de Instagram de la persona (para que el negocio la encuentre rápido en la app).
         ...(/^[\w.]{1,30}$/.test(String(datos?.usuario ?? '')) && { usuario: String(datos.usuario) }),
+        // ZL-159: a quién ya se le dijo que el asistente está en pausa (la pausa se identifica por cuándo empezó).
+        ...(Number.isFinite(datos?.ausencia) && { ausencia: datos.ausencia }),
         // ZL-157: avisos de pedido que no salieron solos (fuera de las 24 h): se dicen cuando vuelve a escribir.
         ...(Array.isArray(datos?.avisos) && datos.avisos.some((x) => corto(x, 1000)) && { avisos: datos.avisos.map((x) => String(x ?? '').replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ').trim().slice(0, 1000)).filter(Boolean).slice(-3) }),
       };
@@ -181,7 +200,7 @@ export function crearAtencion(storage) {
     /** Números del negocio por día (ZL-151): charlas, audios, seguimientos, pases. 120 días. */
     async sumarMetrica(id, clave, now, dia = null) {
       // ZL-158: «enviadosWa», lo que manda el sistema por WhatsApp (Meta cobra pasando los 1.000 por número por mes).
-      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes'].includes(clave)) return 0;
+      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas'].includes(clave)) return 0;
       const k = `negmet:${id}:${/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : diaDe(now)}`;
       const x = (await s.get(k)) ?? {};
       x[clave] = (x[clave] ?? 0) + 1;
@@ -364,7 +383,15 @@ export function crearAtencion(storage) {
       // Pedidos por chat (ZL-139): apagados hasta que el equipo los enciende en Administración.
       const pedidos = typeof datos?.pedidos === 'boolean' ? datos.pedidos : antes?.pedidos === true;
       const ajustes = ajustesDeVenta({ ...(antes?.ajustes ?? {}), ...(datos?.ajustes ?? {}) });
-      const n = { id: nid, nombre, emails, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, creado: antes?.creado ?? now, actualizado: now };
+      // ZL-159: empleados (de los mismos correos): usan pedidos, consultas y productos, pero no conectan canales, no
+      // cambian cómo se vende ni pausan el asistente. Los demás correos son dueños.
+      const empleados = [...new Set((datos?.empleados ?? antes?.empleados ?? []).map((e) => String(e).trim().toLowerCase()))].filter((e) => emails.includes(e));
+      if (emails.length && empleados.length === emails.length) return { error: 'tiene que quedar al menos un dueño' };
+      // ZL-159: el asistente en pausa (vacaciones, local cerrado): hasta cuándo y el mensaje de ausencia.
+      const pausa = datos?.pausa !== undefined ? pausaDe(datos.pausa, now) : antes?.pausa ?? null;
+      // ZL-159: el aviso del día que el asistente tiene en cuenta («hoy no hay medialunas»), con vencimiento.
+      const avisoDia = datos?.avisoDia !== undefined ? avisoDiaDe(datos.avisoDia, now) : antes?.avisoDia ?? null;
+      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);

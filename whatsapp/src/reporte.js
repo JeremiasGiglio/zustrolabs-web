@@ -120,7 +120,7 @@ export function armarReporte({ negocio, periodo, fecha, zona, now = Date.now(), 
     diasPico: top(porSemana, 2).map((i) => DIAS_SEMANA[i]),
     productos: (datos.productos ?? []).slice(0, 20).map((p) => ({ nombre: p.nombre, unidades: p.unidades, monto: redondo(p.monto ?? 0) })),
     consultasLista: consultas.slice(0, 500).map((c) => ({ numero: c.numero, fecha: diaLocal(c.creado, z), tipo: c.tipo, estado: c.estado, canal: c.canal, nombre: c.nombre, resumen: c.resumen })),
-    pedidosLista: pedidos.slice(0, 1000).map((p) => ({ numero: p.numero, fecha: diaLocal(p.creado, z), estado: p.estado, canal: p.canal, total: p.total })),
+    pedidosLista: pedidos.slice(0, 1000).map((p) => ({ numero: p.numero, fecha: diaLocal(p.creado, z), estado: p.estado, canal: p.canal, total: p.total, nombre: p.nombre ?? '', entrega: p.entrega ?? '', productos: p.productos ?? '' })),
   };
 }
 
@@ -228,7 +228,8 @@ export function xlsx(r) {
     ['Por día de la semana', hoja([['Día', 'Mensajes'], ...r.porDiaSemana.map((n, i) => [DIAS_SEMANA[i], n])], [12, 10])],
     ['Productos', hoja([['Producto', 'Unidades', 'Monto'], ...r.productos.map((p) => [p.nombre, p.unidades, p.monto])], [36, 10, 12])],
     ['Consultas', hoja([['N.º', 'Fecha', 'Tipo', 'Estado', 'Canal', 'Nombre', 'Resumen'], ...r.consultasLista.map((c) => [c.numero, f(c.fecha), c.tipo === 'persona' ? 'Pase al equipo' : 'Quiere avanzar', ESTADO[c.estado] ?? c.estado, CANAL[c.canal] ?? c.canal, c.nombre, c.resumen])], [6, 12, 16, 12, 11, 20, 60])],
-    ['Pedidos', hoja([['N.º', 'Fecha', 'Estado', 'Canal', 'Total'], ...r.pedidosLista.map((p) => [p.numero, f(p.fecha), ESTADO[p.estado] ?? p.estado, CANAL[p.canal] ?? p.canal, p.total ?? ''])], [6, 12, 12, 11, 12])],
+    // ZL-159: con quién compró, cómo se entrega y qué llevó (la dirección no va al Excel).
+    ['Pedidos', hoja([['N.º', 'Fecha', 'Estado', 'Canal', 'Comprador', 'Entrega', 'Productos', 'Total'], ...r.pedidosLista.map((p) => [p.numero, f(p.fecha), ESTADO[p.estado] ?? p.estado, CANAL[p.canal] ?? p.canal, p.nombre ?? '', p.entrega === 'envio' ? 'Envío' : p.entrega === 'retiro' ? 'Retiro' : '', p.productos ?? '', p.total ?? ''])], [6, 12, 12, 11, 20, 9, 48, 12])],
   ];
   const ns = 'http://schemas.openxmlformats.org';
   return zip([

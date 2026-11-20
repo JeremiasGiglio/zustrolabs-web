@@ -302,7 +302,15 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
     datosReporte(desde, hasta) {
       const d = Number(desde) || 0;
       const h = Number(hasta) || 0;
-      const pedidos = filas(`SELECT numero, creado, estado, total, canal FROM pedidos WHERE numero IS NOT NULL AND creado >= ? AND creado < ? ORDER BY creado LIMIT 5000`, d, h);
+      // ZL-159: con el comprador (nombre y entrega; la dirección no) y los productos, para el Excel.
+      const pedidos = filas(`SELECT p.numero, p.creado, p.estado, p.total, p.canal, p.comprador,
+          (SELECT group_concat(i.cantidad || ' × ' || i.nombre, '; ') FROM pedido_items i WHERE i.pedido = p.id) AS productos
+        FROM pedidos p WHERE p.numero IS NOT NULL AND p.creado >= ? AND p.creado < ? ORDER BY p.creado LIMIT 5000`, d, h)
+        .map(({ comprador, ...p }) => {
+          let c = {};
+          try { c = JSON.parse(comprador); } catch { /* nada */ }
+          return { ...p, nombre: c.nombre ?? '', entrega: c.entrega ?? '', productos: p.productos ?? '' };
+        });
       const productos = filas(`SELECT i.nombre AS nombre, SUM(i.cantidad) AS unidades, SUM(COALESCE(i.precio, 0) * i.cantidad) AS monto
         FROM pedido_items i JOIN pedidos p ON p.id = i.pedido
         WHERE p.numero IS NOT NULL AND p.creado >= ? AND p.creado < ? AND p.estado NOT IN ('rechazado','cancelado','vencido')
@@ -326,6 +334,27 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
           out.push({ numero: p.numero, charla: p.charla, canal: p.canal, tipo: toca.at(-1).tipo, desde: p.actualizado });
         }
         return out;
+      });
+    },
+
+    /**
+     * Privacidad (ZL-159): borra el nombre, la dirección y las notas del comprador de los pedidos cerrados (entregados,
+     * rechazados, cancelados o vencidos). Con `charla`, los de esa persona (cuando escribe BORRAR); sin ella, los que se
+     * cerraron antes de `antesDe` (la limpieza diaria, a los 180 días). Lo abierto no se toca: el negocio lo necesita.
+     * Quedan el número, los productos, el total y la entrega, para los reportes. → cuántos.
+     */
+    olvidarCompradores({ charla = null, antesDe = null } = {}) {
+      return transaccion(() => {
+        const cerrados = "estado IN ('entregado','rechazado','cancelado','vencido') AND comprador NOT LIKE '%\"olvidado\":true%'";
+        const lista = charla
+          ? filas(`SELECT id, comprador FROM pedidos WHERE charla = ? AND ${cerrados}`, String(charla))
+          : filas(`SELECT id, comprador FROM pedidos WHERE actualizado < ? AND ${cerrados}`, Number(antesDe) || 0);
+        for (const p of lista) {
+          let c = {};
+          try { c = JSON.parse(p.comprador); } catch { /* nada */ }
+          sql.exec('UPDATE pedidos SET comprador = ? WHERE id = ?', JSON.stringify({ nombre: '', entrega: c.entrega ?? '', direccion: '', notas: '', olvidado: true }), p.id);
+        }
+        return lista.length;
       });
     },
 

@@ -186,3 +186,35 @@ test('pendientes de antes de ZL-157: al abrir la base dejan de vencer', () => {
   assert.equal(otra.pedido(n).estado, 'pendiente');
   assert.equal(otra.pedido(n).vence, null);
 });
+
+test('privacidad (ZL-159): lo cerrado olvida al comprador (a los 180 días, o si escribe BORRAR); lo abierto no', () => {
+  const { c, pan, avanzar } = armar();
+  c.carrito('a', [{ id: pan.id, cantidad: 1 }]); const a1 = c.confirmar('a', { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 1' }).numero;
+  c.cambiarEstado(a1, 'aceptado', DUENA); c.cambiarEstado(a1, 'entregado', DUENA);
+  c.carrito('a', [{ id: pan.id, cantidad: 1 }]); const a2 = c.confirmar('a', { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 1' }).numero;
+  c.carrito('b', [{ id: pan.id, cantidad: 1 }]); const b1 = c.confirmar('b', { nombre: 'Beto', entrega: 'retiro' }).numero;
+  c.cambiarEstado(b1, 'rechazado', DUENA);
+  // BORRAR de Ana: su pedido entregado queda sin nombre ni dirección; el abierto no se toca.
+  assert.equal(c.olvidarCompradores({ charla: 'a' }), 1);
+  assert.deepEqual(c.pedido(a1).comprador, { nombre: '', entrega: 'envio', direccion: '', notas: '', olvidado: true });
+  assert.equal(c.pedido(a1).total, 2500, 'el total queda para los reportes');
+  assert.equal(c.pedido(a2).comprador.nombre, 'Ana');
+  // La limpieza diaria: lo cerrado hace más de 180 días.
+  assert.equal(c.olvidarCompradores({ antesDe: 0 }), 0);
+  avanzar(181 * 24 * 60 * MIN);
+  assert.equal(c.olvidarCompradores({ antesDe: Date.now() + 1e13 }), 1, 'solo el de Beto (el de Ana ya estaba)');
+  assert.equal(c.pedido(b1).comprador.nombre, '');
+  assert.equal(c.pedido(a2).comprador.nombre, 'Ana', 'lo pendiente nunca');
+});
+
+test('datos del reporte (ZL-159): cada pedido con comprador, entrega y productos (sin la dirección)', () => {
+  const { c, pan, torta } = armar();
+  c.carrito('a', [{ id: pan.id, cantidad: 2 }, { id: torta.id, cantidad: 1 }]);
+  c.confirmar('a', { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 1' });
+  const [p] = c.datosReporte(0, 9e15).pedidos;
+  assert.equal(p.nombre, 'Ana');
+  assert.equal(p.entrega, 'envio');
+  assert.match(p.productos, /2 × Pan francés/);
+  assert.match(p.productos, /1 × Torta de chocolate/);
+  assert.ok(!JSON.stringify(p).includes('Calle Ficticia'), 'la dirección no va al Excel');
+});
