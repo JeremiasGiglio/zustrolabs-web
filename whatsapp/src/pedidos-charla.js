@@ -153,7 +153,7 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
       const montos = [];
       const lineas = lista.map((p) => {
         const estado = ESTADO_PARA_IA[p.estado] ?? p.estado;
-        const vence = p.vence && p.vence > now && ['pendiente', 'aceptado'].includes(p.estado) ? (p.estado === 'pendiente' ? `; el negocio lo confirma antes del ${cuando(p.vence)}` : `; guardado hasta el ${cuando(p.vence)}`) : '';
+        const vence = p.vence && p.vence > now && p.estado === 'aceptado' ? `; guardado hasta el ${cuando(p.vence)}` : '';
         const entrega = p.comprador?.entrega === 'envio' ? 'con envío' : p.comprador?.entrega === 'retiro' ? 'retira en el local' : '';
         const items = p.items.map((i) => `[ref ${i.id}] ${i.cantidad} × ${i.nombre}`).join(', ');
         let total = '';
@@ -164,6 +164,12 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
         return `- Pedido N.º ${p.numero ?? '?'} del ${dia(p.creado)} · ${estado}${vence}${entrega ? ` · ${entrega}` : ''} · ${items}${total}`;
       });
       return { texto: lineas.join('\n'), montos: [...new Set(montos.filter(Boolean))] };
+    },
+
+    /** ZL-157: el número del pedido abierto de esta persona (pendiente, aceptado o pagado), o null. */
+    async abierto() {
+      const lista = await op('comprasDe', [charla, 3]).catch(() => null);
+      return lista?.find((p) => ['pendiente', 'aceptado', 'pagado'].includes(p.estado))?.numero ?? null;
     },
 
     /** Lo que la IA tiene que saber antes de responder: el carrito actual, con la ref de cada producto. */

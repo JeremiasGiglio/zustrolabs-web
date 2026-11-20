@@ -10,13 +10,17 @@ import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
-import { ajustesDeVenta } from './atencion.js';
+import { ajustesDeVenta, limiteDiaDe } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 import { ICONO_SVG, MANIFIESTO, suscripcionValida, SW_JS } from './push.js';
+import { diaLocal } from './reporte.js';
 
 export const NEGOCIOS_HOST = 'negocios.zustrolabs.com';
+/** ZL-158: Meta da 1.000 mensajes de servicio gratis por número por mes (desde el 1/10/2026); la app avisa a los 800. */
+export const GRATIS_WA_MES = 1000;
+export const AVISO_WA_MES = 800;
 const MAX_JSON = 2_000_000;
 const SEGURIDAD = {
   'cache-control': 'no-store',
@@ -184,7 +188,7 @@ export async function appNegocios(request, env, deps) {
     const cuentas = [];
     for (const c of negocio.cuentas) cuentas.push({ id: c, username: (await deps.cuentas?.get(c))?.username ?? null });
     return json({
-      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ajustes: ajustesDeVenta(negocio.ajustes), ...(admin && { emails: negocio.emails, limiteDia: negocio.limiteDia }) },
+      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ajustes: ajustesDeVenta(negocio.ajustes), ...(admin && { emails: negocio.emails, limiteDia: limiteDiaDe(negocio) }) },
       resumen: r.valor ?? null,
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
@@ -263,6 +267,7 @@ export async function appNegocios(request, env, deps) {
     const r = await ejecutar('pedidos', [{ estado: url.searchParams.get('estado') ?? '', cuantos: Number(url.searchParams.get('cuantos') ?? 100) }]);
     if (r.resp) return r.resp;
     await conContacto(r.valor.pedidos, deps);
+    await conAvisoPendiente(r.valor.pedidos, deps);
     return json({ ...r.valor, encendidos: negocio.pedidos === true });
   }
   const mo = /^\/pedidos\/(\d{1,9})$/.exec(sub);
@@ -270,7 +275,16 @@ export async function appNegocios(request, env, deps) {
     const r = await ejecutar('pedido', [Number(mo[1])]);
     if (r.resp) return r.resp;
     await conContacto([r.valor], deps);
+    await conAvisoPendiente([r.valor], deps);
     return json(r.valor);
+  }
+  // ZL-157: «Ya se lo mandé»: el dueño le avisó desde su app; el asistente ya no lo repite.
+  const mav = /^\/pedidos\/(\d{1,9})\/avisado$/.exec(sub);
+  if (mav && request.method === 'POST') {
+    const r = await ejecutar('pedido', [Number(mav[1])]);
+    if (r.resp) return r.resp;
+    await deps.charlasNegocio?.quitarAvisos?.(r.valor.charla, r.valor.numero);
+    return json({ ok: true });
   }
   if (mo && request.method === 'POST') {
     const b = await leerJson(request);
@@ -282,7 +296,13 @@ export async function appNegocios(request, env, deps) {
     if (r.resp) return r.resp;
     // Se le avisa al comprador por el mismo canal (dentro de las 24 h de Meta). Si falla, el estado igual quedó.
     const texto = textoEstado(r.valor, b.estado, motivo, negocio.nombre, aj);
-    const aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
+    let aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
+    // ZL-157: el comprador SIEMPRE se entera. Si no salió solo (pasaron las 24 h de Meta, o falló el envío), queda
+    // guardado para cuando vuelva a escribir, y el dueño tiene el mensaje listo para mandarlo él con un toque.
+    if (texto && aviso !== true) {
+      await deps.charlasNegocio?.guardarAviso?.(r.valor.charla, texto).catch(() => {});
+      aviso = avisoManual(r.valor.charla, r.valor.canal, texto, aviso, await deps.charlasNegocio?.usuario?.(r.valor.charla).catch(() => null));
+    }
     return json({ ...r.valor, aviso });
   }
   // Avisos al celular (ZL-151): la clave pública, suscribir este celular y un aviso de prueba.
@@ -308,7 +328,14 @@ export async function appNegocios(request, env, deps) {
     const m = deps.negocios.metricas ? await deps.negocios.metricas(negocio.id, dias) : {};
     const c = (await ejecutar('numeros', [desde])).valor ?? {};
     const uso = (await deps.negocios.uso(negocio.id)).filter((u) => u.dia >= new Date(desde).toISOString().slice(0, 10)).reduce((x, u) => x + u.n, 0);
-    return json({ dias, charlas: m.charlas ?? 0, audios: m.audios ?? 0, pases: m.pases ?? 0, seguimientos: m.seguimientos ?? 0, respuestas: uso, ...c });
+    // ZL-158: lo que mandó el sistema por WhatsApp este mes (Meta cobra pasando los 1.000 por número por mes).
+    let whatsappMes = null;
+    if (canalesDe(negocio).whatsapp && deps.negocios.metricasDias) {
+      const hoy = diaLocal(now, ajustesDeVenta(negocio.ajustes).zona);
+      const dias = await deps.negocios.metricasDias(negocio.id, `${hoy.slice(0, 7)}-01`, hoy);
+      whatsappMes = { enviados: dias.reduce((x, d) => x + (d.enviadosWa ?? 0), 0), gratis: GRATIS_WA_MES, aviso: AVISO_WA_MES, mes: hoy.slice(0, 7) };
+    }
+    return json({ dias, charlas: m.charlas ?? 0, audios: m.audios ?? 0, pases: m.pases ?? 0, seguimientos: m.seguimientos ?? 0, respuestas: uso, ...c, whatsappMes });
   }
 
   // Reportes (ZL-152): día, semana o mes, para ver en la app o bajar en Excel. Con la hora del negocio.
@@ -498,7 +525,7 @@ export async function appNegocios(request, env, deps) {
       // `estado` (lo que devolvió el mensaje anterior) sigue la misma charla: idioma elegido y pausa de PERSONA.
       return json({ ...resumenFicha(pf), ...(await deps.probar(pf.ficha, negocio.id, mensajes, b.estado ?? null)) });
     }
-    if (request.method === 'GET' && sub === '/uso') return json({ uso: await deps.negocios.uso(negocio.id), limiteDia: negocio.limiteDia });
+    if (request.method === 'GET' && sub === '/uso') return json({ uso: await deps.negocios.uso(negocio.id), limiteDia: limiteDiaDe(negocio) });
   }
   return error('no existe', 404);
 }
@@ -514,7 +541,7 @@ export async function administrar(request, ruta, deps, now) {
     for (const n of await deps.negocios.list()) {
       const f = await deps.negocios.ficha(n.id);
       const uso = await deps.negocios.uso(n.id);
-      out.push({ ...n, canales: canalesDe(n), asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa) }, usoHoy: uso.find((u) => u.dia === hoy)?.n ?? 0, usoMes: uso.filter((u) => u.dia.slice(0, 7) === hoy.slice(0, 7)).reduce((a, u) => a + u.n, 0) });
+      out.push({ ...n, limiteDia: limiteDiaDe(n), canales: canalesDe(n), asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa) }, usoHoy: uso.find((u) => u.dia === hoy)?.n ?? 0, usoMes: uso.filter((u) => u.dia.slice(0, 7) === hoy.slice(0, 7)).reduce((a, u) => a + u.n, 0) });
     }
     return json({ negocios: out });
   }
@@ -589,5 +616,30 @@ async function conContacto(lista, deps) {
       u = usuarios.get(x.charla);
     }
     x.contacto = contactoDeCharla(x.charla, x.canal, u);
+  }
+}
+
+/**
+ * ZL-157: lo que la app le muestra al dueño cuando el aviso no salió solo: por qué, el texto y el link para mandarlo
+ * desde su WhatsApp (con el texto ya escrito) o su Instagram (el texto se copia). Desde su app no hay límite de 24 h.
+ */
+export function avisoManual(charla, canal, texto, motivo, usuario = null) {
+  const k = contactoDeCharla(charla, canal, usuario);
+  const fuera = motivo === 'fuera_24h';
+  const base = { pendiente: true, fuera24h: fuera, motivo: fuera ? 'pasaron más de 24 h desde su último mensaje' : String(motivo ?? 'no se pudo mandar'), texto };
+  if (k?.canal === 'whatsapp') return { ...base, canal: 'whatsapp', enlace: `${k.enlace}?text=${encodeURIComponent(texto)}` };
+  if (k?.canal === 'instagram') return { ...base, canal: 'instagram', enlace: k.enlace };
+  return base;
+}
+
+/** ZL-157: a cada pedido con un aviso que todavía no le llegó al comprador, la tarjeta le suma el mensaje listo. */
+async function conAvisoPendiente(lista, deps) {
+  if (!deps.charlasNegocio?.avisos) return;
+  const porCharla = new Map();
+  for (const p of lista ?? []) {
+    if (!p?.charla) continue;
+    if (!porCharla.has(p.charla)) porCharla.set(p.charla, await deps.charlasNegocio.avisos(p.charla).catch(() => []));
+    const texto = porCharla.get(p.charla).filter((t) => new RegExp(`N\\.º ${Number(p.numero)}(?!\\d)`).test(String(t))).at(-1);
+    if (texto) p.avisoPendiente = avisoManual(p.charla, p.canal, texto, 'fuera_24h', /^@/.test(p.contacto?.texto ?? '') ? p.contacto.texto.slice(1) : null);
   }
 }

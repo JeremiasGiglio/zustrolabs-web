@@ -43,7 +43,7 @@ Por qué un Durable Object y no KV:
 
 **Límites**
 - 20 mensajes por minuto por número o cuenta de Instagram. Pasado eso, silencio.
-- 30 respuestas de la IA por minuto en total, entre los dos canales. Pasado eso, el asistente avisa que hay muchas consultas y sugiere PERSONA. No corta la atención humana ni BORRAR.
+- IA (ZL-158): 60 respuestas por minuto por negocio (`LIMITE_NEGOCIO`) y 1.000 por minuto en total (`LIMITE_GLOBAL`, freno de seguridad). Si un cupo está lleno, espera y reintenta solo (dos veces, 4 s); recién después avisa que hay muchas consultas. No corta la atención humana ni BORRAR.
 - 40 respuestas de la IA por persona y por día (`TOPE_DIARIO`). Pasado eso, sugiere PERSONA.
 - Sin los límites configurados, no contesta.
 

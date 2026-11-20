@@ -30,6 +30,13 @@ const claveSeguimiento = (cuando, num) => `seg:${String(Math.max(0, Math.floor(c
  * cortos; lo que no se entiende vuelve al valor de siempre.
  */
 export const RESERVAS_HORAS = [2, 24, 48, 168];
+/**
+ * ZL-158: cuántas respuestas de IA por día tiene un negocio. 1.000 por defecto (un negocio con 100 charlas de 6
+ * mensajes usa 600). Los negocios guardados con 300, el valor por defecto de antes, pasan a 1.000.
+ */
+export const LIMITE_DIA_NEGOCIO = 1000;
+export const limiteDiaDe = (n) => (Number.isFinite(n?.limiteDia) && n.limiteDia !== 300 ? n.limiteDia : LIMITE_DIA_NEGOCIO);
+
 export function ajustesDeVenta(a) {
   const corto = (v, n) => String(v ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
   return {
@@ -104,6 +111,8 @@ export function crearAtencion(storage) {
         ...(datos?.baja === true && { baja: true }),
         // ZL-153: el usuario de Instagram de la persona (para que el negocio la encuentre rápido en la app).
         ...(/^[\w.]{1,30}$/.test(String(datos?.usuario ?? '')) && { usuario: String(datos.usuario) }),
+        // ZL-157: avisos de pedido que no salieron solos (fuera de las 24 h): se dicen cuando vuelve a escribir.
+        ...(Array.isArray(datos?.avisos) && datos.avisos.some((x) => corto(x, 1000)) && { avisos: datos.avisos.map((x) => String(x ?? '').replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ').trim().slice(0, 1000)).filter(Boolean).slice(-3) }),
       };
       // El índice de seguimientos (ZL-151): una clave por recordatorio pendiente, ordenada por hora, para que el cron
       // encuentre los vencidos sin recorrer toda la memoria.
@@ -171,7 +180,8 @@ export function crearAtencion(storage) {
     },
     /** Números del negocio por día (ZL-151): charlas, audios, seguimientos, pases. 120 días. */
     async sumarMetrica(id, clave, now, dia = null) {
-      if (!['charlas', 'audios', 'seguimientos', 'pases'].includes(clave)) return 0;
+      // ZL-158: «enviadosWa», lo que manda el sistema por WhatsApp (Meta cobra pasando los 1.000 por número por mes).
+      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes'].includes(clave)) return 0;
       const k = `negmet:${id}:${/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : diaDe(now)}`;
       const x = (await s.get(k)) ?? {};
       x[clave] = (x[clave] ?? 0) + 1;
@@ -205,7 +215,7 @@ export function crearAtencion(storage) {
     },
     async metricas(id, dias, now) {
       const desde = diaDe(now - (dias - 1) * DIA_MS);
-      const tot = { charlas: 0, audios: 0, seguimientos: 0, pases: 0 };
+      const tot = { charlas: 0, audios: 0, seguimientos: 0, pases: 0, enviadosWa: 0 };
       for (const [k, v] of await s.list({ prefix: `negmet:${id}:` })) {
         if (k.split(':').pop() < desde || !vigente(v, now)) continue;
         for (const c of Object.keys(tot)) tot[c] += v[c] ?? 0;
@@ -344,7 +354,7 @@ export function crearAtencion(storage) {
         const dueño = (await s.get(`negcta:${c}`))?.id;
         if (dueño && dueño !== nid) return { error: `la cuenta ${c} ya es de otro negocio` };
       }
-      const limiteDia = Math.min(Math.max(Number(datos?.limiteDia ?? antes?.limiteDia ?? 300) || 300, 10), 5000);
+      const limiteDia = Math.min(Math.max(Number(datos?.limiteDia ?? antes?.limiteDia ?? 1000) || 1000, 10), 5000);
       // Canales que contrató el negocio (ZL-122): Instagram, WhatsApp o ambos. Con un canal apagado, el agente no responde ahí.
       const c0 = antes?.canales ?? { instagram: true, whatsapp: false };
       const ci = datos?.canales ?? {};

@@ -59,9 +59,14 @@ export function leerWebhookIg(payload) {
       const texto = /^[A-Z0-9_]{1,20}$/.test(rapido) ? rapido : typeof msg.text === 'string' ? msg.text : '';
       // Un audio no se escucha: el asistente avisa que solo lee mensajes escritos. Un «me gusta» o un sticker también
       // llegan como adjunto.
-      const audio = (msg.attachments ?? []).some((x) => x?.type === 'audio');
-      if (texto.trim()) out.push({ ...base, kind: 'text', text: texto });
-      else out.push({ ...base, kind: 'otro', ...(audio && { audio: true }) });
+      const adjuntos = msg.attachments ?? [];
+      const audio = adjuntos.some((x) => x?.type === 'audio');
+      if (texto.trim()) { out.push({ ...base, kind: 'text', text: texto }); continue; }
+      // ZL-157: un ❤️, un sticker o una mención en una historia no se contestan (antes recibían «solo leo mensajes de
+      // texto»). Una publicación compartida tiene su respuesta: no la vemos, así que se pregunta qué quiere saber.
+      if (msg.is_unsupported || adjuntos.some((x) => ['story_mention', 'like_heart'].includes(x?.type) || x?.payload?.sticker_id)) continue;
+      if (adjuntos.some((x) => ['share', 'ig_reel', 'reel', 'ig_post', 'post'].includes(x?.type))) { out.push({ ...base, kind: 'compartido' }); continue; }
+      out.push({ ...base, kind: 'otro', ...(audio && { audio: true }) });
     }
   }
   return out;

@@ -145,7 +145,7 @@ test('envío pide la dirección; lo que no hay o no existe no entra y se explica
   assert.notEqual((await beto('cancelar')).metrica, 'pedido_cancelado');
 });
 
-test('tiempos: el carrito se guarda 20 minutos; confirmado, 2 horas para que el negocio responda; aceptado, lo que diga el negocio', async () => {
+test('tiempos: el carrito se guarda 20 minutos; confirmado, espera al negocio sin plazo (ZL-157); aceptado, lo que diga el negocio', async () => {
   const { c, pan, charlar, stock, reloj } = armar();
   const ana = charlar(ANA);
   await ana('hola');
@@ -157,17 +157,17 @@ test('tiempos: el carrito se guarda 20 minutos; confirmado, 2 horas para que el 
   let r = await ana('sí');
   assert.equal(r.metrica, 'pedido_vencido');
   assert.match(r.texto, /Tu pedido se venció \(lo guardo 20 minutos sin confirmar\)/);
-  // Lo arma de nuevo y confirma: pendiente 2 horas.
+  // Lo arma de nuevo y confirma: pendiente SIN plazo (ZL-157): lo acepta o lo rechaza el negocio.
   await ana('quiero 2 kilos de pan');
   await ana('dale');
   await ana('1');
   r = await ana('Ana');
   const n = r.pedido;
-  reloj.t += 119 * MIN;
-  assert.equal(c.pedido(n).estado, 'pendiente');
-  reloj.t += 2 * MIN;
-  assert.equal(c.pedido(n).estado, 'vencido', 'sin respuesta del negocio en 2 horas, vence');
-  assert.equal(stock(pan).reservado, 0);
+  reloj.t += 3 * 24 * 60 * MIN;
+  assert.equal(c.pedido(n).estado, 'pendiente', 'a los 3 días sigue esperando al negocio');
+  assert.equal(stock(pan).reservado, 2, 'y los productos siguen reservados');
+  c.cambiarEstado(n, 'rechazado', 'duena@example.com');
+  assert.equal(stock(pan).reservado, 0, 'al rechazarlo se liberan');
   // Aceptado con 24 h: a las 23 h sigue; a las 25 h sin pagar, vence; pagado no vence nunca.
   // ZL-146: ya sabemos que se llama Ana: con retiro, el pedido se cierra sin volver a preguntar el nombre.
   await ana('quiero 2 kilos de pan'); await ana('sí');
@@ -245,7 +245,7 @@ test('ZL-154: la IA ve los últimos 3 pedidos de ESA persona, con su estado y su
   const lineas = k.texto.split('\n');
   assert.equal(lineas.length, 3, 'solo los últimos 3');
   assert.match(lineas[0], new RegExp(`^- Pedido N\\.º ${n} del \\d\\d/\\d\\d · entregado · retira en el local · \\[ref ${pan.id}\\] 3 × Pan francés · total \\$ 7\\.500$`));
-  assert.match(lineas[1], /esperando que el negocio lo confirme; el negocio lo confirma antes del/);
+  assert.match(lineas[1], /esperando que el negocio lo confirme · retira/, 'pendiente: sin plazo (ZL-157)');
   assert.match(lineas[2], /el negocio no lo pudo tomar · con envío/);
   assert.doesNotMatch(k.texto, /Torta|Beto|Calle|Ana|sin horno/, 'nada de otra persona, ni la dirección, ni el nombre, ni el motivo');
   assert.ok(k.montos.includes('7500'));

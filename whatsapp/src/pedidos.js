@@ -7,7 +7,9 @@
 // pedido de un estado a otro. Nada de esto lo escribe la IA.
 //
 // Estados: borrador (el carrito de una charla) → pendiente (el comprador confirmó) → aceptado → pagado → entregado.
-// Antes de entregado: rechazado, cancelado o vencido, y la reserva se libera. Solo el negocio acepta, marca pagado y
+// Antes de entregado: rechazado, cancelado o vencido, y la reserva se libera. Desde ZL-157 un pedido pendiente NO se
+// vence: lo acepta o lo rechaza el negocio (con recordatorios al celular); solo vencen el carrito sin confirmar y lo
+// aceptado sin pagar, con el plazo que eligió el negocio. Solo el negocio acepta, marca pagado y
 // entregado (lo controla la API, negocios.js); al entregar se descuenta el stock de verdad.
 
 export const ESQUEMA_PEDIDOS = [
@@ -39,7 +41,9 @@ export const MAX_ITEMS = 30;
 export const MAX_CANTIDAD = 999;
 const MIN = 60_000;
 /** Cuánto dura cada reserva si nadie dice otra cosa. */
-export const RESERVA = { borrador: 20 * MIN, pendiente: 120 * MIN, aceptado: 48 * 60 * MIN };
+export const RESERVA = { borrador: 20 * MIN, aceptado: 48 * 60 * MIN };
+/** Recordatorios al dueño de un pedido sin responder (ZL-157): a la hora y antes de que Meta cierre las 24 h. */
+export const RECORDATORIOS = [{ tipo: '1h', despues: 60 * MIN }, { tipo: '20h', despues: 20 * 60 * MIN }];
 
 const texto = (v, max) => String(v ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, max);
 const nuevoId = () => `o${Date.now().toString(36)}${crypto.getRandomValues(new Uint32Array(2)).reduce((a, n) => a + n.toString(36), '')}`;
@@ -58,6 +62,8 @@ export function datosComprador(d) {
  */
 export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, ErrorCatalogo }) {
   for (const q of ESQUEMA_PEDIDOS) sql.exec(q);
+  // ZL-157: los pendientes de antes (con las 2 h de plazo) dejan de vencer.
+  sql.exec("UPDATE pedidos SET vence = NULL WHERE estado = 'pendiente' AND vence IS NOT NULL");
   const filas = (q, ...p) => sql.exec(q, ...p).toArray();
   const una = (q, ...p) => filas(q, ...p)[0] ?? null;
   const evento = (pedido, estado, detalle, quien) =>
@@ -218,7 +224,7 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
         if (comprador.entrega === 'envio' && !comprador.direccion) throw new ErrorCatalogo('falta la dirección de envío', 'direccion');
         const numero = (una('SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM pedidos').n);
         sql.exec('UPDATE pedidos SET estado = ?, numero = ?, comprador = ?, vence = ?, actualizado = ? WHERE id = ?',
-          'pendiente', numero, JSON.stringify(comprador), now + RESERVA.pendiente, now, p.id);
+          'pendiente', numero, JSON.stringify(comprador), null, now, p.id);
         evento(p.id, 'pendiente', `pedido ${numero} confirmado`, quien);
         return armar(porNumero(numero));
       });
@@ -302,6 +308,25 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
         WHERE p.numero IS NOT NULL AND p.creado >= ? AND p.creado < ? AND p.estado NOT IN ('rechazado','cancelado','vencido')
         GROUP BY i.nombre ORDER BY unidades DESC, monto DESC LIMIT 20`, d, h);
       return { pedidos, productos };
+    },
+
+    /**
+     * ZL-157: los pedidos pendientes a los que les toca un recordatorio al dueño (a la hora, y a las 20 h, antes de que
+     * Meta cierre las 24 h para avisarle solo al comprador). Cada uno se marca al devolverlo: nunca se repite.
+     * → [{numero, charla, canal, tipo, desde}]
+     */
+    recordatorios(now = reloj()) {
+      return transaccion(() => {
+        const out = [];
+        for (const p of filas("SELECT * FROM pedidos WHERE estado = 'pendiente' ORDER BY actualizado")) {
+          const hechos = new Set(filas("SELECT detalle FROM pedido_eventos WHERE pedido = ? AND estado = 'recordatorio'", p.id).map((e) => e.detalle));
+          const toca = RECORDATORIOS.filter((r) => now - p.actualizado >= r.despues && !hechos.has(r.tipo));
+          if (!toca.length) continue;
+          for (const r of toca) evento(p.id, 'recordatorio', r.tipo, 'sistema');
+          out.push({ numero: p.numero, charla: p.charla, canal: p.canal, tipo: toca.at(-1).tipo, desde: p.actualizado });
+        }
+        return out;
+      });
     },
 
     /** Un pedido con su historia. */

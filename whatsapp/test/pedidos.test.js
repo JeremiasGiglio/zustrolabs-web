@@ -72,7 +72,7 @@ test('confirmar: pide nombre y entrega, da número correlativo y la reserva sigu
   assert.equal(p.numero, 1);
   assert.equal(p.estado, 'pendiente');
   assert.deepEqual(p.comprador, { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Falsa 123', notas: 'tocar timbre' });
-  assert.equal(p.vence, ahora() + 120 * MIN);
+  assert.equal(p.vence, null, 'ZL-157: un pedido pendiente no se vence');
   assert.equal(c.carritoDe(CHARLA), null, 'la charla puede armar otro');
   assert.throws(() => c.confirmar(CHARLA, datos), /no hay un carrito/);
   c.carrito(OTRA, [{ id: pan.id, cantidad: 1 }]);
@@ -120,7 +120,7 @@ test('rechazar o cancelar libera la reserva; el stock no puede bajar de lo reser
   assert.equal(c.borrar(torta.id, DUENA), true);
 });
 
-test('vencer: el carrito sin confirmar se borra, lo pendiente o aceptado sin pagar vence, lo pagado no', () => {
+test('vencer: el carrito sin confirmar se borra, lo aceptado sin pagar vence; lo pendiente (ZL-157) y lo pagado no', () => {
   const { c, pan, avanzar } = armar();
   c.carrito('a', [{ id: pan.id, cantidad: 1 }]);
   c.carrito('b', [{ id: pan.id, cantidad: 2 }]); const b = c.confirmar('b', datos).numero;
@@ -134,12 +134,13 @@ test('vencer: el carrito sin confirmar se borra, lo pendiente o aceptado sin pag
   assert.deepEqual(c.vencer(), [], 'el carrito vence callado');
   assert.equal(c.carritoDe('a'), null);
   avanzar(100 * MIN);
-  assert.deepEqual(c.vencer().map((v) => [v.numero, v.antes]).sort(), [[b, 'pendiente'], [cc, 'aceptado']]);
-  assert.deepEqual(stock(c, pan.id), [10, 4], 'solo queda lo pagado');
+  assert.deepEqual(c.vencer().map((v) => [v.numero, v.antes]).sort(), [[cc, 'aceptado']]);
+  assert.deepEqual(stock(c, pan.id), [10, 6], 'quedan lo pagado y lo pendiente');
+  assert.equal(c.pedido(b).estado, 'pendiente');
   assert.equal(c.pedido(d).estado, 'pagado');
   assert.equal(c.proximoVencimiento(), null);
   const lista = c.pedidos();
-  assert.deepEqual(lista.cuenta, { vencido: 2, pagado: 1 });
+  assert.deepEqual(lista.cuenta, { pendiente: 1, vencido: 1, pagado: 1 });
   assert.ok(!lista.pedidos.some((p) => p.estado === 'borrador'));
   assert.deepEqual(c.pedidos({ estado: 'pagado' }).pedidos.map((p) => p.numero), [d]);
 });
@@ -149,4 +150,39 @@ test('la IA ve el stock disponible: lo reservado por otros cuenta como agotado',
   c.carrito(CHARLA, [{ id: torta.id, cantidad: 1 }]);
   const vista = JSON.stringify(c.paraAsistente('torta'));
   assert.match(vista, /AGOTADO/);
+});
+
+test('recordatorios (ZL-157): un pendiente avisa al dueño a la hora y a las 20 h, una sola vez cada uno; el resto no', () => {
+  const { c, pan, avanzar } = armar();
+  c.carrito('a', [{ id: pan.id, cantidad: 1 }]); const n = c.confirmar('a', datos).numero;
+  c.carrito('b', [{ id: pan.id, cantidad: 1 }]); const m = c.confirmar('b', datos).numero;
+  c.cambiarEstado(m, 'aceptado', DUENA, { horas: 48 });
+  avanzar(59 * MIN);
+  assert.deepEqual(c.recordatorios(), []);
+  avanzar(2 * MIN);
+  assert.deepEqual(c.recordatorios().map((r) => [r.numero, r.tipo, r.charla]), [[n, '1h', 'a']], 'solo el pendiente');
+  assert.deepEqual(c.recordatorios(), [], 'no se repite');
+  avanzar(20 * 60 * MIN);
+  assert.deepEqual(c.recordatorios().map((r) => [r.numero, r.tipo]), [[n, '20h']]);
+  assert.deepEqual(c.recordatorios(), []);
+  assert.equal(c.pedido(n).estado, 'pendiente', 'y sigue esperando, sin vencer');
+  assert.deepEqual(c.pedido(n).eventos.filter((e) => e.estado === 'recordatorio').map((e) => e.detalle), ['1h', '20h']);
+  // Un pedido que se confirma tarde y ya pasó las 20 h: un solo recordatorio, el último.
+  c.carrito('c', [{ id: pan.id, cantidad: 1 }]); const k = c.confirmar('c', datos).numero;
+  avanzar(21 * 60 * MIN);
+  assert.deepEqual(c.recordatorios().map((r) => [r.numero, r.tipo]), [[k, '20h']]);
+});
+
+test('pendientes de antes de ZL-157: al abrir la base dejan de vencer', () => {
+  const { sql, transaccion } = sqlPrueba();
+  let t = T0;
+  const c = crearCatalogo(sql, transaccion, () => t);
+  const pan = c.crear({ nombre: 'Pan', precio: 1, stock: 5 }, DUENA);
+  c.carrito('a', [{ id: pan.id, cantidad: 1 }]);
+  const n = c.confirmar('a', datos).numero;
+  sql.exec("UPDATE pedidos SET vence = ? WHERE numero = ?", t + 120 * MIN, n); // como quedaban antes
+  const otra = crearCatalogo(sql, transaccion, () => t);
+  t += 3 * 60 * MIN;
+  assert.equal(otra.pedido(n).estado, 'pendiente');
+  assert.equal(otra.pedido(n).vence, null);
 });

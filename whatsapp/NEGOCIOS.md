@@ -122,12 +122,31 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 | Momento | Stock | Cuánto dura |
 |---|---|---|
 | El comprador arma el carrito | Se **reserva** (no baja: el disponible sí) | **20 minutos** sin confirmar; después se libera solo |
-| Confirma (SÍ → retiro/envío → nombre → dirección) | Sigue reservado, con número de pedido | **2 horas** para que el negocio lo acepte |
+| Confirma (SÍ → retiro/envío → nombre → dirección) | Sigue reservado, con número de pedido | **No vence** (ZL-157): lo acepta o lo rechaza el negocio. Recordatorio al celular a la hora y a las 20 h |
 | El negocio lo acepta | Sigue reservado | Lo que elija el negocio: 2 h, 24 h (de entrada), 48 h o 7 días sin pagar |
 | Marca pagado | Sigue reservado | No vence |
 | Marca entregado | **Baja de verdad** (queda en el Historial) | — |
 | Rechazado, cancelado o vencido | Vuelve a estar disponible | — |
 
+- **El comprador siempre se entera (ZL-157).** Cada cambio (aceptado, pagado, entregado, rechazado, cancelado) se le
+  manda solo si está dentro de las 24 h de su último mensaje (la regla de Meta, con media hora de margen; afuera ni se
+  intenta, porque YCloud acepta el envío y Meta lo rechaza después sin avisar). Si no, el aviso queda guardado en su
+  memoria y la tarjeta del pedido muestra «Falta avisarle al comprador» con el mensaje listo: «Mandárselo por
+  WhatsApp» (wa.me con el texto escrito) o «Copiar el mensaje» + «Abrir Instagram». Desde su app el dueño no tiene
+  límite de 24 h. Si el comprador vuelve a escribir antes, el asistente se lo dice primero, en el mismo mensaje de la
+  respuesta. «Ya se lo mandé» lo borra; si el dueño le escribe desde su WhatsApp (eco), también.
+- **Comprobantes (ZL-157):** con un pedido abierto (pendiente, aceptado o pagado), una foto, un archivo o un audio no
+  los ve la IA ni se contestan: le llega un aviso al dueño («Te mandó un archivo»). Sin pedido abierto, sigue «solo
+  leo mensajes de texto». Stickers, reacciones y menciones en historias no se contestan; una publicación de Instagram
+  compartida recibe «no las puedo ver: ¿qué producto es?».
+- **WhatsApp tiene costo desde el 1/10/2026 (ZL-158):** Meta da 1.000 mensajes de servicio gratis por número por mes y
+  después cobra cada mensaje que manda el sistema (lo paga la cuenta de YCloud del negocio). Inicio muestra «WhatsApp
+  este mes: X de 1.000» y avisa desde los 800; Reportes, los mensajes enviados. No cuentan los que recibe ni lo que el
+  dueño escribe desde su app.
+- **Capacidad de la IA (ZL-158):** 60 respuestas por minuto por negocio y 1.000 en toda la cuenta (Anthropic deja
+  4.000 con Haiku 5.5). Si un cupo está lleno, se espera y se reintenta solo. Tope por día de cada negocio: 1.000 (los
+  que tenían 300, el valor viejo, pasan a 1.000); al llegar, las charlas pasan al dueño y le llega un aviso, una vez.
+  Prueba: `test/capacidad.test.js` (30 negocios en hora pico).
 - Lo agotado (contando reservas) no entra al carrito y el asistente lo dice («quedan 2», «no queda»). Si un cambio no se
   puede, el carrito queda como estaba.
 - CANCELAR anula el carrito; PEDIDO lo muestra. Mientras se pregunta retiro o envío, 1 y 2 son eso (no el menú).

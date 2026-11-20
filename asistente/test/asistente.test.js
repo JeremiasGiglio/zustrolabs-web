@@ -253,11 +253,15 @@ test('llamarClaude: manda la clave en la cabecera y valida la salida', async () 
   await assert.rejects(llamarClaude({}, { apiKey: '' }), /config/);
 });
 
-test('llamarClaude: reintenta una vez si la API está saturada, y no reintenta un 400', async () => {
+test('llamarClaude: reintenta si la API está saturada (hasta 3 veces, ZL-158), y no reintenta un 400 ni el tope del mes', async () => {
   let n = 0;
-  const saturada = async () => (++n === 1 ? { ok: false, status: 529, json: async () => ({}) } : respuestaApi(salida()));
+  const saturada = async () => (++n < 3 ? { ok: false, status: n === 1 ? 529 : 429, headers: new Headers({ 'retry-after': '2' }), json: async () => ({}) } : respuestaApi(salida()));
   await llamarClaude({}, { apiKey: 'k', fetchImpl: saturada, pausaMs: 0 });
-  assert.equal(n, 2);
+  assert.equal(n, 3);
+  let k = 0;
+  const tope = async () => (k++, { ok: false, status: 429, json: async () => ({ error: { type: 'rate_limit_error', details: { error_code: 'enforced_spend_limit_reached' } } }) });
+  await assert.rejects(llamarClaude({}, { apiKey: 'k', fetchImpl: tope, pausaMs: 0 }), /api-tope-mensual/);
+  assert.equal(k, 1);
   let m = 0;
   await assert.rejects(llamarClaude({}, { apiKey: 'k', fetchImpl: async () => { m++; return { ok: false, status: 400, json: async () => ({}) }; }, pausaMs: 0 }), /api-400/);
   assert.equal(m, 1);

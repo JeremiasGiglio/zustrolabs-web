@@ -63,9 +63,11 @@ class_name = "Catalogo"
 tag = "v2"
 new_sqlite_classes = ["Catalogo"]
 
-# Límites (sin ellos no responde): 20 mensajes por minuto por número (pasado eso, silencio) y 30 respuestas de la IA
-# por minuto en total, que es el tope de gasto de este canal. Además, 40 respuestas de la IA por número y por día
-# (TOPE_DIARIO en src/whatsapp.js).
+# Límites (sin ellos no responde): 20 mensajes por minuto por número (pasado eso, silencio). La IA (ZL-158): 60
+# respuestas por minuto POR NEGOCIO (un negocio con mucho movimiento no frena a los demás) y 1.000 por minuto en toda
+# la cuenta, como freno de seguridad (Anthropic permite 4.000 por minuto con Haiku 5.5). Si un cupo está lleno se
+# espera y se reintenta solo. Además, el tope diario de cada negocio (limiteDia, en Administración) y 40 respuestas de
+# la IA por número y por día (TOPE_DIARIO en src/whatsapp.js).
 [[ratelimits]]
 name = "LIMITE"
 namespace_id = "1072"
@@ -74,7 +76,12 @@ simple = { limit = 20, period = 60 }
 [[ratelimits]]
 name = "LIMITE_GLOBAL"
 namespace_id = "1073"
-simple = { limit = 30, period = 60 }
+simple = { limit = 1000, period = 60 }
+
+[[ratelimits]]
+name = "LIMITE_NEGOCIO"
+namespace_id = "1074"
+simple = { limit = 60, period = 60 }
 
 # Aviso por correo cuando alguien escribe PERSONA (sale de avisos@avisos.zustrolabs.com hacia el secreto AVISO_PARA,
 # que tiene que estar verificado en Email Routing → Destination addresses).

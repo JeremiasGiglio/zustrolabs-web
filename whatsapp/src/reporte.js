@@ -74,14 +74,14 @@ export function armarReporte({ negocio, periodo, fecha, zona, now = Date.now(), 
   const porHora = Array(24).fill(0);
   const porSemana = Array(7).fill(0);
   const canales = { whatsapp: 0, instagram: 0 };
-  const tot = { charlas: 0, mensajes: 0, respuestas: 0, pases: 0, seguimientos: 0, audios: 0 };
+  const tot = { charlas: 0, mensajes: 0, respuestas: 0, pases: 0, seguimientos: 0, audios: 0, enviadosWa: 0 };
 
   for (const m of metricas) {
     if (!enRango(m.dia)) continue;
     const d = porDia[m.dia];
     d.mensajes += m.mensajes ?? 0;
     d.charlas += m.charlas ?? 0;
-    for (const k of ['charlas', 'mensajes', 'pases', 'seguimientos', 'audios']) tot[k] += m[k] ?? 0;
+    for (const k of ['charlas', 'mensajes', 'pases', 'seguimientos', 'audios', 'enviadosWa']) tot[k] += m[k] ?? 0;
     (m.horas ?? []).forEach((n, h) => { if (h < 24) porHora[h] += n ?? 0; });
     porSemana[diaSemana(m.dia)] += m.mensajes ?? 0;
     canales.whatsapp += m.canales?.wa ?? 0;
@@ -218,6 +218,7 @@ export function xlsx(r) {
       ['Vendido (entregados)', s.vendido],
       ['Ticket promedio', s.ticketPromedio],
       ['Recordatorios enviados', s.seguimientos],
+      ['Mensajes enviados por WhatsApp', s.enviadosWa],
       ['Audios recibidos', s.audios],
       ['Horas con más mensajes', r.horasPico.map((h) => `${h}:00`).join(', ') || '-'],
       ['Días con más mensajes', r.diasPico.join(', ') || '-'],
