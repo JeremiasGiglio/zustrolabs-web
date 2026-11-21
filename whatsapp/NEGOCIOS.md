@@ -242,6 +242,28 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## La app, profesional y fácil (ZL-165)
+
+- **Cinco secciones con ícono**: Inicio · Charlas · Productos (o Servicios) · Mi negocio · Más (Reportes, Conexiones,
+  Asistente y Avisos). El equipo ve además Admin. Lo guardado con las pestañas viejas lleva a la nueva.
+- **Inicio**: la guía «Para dejar todo andando» (asistente, canal, productos, horarios, avisos; desaparece cuando está
+  todo), **Hoy** (charlas, pedidos o consultas, vendido, mensajes con el local cerrado), **Te necesitan ahora** (consultas
+  abiertas y pedidos para aceptar), los pedidos en curso con sus filtros y la semana en una línea. Se actualiza sola cada
+  20 segundos y dice hace cuánto. Al cambiar de negocio se borra lo anterior y dice «Cargando…».
+- **Charlas** (`src/mensajes.js`, en la base del negocio): lo que escribió cada persona y lo que respondió el asistente,
+  **30 días** (cron diario; BORRAR la borra al instante). La app las pide por un número propio, nunca por el teléfono ni
+  el id de Instagram. Desde la charla el negocio **responde** (dentro de las 24 h de Meta; si no, lo dice claro) y el
+  asistente se calla ahí las horas de la ficha; «Que siga el asistente» lo devuelve. **👎** en una respuesta mala
+  devuelve la pregunta para cargar la respuesta correcta como pregunta frecuente (y cuenta en las métricas, `mal`).
+- **Productos**: «Se agotó» / «Volvió» con un toque, **precios en bloque** (porcentaje, por categoría, redondeo, con
+  vista previa; queda en el historial), contador «Mostrando N de M», y «Qué mostrar» (productos o servicios; stock,
+  unidades, códigos y categorías se pueden ocultar). Se guarda en los ajustes del negocio (`vende`, `campos`).
+- **Reportes**: cuatro números grandes (personas atendidas, pedidos o consultas, vendido, mensajes con el local cerrado)
+  y el resto en «Más números».
+- **Avisos**: la lista de dispositivos con avisos (con su nombre), «Probar» y «Sacar» cada uno (sin mostrar el endpoint).
+- **Asistente**: «Cómo trabaja» explica el objetivo de la ficha y si los pedidos por chat están encendidos.
+- **Admin**: el equipo borra un **pedido de prueba** (libera lo reservado; un entregado no se borra).
+
 ## Mi negocio (ZL-164)
 
 Pestaña «Mi negocio» de la app (`src/minegocio.js`, API `GET/PUT /api/n/<id>/mi-negocio`). Lo carga el **dueño**, sin

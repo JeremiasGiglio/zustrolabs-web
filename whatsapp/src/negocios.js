@@ -16,7 +16,7 @@ import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDe
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 import { ICONO_SVG, MANIFIESTO, suscripcionValida, SW_JS } from './push.js';
 import { diaLocal, ZONAS } from './reporte.js';
-import { ajustesConMiNegocio, cuandoResponden, estadoAhora, feriados, mapaDe, normalizarMiNegocio, paisDeZona, pesos } from './minegocio.js';
+import { ajustesConMiNegocio, cuandoResponden, estadoAhora, feriados, instanteEnZona, mapaDe, normalizarMiNegocio, paisDeZona, pesos, tieneHorarios } from './minegocio.js';
 
 export const NEGOCIOS_HOST = 'negocios.zustrolabs.com';
 /** ZL-158: Meta da 1.000 mensajes de servicio gratis por número por mes (desde el 1/10/2026); la app avisa a los 800. */
@@ -232,7 +232,7 @@ export async function appNegocios(request, env, deps) {
         ...(admin && { emails: negocio.emails, empleados: negocio.empleados ?? [], limiteDia: limiteDiaDe(negocio) }),
       },
       resumen: r.valor ?? null,
-      asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
+      asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false, objetivo: pf?.ficha?.objetivo ?? null },
       admin,
     });
   }
@@ -338,6 +338,12 @@ export async function appNegocios(request, env, deps) {
     await conAvisoPendiente([r.valor], deps);
     return json(r.valor);
   }
+  // ZL-165: el equipo borra un pedido de prueba (libera lo reservado; no queda en números ni reportes).
+  if (mo && request.method === 'DELETE') {
+    if (!admin) return error('los pedidos de prueba los borra el equipo', 403);
+    const r = await ejecutar('borrarPedido', [Number(mo[1])]);
+    return r.resp ?? json(r.valor);
+  }
   // ZL-157: «Ya se lo mandé»: el dueño le avisó desde su app; el asistente ya no lo repite.
   const mav = /^\/pedidos\/(\d{1,9})\/avisado$/.exec(sub);
   if (mav && request.method === 'POST') {
@@ -372,17 +378,49 @@ export async function appNegocios(request, env, deps) {
   // Avisos al celular (ZL-151): la clave pública, suscribir este celular y un aviso de prueba.
   if (request.method === 'GET' && sub === '/push') {
     if (!deps.negocios.vapid) return error('sin memoria', 503);
-    return json({ clave: (await deps.negocios.vapid()).publica, celulares: (await deps.negocios.suscripcionesPush(negocio.id)).length });
+    const lista = await deps.negocios.suscripcionesPush(negocio.id);
+    // ZL-165: la lista de dispositivos (sin el endpoint, que es un secreto del navegador), para probar o sacar uno.
+    return json({ clave: (await deps.negocios.vapid()).publica, celulares: lista.length, dispositivos: lista.map((x, n) => ({ n, nombre: x.nombre || 'Dispositivo', email: x.email, creado: x.creado })) });
+  }
+  const mpu = /^\/push\/(\d{1,2})(\/probar)?$/.exec(sub);
+  if (mpu) {
+    const lista = await deps.negocios.suscripcionesPush(negocio.id);
+    const x = lista[Number(mpu[1])];
+    if (!x) return error('ese dispositivo ya no está', 404);
+    if (request.method === 'POST' && mpu[2]) {
+      const enviados = deps.avisarCelulares ? await deps.avisarCelulares(negocio.id, { titulo: 'Prueba de avisos', cuerpo: 'Si ves esto, en este dispositivo te llegan los pedidos y consultas.' }, { solo: x.endpoint }) : 0;
+      return json({ enviados });
+    }
+    if (request.method === 'DELETE' && !mpu[2]) return json({ celulares: await deps.negocios.borrarPush(negocio.id, [x.endpoint]) });
+    return error('no existe', 404);
   }
   if (request.method === 'POST' && sub === '/push') {
     const b = await leerJson(request);
     if (!suscripcionValida(b?.suscripcion)) return error('este navegador no mandó una suscripción válida');
-    const n = await deps.negocios.suscribirPush(negocio.id, b.suscripcion, email);
+    const n = await deps.negocios.suscribirPush(negocio.id, b.suscripcion, email, String(b.nombre ?? ''));
     return json({ ok: true, celulares: n });
   }
   if (request.method === 'POST' && sub === '/push/probar') {
     const enviados = deps.avisarCelulares ? await deps.avisarCelulares(negocio.id, { titulo: 'Avisos activados', cuerpo: 'Así te va a llegar cada pedido o consulta nueva.' }) : 0;
     return json({ enviados });
+  }
+
+  // ZL-165: la guía para dejar el negocio andando (Inicio la muestra hasta que todo está hecho).
+  if (request.method === 'GET' && sub === '/guia') {
+    const f = await deps.negocios.ficha(negocio.id);
+    const res = (await ejecutar('resumen', [])).valor ?? {};
+    const wa = deps.ycloud?.list ? (await deps.ycloud.list().catch(() => [])).some((r) => r.negocio === negocio.id) : false;
+    const c = canalesDe(negocio);
+    const celulares = deps.negocios.suscripcionesPush ? (await deps.negocios.suscripcionesPush(negocio.id)).length : 0;
+    const vende = ajustesDeVenta(negocio.ajustes).vende;
+    const pasos = [
+      { id: 'asistente', texto: 'El equipo de Zustro Labs prepara y enciende tu asistente', hecho: Boolean(f?.texto && f.activa), ir: null },
+      { id: 'canal', texto: 'Conectá tu WhatsApp o tu Instagram', hecho: (c.instagram && (negocio.cuentas ?? []).length > 0) || (c.whatsapp && wa), ir: 'conexiones' },
+      { id: 'productos', texto: vende === 'servicios' ? 'Cargá tus servicios' : 'Cargá tus productos (o subí tu Excel)', hecho: (res.total ?? 0) > 0, ir: 'productos' },
+      { id: 'horarios', texto: 'Cargá tus horarios y cómo se paga en Mi negocio', hecho: tieneHorarios(negocio.minegocio), ir: 'minegocio' },
+      { id: 'avisos', texto: 'Activá los avisos en el celular del negocio', hecho: celulares > 0, ir: 'avisos' },
+    ];
+    return json({ pasos, listo: pasos.every((p) => p.hecho) });
   }
 
   // Números de los últimos 7 días (ZL-151): charlas, consultas, pedidos, ventas cerradas.
@@ -399,7 +437,14 @@ export async function appNegocios(request, env, deps) {
       const dias = await deps.negocios.metricasDias(negocio.id, `${hoy.slice(0, 7)}-01`, hoy);
       whatsappMes = { enviados: dias.reduce((x, d) => x + (d.enviadosWa ?? 0), 0), gratis: GRATIS_WA_MES, aviso: AVISO_WA_MES, mes: hoy.slice(0, 7) };
     }
-    return json({ dias, charlas: m.charlas ?? 0, audios: m.audios ?? 0, pases: m.pases ?? 0, seguimientos: m.seguimientos ?? 0, respuestas: uso, ...c, whatsappMes });
+    // ZL-165: lo de hoy (con la hora del negocio), para el «Hoy» de Inicio.
+    const zonaN = ajustesDeVenta(negocio.ajustes).zona;
+    const diaHoy = diaLocal(now, zonaN);
+    const desdeHoy = instanteEnZona(diaHoy, '00:00', zonaN);
+    const mh = deps.negocios.metricasDias ? (await deps.negocios.metricasDias(negocio.id, diaHoy, diaHoy))[0] ?? {} : {};
+    const ch = (await ejecutar('numeros', [desdeHoy])).valor ?? {};
+    const hoy = { charlas: mh.charlas ?? 0, mensajes: mh.mensajes ?? 0, pedidos: ch.pedidos ?? 0, consultas: ch.consultas ?? 0, vendido: ch.vendido ?? 0, fueraHorario: mh.fueraHorario ?? 0 };
+    return json({ dias, charlas: m.charlas ?? 0, audios: m.audios ?? 0, pases: m.pases ?? 0, seguimientos: m.seguimientos ?? 0, respuestas: uso, ...c, whatsappMes, hoy });
   }
 
   // Reportes (ZL-152): día, semana o mes, para ver en la app o bajar en Excel. Con la hora del negocio.
@@ -581,6 +626,60 @@ export async function appNegocios(request, env, deps) {
       pausaHasta = await deps.charlasNegocio.pausar(r.valor.charla, horas).catch(() => undefined);
     }
     return json({ ...r.valor, ...(pausaHasta && { pausaHasta }) });
+  }
+  // ── Charlas (ZL-165): lo que habló cada persona con el asistente (30 días). La app las pide por su número, nunca por
+  // el teléfono ni el id de Instagram. Desde acá el negocio responde (dentro de las 24 h de Meta) y el asistente se
+  // calla en esa charla; «Que siga el asistente» lo devuelve; 👎 marca una respuesta mala.
+  if (request.method === 'GET' && sub === '/charlas') {
+    const p = new URL(request.url).searchParams;
+    const r = await ejecutar('charlasApp', [{ q: p.get('q') ?? '', cuantos: Number(p.get('cuantos') ?? 50) }]);
+    return r.resp ?? json(r.valor);
+  }
+  const mch = /^\/charlas\/(\d{1,9})(\/responder|\/asistente|\/mensajes\/(\d{1,12})\/mal)?$/.exec(sub);
+  if (mch) {
+    const r = await ejecutar('charlaApp', [Number(mch[1]), { marcar: request.method === 'GET' }]);
+    if (r.resp) return r.resp;
+    const { charla, ...c } = r.valor;
+    const estadoCharla = async () => ({
+      pausaHasta: (await deps.charlasNegocio?.pausa?.(charla).catch(() => 0)) || 0,
+      ventanaHasta: (await deps.charlasNegocio?.ventana?.(charla).catch(() => 0)) || 0,
+    });
+    if (request.method === 'GET' && !mch[2]) return json({ ...c, ...(await estadoCharla()) });
+    if (request.method !== 'POST') return error('no existe', 404);
+    const b = (await leerJson(request)) ?? {};
+    if (mch[2] === '/responder') {
+      const texto = String(b.texto ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim().slice(0, 1000);
+      if (!texto) return error('escribí la respuesta');
+      const enviado = deps.avisarComprador ? await deps.avisarComprador(negocio, charla, texto) : 'sin canal';
+      if (enviado !== true) {
+        return error(enviado === 'fuera_24h'
+          ? 'Pasaron más de 24 horas desde su último mensaje: WhatsApp e Instagram no dejan escribirle desde acá. Respondele desde tu app de ' + (c.canal === 'wa' ? 'WhatsApp' : 'Instagram') + '.'
+          : 'No se pudo mandar (' + enviado + '). Probá de nuevo o respondele desde tu app.', 409);
+      }
+      // Contestó alguien del negocio: el asistente se calla en esa charla las horas de la ficha (no se pisan).
+      const f = await deps.negocios.ficha(negocio.id);
+      const horas = (f?.texto && parsearFicha(f.texto).ficha?.pausaHoras) || 12;
+      await deps.charlasNegocio?.pausar?.(charla, horas).catch(() => null);
+      const nueva = await ejecutar('charlaApp', [Number(mch[1]), { marcar: true }]);
+      const { charla: _c, ...vista } = nueva.valor ?? c;
+      return json({ ...vista, ...(await estadoCharla()) });
+    }
+    if (mch[2] === '/asistente') {
+      await deps.charlasNegocio?.devolver?.(charla, {}).catch(() => null);
+      return json({ ...c, ...(await estadoCharla()) });
+    }
+    const m = await ejecutar('marcarMal', [Number(mch[3]), b.mal !== false]);
+    if (m.resp) return m.resp;
+    if (b.mal !== false) await deps.negocios.sumarMetrica?.(negocio.id, 'mal', diaLocal(now, ajustesDeVenta(negocio.ajustes).zona)).catch(() => null);
+    return json(m.valor);
+  }
+
+  // ZL-165: precios en bloque (primero la vista previa con «probar», después en serio).
+  if (request.method === 'POST' && sub === '/productos/precios') {
+    const b = await leerJson(request);
+    if (!b) return error('pedido inválido');
+    const r = await ejecutar('ajustarPrecios', [{ porcentaje: b.porcentaje, categoria: b.categoria, redondeo: b.redondeo, probar: b.probar === true }, email]);
+    return r.resp ?? json(r.valor);
   }
   let mp = /^\/productos\/(p[a-z0-9]{4,40})$/.exec(sub);
   if (mp && request.method === 'PUT') {

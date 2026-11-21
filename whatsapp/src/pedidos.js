@@ -321,6 +321,23 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
     },
 
     /**
+     * ZL-165: borrar un pedido de prueba (solo el equipo, desde Admin). Libera lo reservado y no deja rastro en los
+     * números ni en el reporte. Un pedido entregado no se borra (ya descontó stock).
+     */
+    borrarPedido(numero) {
+      return transaccion(() => {
+        const p = porNumero(Number(numero));
+        if (!p) throw new ErrorCatalogo('ese pedido no existe');
+        if (p.estado === 'entregado') throw new ErrorCatalogo('un pedido entregado no se borra (ya descontó el stock)');
+        liberar(p.id);
+        sql.exec('DELETE FROM pedido_eventos WHERE pedido = ?', p.id);
+        sql.exec('DELETE FROM pedido_items WHERE pedido = ?', p.id);
+        sql.exec('DELETE FROM pedidos WHERE id = ?', p.id);
+        return { numero: p.numero, borrado: true };
+      });
+    },
+
+    /**
      * Vence lo que pasó su hora: borradores (se borran), pendientes y aceptados sin pagar (quedan «vencido»). Libera
      * las reservas. Lo llama una alarma del Durable Object. → [{numero, charla, canal, estado anterior}] para avisar.
      */

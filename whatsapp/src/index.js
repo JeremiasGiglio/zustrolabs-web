@@ -226,6 +226,11 @@ function pausasDeCharla(a, now) {
       await a.memoria.put(clave(charla), { ...e, humanoHasta: hasta, pase: null });
       return hasta;
     },
+    /** ZL-165: hasta cuándo se le puede escribir desde la app (las 24 h de Meta desde su último mensaje), o 0. */
+    async ventana(charla) {
+      const e = await a.memoria.get(clave(charla));
+      return e?.ultimo && reloj() - e.ultimo < VENTANA_SEGURA_MS ? e.ultimo + VENTANA_SEGURA_MS : 0;
+    },
     /** ZL-163: el idioma de esa charla (para avisarle al comprador en su idioma). */
     async idioma(charla) {
       const e = await a.memoria.get(clave(charla));
@@ -287,9 +292,30 @@ function pedidosDe(env, deps, dueño, ficha, charla, canal) {
  * Después de responderle a alguien de un negocio (ZL-151): los números del día (charlas, audios, pases) y el aviso al
  * celular del dueño cuando entra un pedido o una consulta. Nunca frena la charla si falla.
  */
+/**
+ * ZL-165: lo que pasó en la charla queda en «Charlas» de la app (30 días, en la base del negocio). Lo que manda la
+ * persona, lo que respondió el asistente y lo que contestó el negocio desde la app. Si falla, la charla sigue igual.
+ */
+export function textosDeEnvio(send) {
+  return (send ?? []).map((m) => m.text?.body ?? m.interactive?.body?.text ?? (m.type === 'image' ? `(foto${m.image?.caption ? `: ${m.image.caption}` : ''})` : '')).filter(Boolean);
+}
+async function anotarCharla(env, deps, negocioId, charla, lista, nombre = '') {
+  const cat = negocioId && lista.length ? catalogoDe(env, deps)(negocioId) : null;
+  if (!cat) return null;
+  const r = await cat.ejecutar('guardarMensajes', [charla, /^yc:/.test(charla) ? 'wa' : 'ig', lista, nombre]).catch(() => null);
+  return r?.ok ? r.valor : null;
+}
+const textoDeEvento = (ev) => (ev.kind === 'text' && ev.text ? ev.text : ev.audio ? '(mandó un audio)' : ev.kind === 'compartido' ? '(compartió una publicación)' : '(mandó una foto o un archivo)');
+
 async function despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, ev, r, now, charla) {
   if (!dueño?.id || !a.negocios?.sumarMetrica) return;
   try {
+    // ZL-165: «Charlas» de la app. BORRAR la borra al instante.
+    if (r.metrica === 'borrar') await catalogoDe(env, deps)(dueño.id)?.ejecutar('olvidarCharla', [charla]).catch(() => null);
+    else if (!['repetido', 'reemplazado'].includes(r.metrica)) {
+      const e = a.memoria ? await a.memoria.get(claveMemoria(charla)).catch(() => null) : null;
+      await anotarCharla(env, deps, dueño.id, charla, [{ de: 'cliente', texto: textoDeEvento(ev), t: now }, ...textosDeEnvio(r.send).map((texto) => ({ de: 'asistente', texto, t: now + 1 }))], e?.nombre || (e?.usuario ? `@${e.usuario}` : ''));
+    }
     // Todo con la hora del negocio (ZL-152): así el reporte dice a qué hora y qué día le escriben.
     const zona = ajustesDeVenta(dueño.ajustes).zona;
     const dia = diaLocal(now, zona);
@@ -319,8 +345,8 @@ async function despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, ev, r, n
 }
 
 /** Aviso a los celulares suscriptos del negocio (Web Push). Borra los que ya no existen. → cuántos se mandaron. */
-async function avisarNegocio(a, negocioId, aviso, fetchImpl, now) {
-  const subs = await a.negocios.suscripcionesPush(negocioId);
+async function avisarNegocio(a, negocioId, aviso, fetchImpl, now, { solo = null } = {}) {
+  const subs = (await a.negocios.suscripcionesPush(negocioId)).filter((x) => !solo || x.endpoint === solo);
   if (!subs.length) return 0;
   const r = await avisarCelulares(subs, { ...aviso, url: '/' }, await a.negocios.vapid(), { fetchImpl, now });
   if (r.muertas.length) await a.negocios.borrarPush(negocioId, r.muertas);
@@ -423,6 +449,19 @@ export async function revisarNegocios(env, deps, now) {
  * especial y ese día suele abrir, se le avisa una vez al celular para que diga si abre (si no, el asistente diría que
  * está abierto). Solo los negocios con horarios cargados y una zona cuyo país sabemos calcular.
  */
+/** ZL-165, cron diario: «Charlas» de la app guarda 30 días; lo más viejo se borra en cada negocio. */
+export async function purgarCharlas(env, deps, now) {
+  const a = almacen(env, deps);
+  if (!a.negocios?.list) return 0;
+  let n = 0;
+  for (const neg of await a.negocios.list()) {
+    const r = await catalogoDe(env, deps)(neg.id)?.ejecutar('purgarMensajes', [now]).catch(() => null);
+    n += r?.ok ? r.valor : 0;
+  }
+  console.log(JSON.stringify({ canal: 'negocio', que: 'purgar_charlas', charlas: n }));
+  return n;
+}
+
 export async function recordarFeriados(env, deps, now) {
   const a = almacen(env, deps);
   const fetchImpl = deps.fetch ?? fetch;
@@ -1295,11 +1334,16 @@ export default {
       return appNegocios(request, env, {
         ...a, fetch: fetchImpl, now: deps.now, catalogo: catalogoDe(env, deps), esCliente: (c) => esCliente(env, c),
         probar: (ficha, negocioId, mensajes, estado) => probarFicha(env, ficha, mensajes, deps, negocioId, estado),
-        avisarComprador: (negocio, charla, texto) => avisarComprador(env, a, negocio, charla, texto, fetchImpl, deps.now ?? Date.now()),
+        avisarComprador: async (negocio, charla, texto, de = 'negocio') => {
+          const r = await avisarComprador(env, a, negocio, charla, texto, fetchImpl, deps.now ?? Date.now());
+          // ZL-165: lo que sale desde la app también queda en la charla.
+          if (r === true) await anotarCharla(env, deps, negocio.id, charla, [{ de, texto, t: deps.now ?? Date.now() }]);
+          return r;
+        },
         charlasNegocio: pausasDeCharla(a, deps.now),
         verificar: (id, op) => datosVerificar(env, deps, id, deps.now ?? Date.now(), op),
         ...(deps.llamarWeb && { llamarWeb: deps.llamarWeb }),
-        avisarCelulares: (id, aviso) => avisarNegocio(a, id, aviso, fetchImpl, deps.now ?? Date.now()),
+        avisarCelulares: (id, aviso, op) => avisarNegocio(a, id, aviso, fetchImpl, deps.now ?? Date.now(), op),
         reporte: { armarReporte, xlsx },
       });
     }
@@ -1334,6 +1378,7 @@ export default {
     // ZL-159: después del mantenimiento, el semáforo de todos los negocios; si algo está en rojo, correo al equipo.
     await revisarNegocios(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', error: String(e?.message ?? 'error').slice(0, 60) })));
     await recordarFeriados(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'feriados', error: String(e?.message ?? 'error').slice(0, 60) })));
+    await purgarCharlas(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'purgar_charlas', error: String(e?.message ?? 'error').slice(0, 60) })));
     return r;
   },
 };
