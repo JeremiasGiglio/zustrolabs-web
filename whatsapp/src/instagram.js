@@ -136,6 +136,8 @@ export function trozar(texto, max = MAX_TROZO) {
 export function convertir(m) {
   const p = partes(m.to);
   const id = p ? p.quien : String(m.to ?? '').replace(PREFIJO, '');
+  // ZL-161: una foto va como adjunto (Instagram la baja del link); el pie ya va en el texto de la respuesta.
+  if (m.type === 'image' && /^https:\/\//.test(String(m.image?.link ?? ''))) return [{ recipient: { id }, message: { attachment: { type: 'image', payload: { url: m.image.link } } } }];
   const texto = m.type === 'interactive' ? SALUDO_IDIOMA_TEXTO : String(m.text?.body ?? '');
   const trozos = trozar(texto);
   // ZL-149: las opciones van como respuestas rápidas en el último trozo (hasta 13, 20 letras cada una).

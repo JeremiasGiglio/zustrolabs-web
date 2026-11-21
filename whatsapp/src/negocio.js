@@ -334,6 +334,8 @@ export const ESQUEMA_NEGOCIO = {
     nombre_cliente: { type: 'string', description: 'El nombre de la persona si lo dijo en algún momento; si no, vacío.' },
     resumen: { type: 'string', description: 'Una o dos líneas: quién es y qué busca, actualizado con este mensaje.' },
     avanzar: { type: 'string', enum: ['no', 'consulta'], description: '«consulta» si la persona quiere avanzar (contratar, presupuesto, agendar) y el cierre es una consulta.' },
+    // ZL-161: las fotos de productos que hay que mandarle (refs del catálogo marcados «con foto»).
+    fotos: { type: 'array', items: { type: 'string' }, description: 'Refs de productos «con foto» del catálogo cuya foto hay que mandar (hasta 3). Vacío si no corresponde.' },
   },
 };
 
@@ -397,7 +399,7 @@ Reglas, en este orden:
 11. Memoria: tenés los últimos mensajes de la charla y, entre <cliente> y </cliente>, lo que sabemos de esta persona. Usalo: no vuelvas a preguntar lo que ya dijo. Si pasaron días desde la última charla, retomá con una línea de contexto y confirmá si sigue con eso. En «nombre_cliente» poné su nombre si lo sabés (si no, vacío) y en «resumen» una o dos líneas actualizadas de quién es y qué busca.${compras?.texto ? `
 11b. Lo que ya pidió: entre <compras> y </compras> están sus últimos pedidos y su consulta abierta en este negocio, tal como están ahora. Si pregunta por su pedido, decile el estado como figura ahí, sin prometer fechas ni horarios que no estén. Si saluda y tiene uno en curso, mencionalo en una línea. ${carrito !== null && catalogo ? 'Si quiere repetir un pedido («lo mismo que la otra vez»), proponé esos productos en «pedido» con sus refs, solo si siguen en el catálogo (el sistema revisa el stock de hoy). ' : ''}Nunca hables de pedidos o consultas que no estén ahí, nunca los cambies ni los canceles vos: si quiere cambiar o cancelar uno ya confirmado, persona = true.` : ''}
 12. Idioma: respondé SIEMPRE en el idioma en que está escrito el último mensaje de la persona, aunque antes haya elegido otro (si escribe «how are you», en inglés; si escribe «hola», en castellano; si pide otro idioma, en ese). Solo si el mensaje no deja saber el idioma (un número, un emoji, «ok»), respondé en ${NOMBRE_IDIOMA[elegido && NOMBRE_IDIOMA[elegido] ? elegido : ficha.idioma]}. En «idioma» poné el de tu respuesta: es, en, hr u otro.${catalogo ? `
-13. Productos: lo que está entre <catalogo> y </catalogo> es el catálogo del negocio en este momento (lo carga el negocio y manda sobre la información de arriba). Solo ofrecé productos que estén ahí, sin inventar otros; nombralos de forma natural en la frase. «AGOTADO» quiere decir que no hay: decilo y ofrecé otro del catálogo. «quedan N»: podés decir cuántos quedan. Nunca reserves ni apartes productos vos.` : ''}${carrito !== null && catalogo ? `
+13. Productos: lo que está entre <catalogo> y </catalogo> es el catálogo del negocio en este momento (lo carga el negocio y manda sobre la información de arriba). Solo ofrecé productos que estén ahí, sin inventar otros; nombralos de forma natural en la frase. «AGOTADO» quiere decir que no hay: decilo y ofrecé otro del catálogo. «quedan N»: podés decir cuántos quedan. Nunca reserves ni apartes productos vos.${/ · con foto/.test(catalogo.texto) ? ' Fotos: si la persona pide ver un producto (una foto, «cómo es», «mostrame», «¿tenés foto?») o pregunta por uno puntual que dice «con foto», poné su ref en «fotos» (hasta 3) y en «respuesta» decí en pocas palabras que le mandás la foto. Si el producto no dice «con foto», decí que de ese no tenés foto. No vuelvas a mandar una foto que ya le mandaste en esta charla.' : ''}` : ''}${carrito !== null && catalogo ? `
 14. Pedidos: la persona puede pedir productos del catálogo por acá. Si su mensaje agrega, cambia o saca productos, completá «pedido» con cambia = true y en items el carrito COMPLETO como tiene que quedar (lo que ya tiene entre <carrito> y </carrito>, más o menos lo nuevo), con la ref exacta de cada producto del catálogo y la cantidad. Si no está claro qué producto o cuántos, preguntá y poné cambia = false. Si el mensaje no cambia el carrito, cambia = false e items vacío. En «respuesta» poné solo una frase corta y amable (por ejemplo «¡Dale! Te lo agrego.»): el sistema le muestra el resumen con los precios y el total, reserva el stock y le pide los datos. Nunca digas totales, nunca confirmes ni des por hecho el pedido, nunca pidas el nombre ni la dirección vos.` : ''}
 
 ${bloqueInformacion(ficha)}
@@ -434,7 +436,9 @@ export const preguntadorNegocio =
     };
     const r = await llamar(cuerpo).catch((e) => (e?.message === 'cortada' ? llamar(cuerpo) : Promise.reject(e)));
     const pedido = carrito !== null && cat && r.salida?.pedido && typeof r.salida.pedido === 'object' ? r.salida.pedido : null;
-    return { ...controlarNegocio(r.salida, conCatalogo), ...(pedido && { pedido }), catalogo: cat ? cat.cuantos ?? 0 : null, uso: { entrada: r.uso?.input_tokens ?? 0, salida: r.uso?.output_tokens ?? 0 } };
+    // ZL-161: solo fotos de productos que estaban en el catálogo que vio (con foto y con stock); nunca una inventada.
+    const fotos = [...new Set((Array.isArray(r.salida?.fotos) ? r.salida.fotos : []).map(String))].filter((ref) => cat?.fotos?.[ref]).slice(0, 3).map((ref) => ({ ref, ...cat.fotos[ref] }));
+    return { ...controlarNegocio(r.salida, conCatalogo), ...(pedido && { pedido }), ...(fotos.length && { fotos }), catalogo: cat ? cat.cuantos ?? 0 : null, uso: { entrada: r.uso?.input_tokens ?? 0, salida: r.uso?.output_tokens ?? 0 } };
   };
 
 /**

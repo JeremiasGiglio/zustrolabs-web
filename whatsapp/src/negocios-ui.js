@@ -79,6 +79,7 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 [hidden]{display:none!important}
 .chat{display:grid;gap:.4rem;max-height:26rem;overflow:auto;padding:.5rem;background:var(--fondo);border-radius:10px;margin:.5rem 0}
 .burbuja{max-width:85%;padding:.5rem .7rem;border-radius:12px;white-space:pre-wrap;font-size:.92rem}
+.burbuja.foto{margin:0;padding:.35rem}.burbuja.foto img{display:block;max-width:220px;width:100%;border-radius:8px}.burbuja.foto figcaption{font-size:.82rem;color:var(--gris);padding:.3rem .2rem 0}
 .burbuja.cliente{justify-self:end;background:var(--tinta);color:#fff}.burbuja.asis{justify-self:start;background:#fff;border:1px solid var(--linea)}
 .pasos li{margin:.4rem 0}.wa-num{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.8rem 1rem;margin:.6rem 0}
 .wa-form{display:grid;gap:.35rem;max-width:32rem;margin-top:1rem}details{margin:.8rem 0}summary{cursor:pointer;font-weight:600}
@@ -1098,6 +1099,13 @@ function app() {
    * ZL-159: el asistente en manos del dueño, sin pasar por el equipo: pausarlo (vacaciones, local cerrado) con un
    * mensaje de ausencia, dejarle un aviso del día y probarlo como si fuera un cliente. Un empleado lo ve, no lo cambia.
    */
+  /** ZL-161: una foto que el asistente le mandaría al cliente, en la charla de prueba (la app la muestra con la sesión). */
+  function burbujaFoto(f) {
+    return h('figure', { class: 'burbuja asis foto' },
+      f.foto ? h('img', { src: '/api' + base() + '/fotos/' + f.foto, alt: 'Foto de ' + (f.nombre || 'un producto'), loading: 'lazy' }) : null,
+      h('figcaption', {}, 'Foto: ' + (f.nombre || 'producto')));
+  }
+
   function vistaMiAsistente() {
     const n = estado.datos.negocio;
     const dueño = n.rol !== 'empleado';
@@ -1175,6 +1183,7 @@ function app() {
         estadoPrueba = r.estado || null;
         const ultima = r.charla[r.charla.length - 1];
         for (const t of ultima.respuestas) chat.append(h('div', { class: 'burbuja asis' }, t));
+        for (const f of ultima.fotos || []) chat.append(burbujaFoto(f));
         chat.scrollTop = chat.scrollHeight;
       }) }, msg, h('button', { class: 'btn prim', type: 'submit' }, 'Enviar')),
       h('div', { class: 'acciones' }, h('button', { class: 'btn', type: 'button', onclick: () => { estadoPrueba = null; poner(chat); msg.focus(); } }, 'Empezar de nuevo')));
@@ -1342,6 +1351,7 @@ function app() {
         estadoPrueba = r.estado || null;
         const ultima = r.charla[r.charla.length - 1];
         for (const t of ultima.respuestas) chat.append(h('div', { class: 'burbuja asis' }, t));
+        for (const f of ultima.fotos || []) chat.append(burbujaFoto(f));
         if (ultima.que === 'error') chat.append(h('p', { class: 'ayuda' }, 'La IA no respondió (motivo: ' + (ultima.notas || []).join(', ') + '). El cliente recibiría el mensaje de arriba.'));
         else if (ultima.notas && ultima.notas.length) chat.append(h('p', { class: 'ayuda' }, 'Controles: se sacó ' + ultima.notas.join(', ') + ' (no estaba en la ficha ni en los productos).'));
         chat.scrollTop = chat.scrollHeight;

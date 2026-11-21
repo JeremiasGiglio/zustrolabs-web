@@ -198,6 +198,16 @@ export function crearAtencion(storage) {
       if (!v) { v = await clavesVapid(); await s.put('vapid', v); }
       return v;
     },
+    /** ZL-161: la clave con la que se firman los links de las fotos que mandamos por la charla (se crea sola). */
+    async claveFotos() {
+      let k = await s.get('clave_fotos');
+      if (!k?.clave) {
+        const b = crypto.getRandomValues(new Uint8Array(32));
+        k = { clave: btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') };
+        await s.put('clave_fotos', k);
+      }
+      return k.clave;
+    },
     /** Celulares suscriptos a los avisos de un negocio (como mucho 10; el más nuevo reemplaza al mismo endpoint). */
     async suscribirPush(id, sub, email, now) {
       const k = `push:${id}`;
@@ -544,6 +554,7 @@ export function adaptadores(a, reloj = () => Date.now()) {
     contarUso: (id) => a.contarUsoNegocio(id, reloj()),
     uso: (id) => a.usoNegocio(id, reloj()),
     vapid: () => a.vapid(),
+    claveFotos: () => a.claveFotos(),
     suscribirPush: (id, sub, email) => a.suscribirPush(id, sub, email, reloj()),
     suscripcionesPush: (id) => a.suscripcionesPush(id),
     borrarPush: (id, endpoints) => a.borrarPush(id, endpoints),

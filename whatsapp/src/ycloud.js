@@ -125,13 +125,23 @@ export function interactivo(body, opciones) {
 export async function enviarYCloud(apiKey, m, fetchImpl = fetch) {
   const [, negocio, persona] = /^yc:(\d+):(\d+)$/.exec(String(m?.to ?? '')) ?? [];
   if (!negocio) throw new Error('destino inválido');
-  const body = String(m?.text?.body ?? '').slice(0, MAX_TEXTO);
-  if (!body) return null;
   const mandar = (msg) => fetchImpl(`${YCLOUD_API}/whatsapp/messages/sendDirectly`, {
     method: 'POST',
     headers: { 'X-API-Key': apiKey, 'content-type': 'application/json' },
     body: JSON.stringify({ from: `+${negocio}`, to: `+${persona}`, ...msg }),
   });
+  // ZL-161: una foto (WhatsApp la baja del link firmado), con el nombre del producto como pie.
+  if (m?.type === 'image') {
+    const link = String(m.image?.link ?? '');
+    if (!/^https:\/\//.test(link)) return null;
+    const r = await mandar({ type: 'image', image: { link, ...(m.image.caption && { caption: String(m.image.caption).slice(0, 1000) }) } });
+    if (!r.ok) throw new Error(`ycloud ${r.status}`);
+    const d = await r.json().catch(() => ({}));
+    if (d?.status === 'failed') throw new Error(`ycloud ${String(d.errorCode ?? 'failed').slice(0, 30)}`);
+    return d;
+  }
+  const body = String(m?.text?.body ?? '').slice(0, MAX_TEXTO);
+  if (!body) return null;
   // ZL-149: con opciones, botones (hasta 3) o una lista (hasta 10). Si WhatsApp o YCloud no los aceptan, va el texto
   // de siempre (que ya trae las opciones numeradas): la persona nunca se queda sin respuesta.
   const inter = interactivo(body, m?.opciones);

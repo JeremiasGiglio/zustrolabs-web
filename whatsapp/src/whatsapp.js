@@ -112,6 +112,15 @@ export function comando(texto) {
 
 // ───────────────────────── Salida ─────────────────────────
 
+/** ZL-161: una foto (link público que WhatsApp o Instagram bajan) con su pie. */
+export const msgImagen = (to, link, caption = '') => ({
+  messaging_product: 'whatsapp',
+  recipient_type: 'individual',
+  to,
+  type: 'image',
+  image: { link: String(link), ...(String(caption ?? '').trim() && { caption: String(caption).trim().slice(0, 1000) }) },
+});
+
 export const msgTexto = (to, body, opciones = null) => ({
   messaging_product: 'whatsapp',
   recipient_type: 'individual',
@@ -550,8 +559,11 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
       respuesta = juntar(Te.sigoYo, respuesta);
       aprendido.pase = 0;
     }
-    await recordar(texto, respuesta, aprendido);
-    return { send: [msgTexto(ev.from, respuesta, metrica === 'ia_pedido' ? pedido?.opciones : null)], metrica, ...extra, idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
+    // ZL-161: las fotos que pidió van después del texto (con su link firmado). En la memoria queda que se las mandamos,
+    // así no se repiten. Si la charla pasó a una persona, no.
+    const fotos = metrica === 'persona_auto' ? [] : (c.fotos ?? []).filter((f) => f?.link).slice(0, 3);
+    await recordar(texto, fotos.length ? `${respuesta}\n(Le mandé la foto de: ${fotos.map((f) => f.nombre).join(', ')})` : respuesta, aprendido);
+    return { send: [msgTexto(ev.from, respuesta, metrica === 'ia_pedido' ? pedido?.opciones : null), ...fotos.map((f) => msgImagen(ev.from, f.link, f.nombre))], metrica, ...extra, ...(fotos.length && { fotos: fotos.length }), idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
   }
   return {
     send: primerContacto

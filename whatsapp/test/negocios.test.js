@@ -865,3 +865,49 @@ test('ZL-160: con «Responder comentarios» encendido, una consulta recibe una f
   assert.deepEqual((await comentar('¿Tienen facturas?', { quien: '17841400000000012' })).publicas, []);
   assert.equal(ia.length, antesPausa);
 });
+
+// ——— ZL-161: fotos de productos en la charla ———
+
+test('ZL-161: el asistente manda la foto del producto por Instagram con un link firmado que Meta puede bajar; sin firma o vencido, nada; la charla de prueba la muestra', async () => {
+  const { d, a, pedir, enviados, bases } = await armar();
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A] });
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 7, 7]);
+  const subida = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/fotos`, PNG, { headers: { 'content-type': 'image/png' } });
+  assert.equal(subida.status, 201);
+  const prod = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Torta de chocolate', precio: 18000, foto: subida.datos.id });
+  assert.equal(prod.status, 201);
+  // La IA (simulada) ve el catálogo con «con foto» y pide la foto por su ref; la de verdad la valida preguntadorNegocio.
+  const vio = [];
+  d.preguntarNegocio = (f, cat) => async (texto) => {
+    const c = await cat(texto);
+    vio.push(c.texto);
+    const ref = Object.keys(c.fotos)[0];
+    return { respuesta: 'Te paso la foto 📷', persona: false, fuera_de_tema: false, vacia: false, notas: [], fotos: [{ ref, ...c.fotos[ref] }] };
+  };
+  const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ sender: { id: '17841400000000009' }, recipient: { id: CUENTA_A }, timestamp: T0, message: { mid: 'foto1', text: '¿me mostrás la torta?' } }] }] });
+  const antes = enviados.length;
+  await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'x-hub-signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d);
+  assert.match(vio[0], /Torta de chocolate.* · con foto/);
+  const salieron = enviados.slice(antes).filter((e) => /\/me\/messages$/.test(e.url)).map((e) => e.body.message);
+  assert.equal(salieron.length, 2, 'el texto y la foto');
+  assert.match(salieron[0].text, /Te paso la foto/);
+  const link = salieron[1].attachment.payload.url;
+  assert.match(link, new RegExp(`^https://zustrolabs\\.com/api/whatsapp/foto/${a.id}/${subida.datos.id}\\?v=\\d+&s=`));
+  // Meta baja la foto: el link firmado la da, sin sesión.
+  const foto = await worker.fetch(new Request(link), ENV, {}, d);
+  assert.equal(foto.status, 200);
+  assert.equal(foto.headers.get('content-type'), 'image/png');
+  assert.deepEqual(new Uint8Array(await foto.arrayBuffer()), PNG);
+  // Sin firma, con la firma de otra foto o vencido: 404.
+  assert.equal((await worker.fetch(new Request(link.split('?')[0]), ENV, {}, d)).status, 404);
+  assert.equal((await worker.fetch(new Request(link.replace(subida.datos.id, 'fotrafoto1')), ENV, {}, d)).status, 404);
+  assert.equal((await worker.fetch(new Request(link), ENV, {}, { ...d, now: T0 + 8 * 24 * 3600_000 })).status, 404);
+  assert.equal((await worker.fetch(new Request(link, { method: 'POST' }), ENV, {}, d)).status, 404);
+  // En la memoria queda que se la mandamos (así no la repite).
+  const mem = await d.memoria.get(`ig:${CUENTA_A}.17841400000000009`);
+  assert.match(mem.hist.at(-1).t, /Le mandé la foto de: Torta de chocolate/);
+  // La charla de prueba del dueño la muestra (con la ruta de la app, que pide sesión).
+  const pr = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['¿me mostrás la torta?'] });
+  assert.deepEqual(pr.datos.charla[0].fotos, [{ foto: subida.datos.id, nombre: 'Torta de chocolate' }]);
+});
