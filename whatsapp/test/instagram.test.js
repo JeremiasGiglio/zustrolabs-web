@@ -535,3 +535,17 @@ test('ZL-157: por Instagram, un ❤️, un sticker o una mención en una histori
   ]));
   assert.deepEqual(evs.map((e) => [e.id, e.kind]), [['r4', 'compartido'], ['r5', 'compartido'], ['r7', 'text']]);
 });
+
+test('mantenerCuentas (ZL-160): al renovar el token, una cuenta de cliente sigue siendo de cliente y conserva su permiso de comentarios', async () => {
+  const { cuentas } = nuevo();
+  await cuentas.put('17841400000000002', { username: 'cliente', token: 'tok-viejo', vence: T0 + 5 * DIA, app: ENV.IG_APP_ID, cliente: true, permisoComentarios: true });
+  const { pedidos, fetchImpl } = metaOauth({ suscripta: true });
+  const [linea] = await mantenerCuentas(ENV, cuentas, fetchImpl, T0);
+  assert.equal(linea.renovado, true);
+  const c = await cuentas.get('17841400000000002');
+  assert.equal(c.token, 'token-renovado');
+  assert.equal(c.cliente, true, 'sin esto respondería como Zustro Labs');
+  assert.equal(c.permisoComentarios, true);
+  // Con el permiso, la suscripción incluye los comentarios.
+  assert.ok(pedidos.some((p) => p.method === 'POST' && p.url.endsWith('subscribed_fields=messages,comments')));
+});

@@ -263,6 +263,16 @@ export function conAjustes(ficha, ajustes) {
   };
 }
 
+/**
+ * ZL-159: el aviso del día que carga el dueño («hoy no hay medialunas», «cerramos a las 18») entra en la información
+ * del asistente mientras está vigente. Es del negocio, igual que la ficha: la IA lo usa, nunca lo cambia. No suma
+ * montos ni links permitidos (eso sigue saliendo de la ficha y del catálogo).
+ */
+export function conAvisoDia(ficha, aviso, now = Date.now()) {
+  if (!ficha || !aviso?.texto || !(aviso.hasta > now)) return ficha;
+  return { ...ficha, conocimiento: `${ficha.conocimiento}\n\n## Aviso de hoy (lo carga el negocio, manda sobre lo de arriba)\n${aviso.texto}` };
+}
+
 function permitidosDe(texto) {
   return {
     correos: [...new Set((texto.match(CORREO_RE) ?? []).map((c) => c.toLowerCase()))],
@@ -352,6 +362,19 @@ export const cumpleNegocio = (r) =>
 const NOMBRE_IDIOMA = { es: 'castellano', en: 'inglés', hr: 'croata' };
 const TRATO = { vos: 'de «vos», en castellano rioplatense', tu: 'de «tú»', usted: 'de «usted»' };
 
+/** Lo que el asistente sabe del negocio (la ficha), entre <informacion> y </informacion>. Lo usan la charla y los comentarios (ZL-160). */
+export function bloqueInformacion(ficha) {
+  return `<informacion>
+# ${ficha.nombre}
+${ficha.saludo}
+
+${ficha.conocimiento}
+${ficha.faq ? `\n## Preguntas frecuentes\n${ficha.faq}` : ''}${ficha.vender ? `\n## Cómo vende el negocio (seguí estas pautas)\n${ficha.vender}` : ''}
+## Opciones del menú (el sistema las responde solo)
+${ficha.menu.map((o) => `${o.n}. ${o.titulo}: ${o.texto}`).join('\n')}
+</informacion>`;
+}
+
 /** catalogo: {texto} de Catalogo.paraAsistente (los productos del negocio en este momento), o null si no tiene. */
 export function promptNegocio(ficha, canal = 'Instagram', catalogo = null, elegido = null, delMensaje = null, carrito = null, { objetivo = null, cliente = null, saludado = false, compras = null } = {}) {
   const meta = objetivo === 'pedidos'
@@ -377,15 +400,7 @@ Reglas, en este orden:
 13. Productos: lo que está entre <catalogo> y </catalogo> es el catálogo del negocio en este momento (lo carga el negocio y manda sobre la información de arriba). Solo ofrecé productos que estén ahí, sin inventar otros; nombralos de forma natural en la frase. «AGOTADO» quiere decir que no hay: decilo y ofrecé otro del catálogo. «quedan N»: podés decir cuántos quedan. Nunca reserves ni apartes productos vos.` : ''}${carrito !== null && catalogo ? `
 14. Pedidos: la persona puede pedir productos del catálogo por acá. Si su mensaje agrega, cambia o saca productos, completá «pedido» con cambia = true y en items el carrito COMPLETO como tiene que quedar (lo que ya tiene entre <carrito> y </carrito>, más o menos lo nuevo), con la ref exacta de cada producto del catálogo y la cantidad. Si no está claro qué producto o cuántos, preguntá y poné cambia = false. Si el mensaje no cambia el carrito, cambia = false e items vacío. En «respuesta» poné solo una frase corta y amable (por ejemplo «¡Dale! Te lo agrego.»): el sistema le muestra el resumen con los precios y el total, reserva el stock y le pide los datos. Nunca digas totales, nunca confirmes ni des por hecho el pedido, nunca pidas el nombre ni la dirección vos.` : ''}
 
-<informacion>
-# ${ficha.nombre}
-${ficha.saludo}
-
-${ficha.conocimiento}
-${ficha.faq ? `\n## Preguntas frecuentes\n${ficha.faq}` : ''}${ficha.vender ? `\n## Cómo vende el negocio (seguí estas pautas)\n${ficha.vender}` : ''}
-## Opciones del menú (el sistema las responde solo)
-${ficha.menu.map((o) => `${o.n}. ${o.titulo}: ${o.texto}`).join('\n')}
-</informacion>
+${bloqueInformacion(ficha)}
 
 <cliente>
 ${cliente ? [cliente.nombre && `Nombre: ${cliente.nombre}`, cliente.resumen && `Lo que sabemos: ${cliente.resumen}`, cliente.dias !== null && cliente.dias !== undefined && `Última charla: hace ${cliente.dias} día(s)`].filter(Boolean).join('\n') || '(primera vez)' : '(primera vez)'}
@@ -402,7 +417,9 @@ export const preguntadorNegocio =
   // `carrito` (ZL-139): el carrito actual en texto, solo si el negocio tiene pedidos encendidos.
   // ZL-146: `historial` (los últimos mensajes, [{r: 'u'|'a', t}]), `cliente` (memoria del contacto) y `objetivo`.
   async (texto, idioma = null, { seguro = false, carrito = null, historial = [], cliente = null, objetivo = null, saludado = false, compras = null } = {}) => {
-    const cat = catalogo ? await catalogo(texto, { refs: carrito !== null }).catch(() => null) : null;
+    // ZL-159: con un catálogo grande, la búsqueda también usa lo último que escribió la persona («¿y de chocolate?»).
+    const contexto = (Array.isArray(historial) ? historial : []).filter((m) => m?.r === 'u').slice(-2).map((m) => m.t).join(' ');
+    const cat = catalogo ? await catalogo(texto, { refs: carrito !== null, contexto }).catch(() => null) : null;
     // ZL-154: los totales de sus pedidos también son montos reales que puede nombrar.
     const extra = [...(cat?.montos ?? []), ...(compras?.montos ?? [])];
     const conCatalogo = extra.length ? { ...ficha, permitidos: { ...ficha.permitidos, montos: [...ficha.permitidos.montos, ...extra] } } : ficha;
@@ -465,6 +482,7 @@ function base(ficha, idioma = ficha.idioma) {
       borrado: 'Done 🗑️ We’ve deleted what we had from this chat.',
       soloTexto: 'For now I can only read text messages 🙈 Could you type it?',
       compartido: 'Thanks for sharing! 🙌 I can’t see posts: which product is it, or what would you like to know?',
+      ausencia: (fecha) => `Hi! We’re not answering here right now 🙏 We’re back on ${fecha} and will reply as soon as we return.`,
       falla: 'Oops, I couldn’t answer just now 😓 Could you send that again in a moment?',
       limite: 'Lots of messages at once ⏳ Could you write again in a few minutes?',
       tope: 'We’ve chatted a lot today 😅 Let’s carry on tomorrow, right here.',
@@ -488,6 +506,7 @@ function base(ficha, idioma = ficha.idioma) {
       borrado: 'Gotovo 🗑️ Obrisali smo ono što smo imali iz ovog razgovora.',
       soloTexto: 'Za sada čitam samo tekstualne poruke 🙈 Možete li mi to napisati?',
       compartido: 'Hvala na dijeljenju! 🙌 Objave ne mogu vidjeti: o kojem je proizvodu riječ ili što biste htjeli znati?',
+      ausencia: (fecha) => `Pozdrav! Trenutno ne odgovaramo ovdje 🙏 Vraćamo se ${fecha} i javit ćemo vam se čim se vratimo.`,
       falla: 'Ups, trenutačno ne mogu odgovoriti 😓 Možete li poslati ponovno za koji trenutak?',
       limite: 'Trenutačno stiže puno poruka ⏳ Možete li se javiti za nekoliko minuta?',
       tope: 'Danas smo puno razgovarali 😅 Nastavljamo sutra, ovdje.',
@@ -511,6 +530,7 @@ function base(ficha, idioma = ficha.idioma) {
     borrado: 'Listo 🗑️ Borramos lo que teníamos de esta charla.',
     soloTexto: `Por ahora solo leo mensajes de texto 🙈 ¿Me lo ${v.escribis}?`,
     compartido: `¡Gracias por compartirlo! 🙌 Las publicaciones no las puedo ver: ¿me ${v.decis} qué producto es o qué ${v.queres} saber?`,
+    ausencia: (fecha) => `¡Hola! Ahora no estamos atendiendo por acá 🙏 Volvemos el ${fecha} y ${v.te} respondemos apenas estemos de vuelta.`,
     falla: `Uy, se me complicó responder recién 😓 ¿Me lo ${v.repetis} en un ratito?`,
     limite: `Hay muchas consultas a la vez ⏳ ¿Me ${v.escribis} de nuevo en unos minutos?`,
     tope: 'Por hoy ya charlamos un montón 😅 Mañana seguimos por acá.',

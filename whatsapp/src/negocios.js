@@ -10,7 +10,7 @@ import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
-import { ajustesDeVenta, limiteDiaDe } from './atencion.js';
+import { ajustesDeVenta, configComentarios, esDueño, limiteDiaDe } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
@@ -21,6 +21,8 @@ export const NEGOCIOS_HOST = 'negocios.zustrolabs.com';
 /** ZL-158: Meta da 1.000 mensajes de servicio gratis por número por mes (desde el 1/10/2026); la app avisa a los 800. */
 export const GRATIS_WA_MES = 1000;
 export const AVISO_WA_MES = 800;
+/** ZL-159: mensajes de la charla de prueba por día para el dueño (gastan IA). */
+export const PRUEBAS_DIA = 40;
 const MAX_JSON = 2_000_000;
 const SEGURIDAD = {
   'cache-control': 'no-store',
@@ -180,6 +182,11 @@ export async function appNegocios(request, env, deps) {
   const sub = m[2] ?? '';
   const cat = deps.catalogo(negocio.id);
   const ejecutar = async (op, args) => delCatalogo(await cat.ejecutar(op, args));
+  // ZL-159: lo que solo hace un dueño (conectar canales, cómo se vende, pausar el asistente). Un empleado, no.
+  const dueño = esDueño(negocio, email, admin);
+  const soloDueño = () => error('eso lo cambia el dueño del negocio', 403);
+  const configura = request.method !== 'GET' && (/^\/(instagram|whatsapp)(\/|$)/.test(sub) || ['/ajustes', '/asistente'].includes(sub));
+  if (configura && !dueño) return soloDueño();
 
   if (request.method === 'GET' && sub === '') {
     const f = await deps.negocios.ficha(negocio.id);
@@ -188,7 +195,16 @@ export async function appNegocios(request, env, deps) {
     const cuentas = [];
     for (const c of negocio.cuentas) cuentas.push({ id: c, username: (await deps.cuentas?.get(c))?.username ?? null });
     return json({
-      negocio: { id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ajustes: ajustesDeVenta(negocio.ajustes), ...(admin && { emails: negocio.emails, limiteDia: limiteDiaDe(negocio) }) },
+      negocio: {
+        id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ajustes: ajustesDeVenta(negocio.ajustes),
+        // ZL-159: el rol de quien entra, la pausa del asistente y el aviso del día (vencidos, como si no estuvieran).
+        rol: dueño ? 'dueño' : 'empleado',
+        // ZL-160: si el asistente responde comentarios de Instagram, y cómo.
+        comentarios: configComentarios(negocio),
+        pausa: negocio.pausa && negocio.pausa.hasta > now ? negocio.pausa : null,
+        avisoDia: negocio.avisoDia && negocio.avisoDia.hasta > now ? negocio.avisoDia : null,
+        ...(admin && { emails: negocio.emails, empleados: negocio.empleados ?? [], limiteDia: limiteDiaDe(negocio) }),
+      },
       resumen: r.valor ?? null,
       asistente: { tiene: Boolean(f?.texto), activo: Boolean(f?.activa), nombre: pf?.ficha?.nombre ?? null, precios: pf?.ficha?.precios ?? false },
       admin,
@@ -203,9 +219,19 @@ export async function appNegocios(request, env, deps) {
       const cuentas = [];
       for (const id of negocio.cuentas) {
         const c = await deps.cuentas.get(id);
-        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null });
+        // ZL-160: true si dio el permiso de comentarios; false si falta; null si se conectó antes y no se sabe.
+        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: typeof c?.permisoComentarios === 'boolean' ? c.permisoComentarios : null });
       }
-      return json({ cuentas, disponible: Boolean(app && env.IG_APP_SECRET), invitacion: negocio.invitacionIg ?? null, canal: canalesDe(negocio).instagram });
+      return json({ cuentas, disponible: Boolean(app && env.IG_APP_SECRET), invitacion: negocio.invitacionIg ?? null, canal: canalesDe(negocio).instagram, comentarios: configComentarios(negocio) });
+    }
+    // ZL-160: encender o apagar las respuestas a comentarios, y el modo. Solo el dueño (como todo lo de /instagram).
+    if (request.method === 'PUT' && sub === '/instagram/comentarios') {
+      const b = await request.json().catch(() => null);
+      if (!b || (b.activo !== undefined && typeof b.activo !== 'boolean') || (b.modo !== undefined && !['publico_privado', 'privado'].includes(b.modo))) return error('activo (sí o no) y modo (publico_privado o privado)', 400);
+      const r = await deps.negocios.guardar(negocio.id, { comentarios: { activo: b.activo, modo: b.modo } });
+      if (r?.error) return error(r.error, 400);
+      console.log(JSON.stringify({ canal: 'ig', que: 'comentarios_config', activo: r.negocio.comentarios.activo, modo: r.negocio.comentarios.modo }));
+      return json({ ok: true, comentarios: r.negocio.comentarios });
     }
     if (request.method === 'POST' && sub === '/instagram/invitacion') {
       const b = await request.json().catch(() => null);
@@ -370,6 +396,36 @@ export async function appNegocios(request, env, deps) {
     const r = await deps.negocios.guardar(negocio.id, { ajustes: ajustesDeVenta({ ...negocio.ajustes, ...b }) });
     if (r?.error) return error(r.error);
     return json(r.negocio.ajustes);
+  }
+
+  // ZL-159: el dueño maneja su asistente sin pasar por el equipo: lo pausa (vacaciones, local cerrado) con un mensaje
+  // de ausencia, y deja un aviso del día que el asistente tiene en cuenta. La ficha la sigue editando el equipo.
+  if (request.method === 'PUT' && sub === '/asistente') {
+    const b = await leerJson(request);
+    if (!b) return error('pedido inválido');
+    const cambios = {};
+    if (b.pausa !== undefined) cambios.pausa = b.pausa;
+    if (b.avisoDia !== undefined) cambios.avisoDia = b.avisoDia;
+    const r = await deps.negocios.guardar(negocio.id, cambios);
+    if (r?.error) return error(r.error);
+    console.log(JSON.stringify({ canal: 'negocio', que: 'asistente', pausa: Boolean(r.negocio.pausa), aviso: Boolean(r.negocio.avisoDia) }));
+    return json({ pausa: r.negocio.pausa, avisoDia: r.negocio.avisoDia });
+  }
+  // ZL-159: la charla de prueba también para el dueño, con la ficha guardada (no la puede cambiar) y un tope por día.
+  if (request.method === 'POST' && sub === '/prueba') {
+    const b = await leerJson(request);
+    if (!b || !deps.probar) return error('pedido inválido');
+    const f = await deps.negocios.ficha(negocio.id);
+    const pf = f?.texto ? parsearFicha(f.texto) : null;
+    if (!pf?.ok) return error('el asistente todavía no está listo: lo prepara el equipo de Zustro Labs', 409);
+    const mensajes = (Array.isArray(b.mensajes) ? b.mensajes : []).map((x) => String(x).slice(0, 500)).filter(Boolean).slice(0, 3);
+    if (!mensajes.length) return error('escribí un mensaje');
+    if (deps.negocios.sumarMetrica) {
+      const usados = await deps.negocios.sumarMetrica(negocio.id, 'pruebas', diaLocal(now, ajustesDeVenta(negocio.ajustes).zona));
+      if (usados > PRUEBAS_DIA) return error(`ya probaste ${PRUEBAS_DIA} mensajes hoy: seguí mañana`, 429);
+    }
+    const r = await deps.probar(pf.ficha, negocio.id, mensajes, b.estado ?? null);
+    return json({ charla: r.charla, estado: r.estado ?? null });
   }
 
   // Consultas (ZL-146): lo que el asistente le pasa al negocio cuando el cierre no es un pedido o hace falta alguien.
@@ -577,6 +633,7 @@ export async function administrar(request, ruta, deps, now) {
       cambios.cuentas = b.cuentas.map(String);
     }
     if (b.limiteDia !== undefined) cambios.limiteDia = b.limiteDia;
+    if (b.empleados !== undefined) cambios.empleados = correosDe(Array.isArray(b.empleados) ? b.empleados.join(',') : b.empleados);
     if (b.canales !== undefined) cambios.canales = leerCanales(b.canales);
     if (typeof b.pedidos === 'boolean') cambios.pedidos = b.pedidos;
     // La invitación de Instagram ya se mandó (ZL-148): se borra del negocio.

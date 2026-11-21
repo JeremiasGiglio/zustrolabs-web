@@ -69,6 +69,35 @@ export async function avisar(env, EmailMessageImpl, now = new Date(), canal = "w
   return true;
 }
 
+/**
+ * ZL-159: un correo al equipo (a AVISO_PARA, la casilla verificada en Email Routing) por algo que hay que mirar: un
+ * pedido que nadie ve, un canal que se cortó. Sin datos de compradores. → true si salió.
+ */
+export async function avisarEquipo(env, asunto, lineas, EmailMessageImpl, now = new Date()) {
+  if (!env.AVISO?.send || !env.AVISO_PARA) return false;
+  const from = env.AVISO_DESDE || "avisos@avisos.zustrolabs.com";
+  const EmailMessage = EmailMessageImpl ?? (await import("cloudflare:email")).EmailMessage;
+  const limpio = (s) => String(s ?? "").replace(/[\r\n]+/g, " ").slice(0, 200);
+  const id = `${now.getTime()}.${Math.random().toString(36).slice(2)}@zustrolabs.com`;
+  const mail = [
+    `From: Zustro Labs <${from}>`,
+    `To: <${env.AVISO_PARA}>`,
+    `Subject: Zustro Labs: ${limpio(asunto)}`,
+    `Message-ID: <${id}>`,
+    `Date: ${now.toUTCString()}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    ...lineas.map((l) => String(l ?? "").slice(0, 500)),
+    "",
+    "App de negocios: https://negocios.zustrolabs.com/",
+    "",
+  ].join("\r\n");
+  await env.AVISO.send(new EmailMessage(from, env.AVISO_PARA, mail));
+  return true;
+}
+
 // ───────────────────────── Login (Cloudflare Access) ─────────────────────────
 
 const b64url = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));

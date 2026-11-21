@@ -32,6 +32,15 @@ test('consultas: una abierta por charla; lo nuevo completa sin borrar y «person
   assert.equal(c.consultaAbierta('yc:1:2').numero, 3);
 });
 
+test('consultas (ZL-159): la app pide de a pocas y sabe cuántas abiertas hay en total para el «Ver más»', () => {
+  const { c, reloj } = armar();
+  for (let i = 0; i < 5; i++) { c.crearConsulta(`ig:9.${i}`, { nombre: `Persona ${i}` }); reloj.t += 1000; }
+  c.cambiarConsulta(1, 'perdida');
+  const r = c.consultas({ cuantos: 2 });
+  assert.equal(r.consultas.length, 2);
+  assert.equal(r.abiertas, 4, 'la cerrada no cuenta');
+});
+
 test('consultas: estados y datos controlados; los textos se recortan y no llevan caracteres de control', () => {
   const { c } = armar();
   const r = c.crearConsulta('yc:1:2', { tipo: 'cualquiera', nombre: 'A'.repeat(200), resumen: 'linea1\nlinea2\u0000' });
@@ -63,4 +72,15 @@ test('consultas (ZL-154): la IA ve la consulta abierta de esa persona, en una l�
   assert.match(await k.abierta(), /alguien del negocio la está atendiendo/);
   c.cambiarConsulta(1, 'ganada');
   assert.equal(await k.abierta(), null);
+});
+
+test('privacidad (ZL-159): una consulta cerrada olvida el nombre y el resumen; una abierta no', () => {
+  const { c } = armar();
+  c.crearConsulta('yc:1:2', { tipo: 'consulta', nombre: 'Ana', interes: 'Torta', resumen: 'Quiere una torta (ficticio)' });
+  c.crearConsulta('yc:1:3', { tipo: 'consulta', nombre: 'Beto', interes: 'Pan', resumen: 'Pan para el sábado (ficticio)' });
+  c.cambiarConsulta(1, 'ganada');
+  assert.equal(c.olvidarConsultas({ charla: 'yc:1:2' }), 1);
+  assert.deepEqual([c.consulta(1).nombre, c.consulta(1).resumen, c.consulta(1).interes], ['', '', 'Torta']);
+  assert.equal(c.olvidarConsultas({ antesDe: Date.now() + 1e13 }), 0, 'la de Beto sigue abierta');
+  assert.equal(c.consulta(2).nombre, 'Beto');
 });

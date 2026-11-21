@@ -700,3 +700,168 @@ test('ZL-157: el pedido pendiente espera al dueño; pasadas las 24 h el aviso qu
   assert.deepEqual([mes.enviados, mes.gratis, mes.aviso], [mandados, 1000, 800]);
   assert.ok(mandados >= 8);
 });
+
+test('ZL-159: roles, pausa con mensaje de ausencia (una vez por persona), aviso del día en la información del asistente y charla de prueba del dueño con tope', async () => {
+  const { d, a, pedir, enviados } = await armar();
+  const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  // El empleado: ve pedidos y productos, no configura.
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['empleado@example.com'], canales: { instagram: true, whatsapp: true } })).status, 200);
+  assert.equal((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.rol, 'empleado');
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.rol, 'dueño');
+  assert.equal((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}/pedidos`)).status, 200);
+  for (const [m, r, c] of [['PUT', '/ajustes', { pago: 'x' }], ['PUT', '/asistente', { pausa: null }], ['POST', '/whatsapp', { numero: '+5493410000001', apiKey: CLAVE_YC }], ['DELETE', `/instagram/${CUENTA_A}`]]) {
+    const x = await pedir('empleado@example.com', m, `/api/n/${a.id}${r}`, c);
+    assert.equal(x.status, 403, `${m} ${r}`);
+    assert.equal(x.datos.error, 'eso lo cambia el dueño del negocio');
+  }
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['duena@example.com', 'empleado@example.com'] })).datos.error, 'tiene que quedar al menos un dueño');
+  // Aviso del día: entra en lo que sabe el asistente mientras está vigente.
+  const vio = [];
+  d.preguntarNegocio = (f) => async (texto) => (vio.push(f.conocimiento), { respuesta: 'Te cuento.', persona: false, fuera_de_tema: false, vacia: false, notas: [] });
+  const av = await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { avisoDia: { texto: 'Hoy no hay medialunas. <b>', hasta: T0 + 3600_000 } });
+  assert.equal(av.status, 200);
+  assert.equal(av.datos.avisoDia.texto, 'Hoy no hay medialunas.', 'sin marcas');
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A] });
+  let n = 0;
+  const ig = async (texto, quien = '17841400000000101') => {
+    const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ sender: { id: quien }, recipient: { id: CUENTA_A }, timestamp: T0, message: { mid: `z${++n}`, text: texto } }] }] });
+    const antes = enviados.length;
+    await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'x-hub-signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d);
+    return enviados.slice(antes).filter((e) => /\/messages$/.test(e.url)).map((e) => e.body.message.text);
+  };
+  await ig('hola');
+  await ig('¿tienen medialunas?');
+  assert.match(vio.at(-1), /## Aviso de hoy \(lo carga el negocio, manda sobre lo de arriba\)\nHoy no hay medialunas\./);
+  // Pausa: a cada persona se le dice UNA vez cuándo vuelven (con el mensaje del dueño); la IA no responde.
+  const p = await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { pausa: { hasta: T0 + 2 * 86_400_000, mensaje: 'Estamos de vacaciones 🌴' } });
+  assert.equal(p.status, 200);
+  const consultas = vio.length;
+  const t1 = await ig('hola, ¿están?', '17841400000000102');
+  assert.equal(t1.length, 1);
+  assert.match(t1[0], /^Estamos de vacaciones 🌴\n\n\(Volvemos el .+ y te respondemos apenas estemos de vuelta\.\)$/);
+  assert.deepEqual(await ig('¿hola?', '17841400000000102'), [], 'la segunda vez, nada');
+  assert.equal(vio.length, consultas, 'sin IA durante la pausa');
+  // Encendido otra vez: responde la IA.
+  await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { pausa: null });
+  assert.equal((await ig('¿y facturas?', '17841400000000102')).length, 1);
+  assert.equal(vio.length, consultas + 1);
+  // Charla de prueba del dueño: con la ficha guardada, tope por día.
+  const pr = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['hola'] });
+  assert.equal(pr.status, 200, JSON.stringify(pr.datos));
+  assert.ok(pr.datos.charla[0].respuestas.length);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { texto: '# otra ficha', mensajes: [] })).status, 400, 'sin mensajes no; y la ficha no se cambia desde acá');
+  for (let i = 0; i < 40; i++) await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['hola'] });
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['hola'] })).status, 429);
+});
+
+// ——— ZL-160: comentarios de Instagram ———
+
+test('ZL-160: con «Responder comentarios» encendido, una consulta recibe una frase en público y el detalle por privado; la charla sigue sabiendo qué comentó; el reporte lo cuenta', async () => {
+  const { d, a, pedir, enviados } = await armar();
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A], empleados: ['empleado@example.com'] });
+  const QUIEN = '17841400000000009';
+  // Meta: la respuesta pública devuelve su id; el texto de la publicación; el resto, como siempre.
+  const publicas = [];
+  let rechazar = false;
+  const fetch0 = d.fetch;
+  d.fetch = async (url, o) => {
+    const u = String(url);
+    if (u.endsWith('/replies')) {
+      if (rechazar) return Response.json({ error: { code: 10 } }, { status: 400 });
+      publicas.push({ url: u, texto: new URLSearchParams(String(o.body)).get('message'), auth: o.headers.authorization });
+      return Response.json({ id: `1800000000000${publicas.length}888` });
+    }
+    if (u.includes('?fields=caption')) return Response.json({ caption: 'Pan francés recién horneado' });
+    return fetch0(url, o);
+  };
+  const ia = [];
+  let salida = { tipo: 'consulta', persona: false, publica: '¡Hola! Sale $2.500 el kg, te escribimos por privado.', privada: 'Hola, te escribo por tu comentario: el pan francés sale $2.500 el kg. ¿Te guardo uno para hoy?', idioma: 'es' };
+  d.preguntarComentario = (f, cat) => async (texto, op) => {
+    ia.push({ negocio: f.nombre, texto, ...op, catalogo: cat ? 'sí' : 'no' });
+    const { controlarComentario } = await import('../src/comentarios.js');
+    return { ...controlarComentario(salida, { ...f, permitidos: { ...f.permitidos, montos: [...f.permitidos.montos, '2500'] } }, op.modo), uso: { entrada: 1, salida: 1 } };
+  };
+  let n = 0;
+  const comentar = async (texto, o = {}) => {
+    const id = o.id ?? `18000000000000${String(++n).padStart(3, '0')}`;
+    const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0 / 1000, changes: [{ field: 'comments', value: { from: { id: o.quien ?? QUIEN, username: 'ana.prueba' }, media: { id: '18000000000000001', media_product_type: 'FEED' }, id, text: texto } }] }] });
+    const antesP = publicas.length, antesM = enviados.length;
+    const r = await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'x-hub-signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d);
+    assert.equal(r.status, 200);
+    return { id, publicas: publicas.slice(antesP), privadas: enviados.slice(antesM).filter((e) => /\/me\/messages$/.test(e.url)).map((e) => e.body) };
+  };
+
+  // Apagado (como arranca): ni IA ni respuestas.
+  assert.deepEqual((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/instagram`)).datos.comentarios, { activo: false, modo: 'publico_privado' });
+  let x = await comentar('¿Cuánto sale el pan francés?');
+  assert.deepEqual([x.publicas, x.privadas, ia.length], [[], [], 0]);
+
+  // Lo enciende el dueño (un empleado no; un modo inventado tampoco).
+  assert.equal((await pedir('empleado@example.com', 'PUT', `/api/n/${a.id}/instagram/comentarios`, { activo: true })).status, 403);
+  assert.equal((await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/instagram/comentarios`, { activo: true, modo: 'gritar' })).status, 400);
+  const on = await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/instagram/comentarios`, { activo: true });
+  assert.deepEqual(on.datos.comentarios, { activo: true, modo: 'publico_privado' });
+  assert.equal((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.comentarios.activo, true);
+
+  // Una consulta: frase corta en público y detalle por privado, con la ficha, el catálogo y el texto de la publicación.
+  x = await comentar('¿Cuánto sale el pan francés?');
+  assert.deepEqual(ia.at(-1), { negocio: 'Panadería La Espiga', texto: '¿Cuánto sale el pan francés?', publicacion: 'Pan francés recién horneado', modo: 'publico_privado', catalogo: 'sí' });
+  assert.equal(x.publicas.length, 1);
+  assert.match(x.publicas[0].url, new RegExp(`/${x.id}/replies$`));
+  assert.equal(x.publicas[0].auth, 'Bearer tok-a', 'con el token de la cuenta del negocio');
+  assert.match(x.publicas[0].texto, /\$2\.500.*privado/);
+  assert.deepEqual(x.privadas, [{ recipient: { comment_id: x.id }, message: { text: salida.privada } }]);
+  // Si contesta por privado, el asistente sabe qué comentó y qué le dijo.
+  const mem = await d.memoria.get(`ig:${CUENTA_A}.${QUIEN}`);
+  assert.deepEqual(mem.hist.map((m) => m.r), ['u', 'a']);
+  assert.match(mem.hist[0].t, /Comentario en una publicación.*Cuánto sale el pan francés/);
+  assert.equal(mem.hist[1].t, salida.privada);
+  const hist = [];
+  d.preguntarNegocio = () => async (texto, idioma, op) => (hist.push(op?.historial ?? []), { respuesta: 'Dale, te lo guardo.', persona: false, fuera_de_tema: false, vacia: false, notas: [] });
+  const dm = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ sender: { id: QUIEN }, recipient: { id: CUENTA_A }, timestamp: T0, message: { mid: 'dm1', text: 'Sí, guardame uno' } }] }] });
+  await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'x-hub-signature-256': await firmar(dm, APP.secreto) }, body: dm }), ENV, {}, d);
+  assert.ok(hist.at(-1)?.some((m) => /Cuánto sale el pan francés/.test(m.t)), 'la IA de la charla recibe el comentario');
+
+  // El mismo comentario otra vez (Meta reintenta): una sola respuesta. Emojis o una mención a un amigo: ni IA.
+  const antesIa = ia.length;
+  assert.deepEqual((await comentar('¿Cuánto sale el pan francés?', { id: x.id })).publicas, []);
+  assert.deepEqual((await comentar('😍😍😍')).publicas, []);
+  assert.deepEqual((await comentar('@juan.prueba mirá')).publicas, []);
+  assert.equal(ia.length, antesIa);
+
+  // Un elogio: gracias en público, nada por privado. Un reclamo: nada en ningún lado.
+  salida = { tipo: 'elogio', persona: false, publica: '¡Gracias por elegirnos!', privada: '', idioma: 'es' };
+  x = await comentar('Las mejores medialunas');
+  assert.deepEqual([x.publicas.map((p) => p.texto), x.privadas], [['¡Gracias por elegirnos!'], []]);
+  salida = { tipo: 'reclamo', persona: false, publica: 'Perdón', privada: 'Perdón', idioma: 'es' };
+  x = await comentar('Me vendieron pan duro');
+  assert.deepEqual([x.publicas, x.privadas], [[], []]);
+
+  // Solo por privado.
+  await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/instagram/comentarios`, { modo: 'privado' });
+  salida = { tipo: 'consulta', persona: false, publica: 'Sí', privada: 'Hola, te escribo por tu comentario: abrimos de 8 a 20. ¿Querés encargar algo?', idioma: 'es' };
+  x = await comentar('¿A qué hora abren?', { quien: '17841400000000010' });
+  assert.deepEqual([x.publicas.length, x.privadas.length], [0, 1]);
+
+  // El reporte: 3 comentarios respondidos (la consulta, el elogio y el de solo privado).
+  const rep = await pedir('duena@example.com', 'GET', `/api/n/${a.id}/reporte?periodo=dia`);
+  assert.equal(rep.datos.resumen.comentarios, 3);
+
+  // Una cuenta conectada antes del permiso: Meta rechaza, la cuenta queda marcada, la app y el semáforo lo dicen.
+  await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/instagram/comentarios`, { modo: 'publico_privado' });
+  rechazar = true;
+  x = await comentar('¿Hacen envíos?', { quien: '17841400000000011' });
+  assert.deepEqual([x.publicas.length, x.privadas.length], [0, 0], 'sin permiso no se insiste por privado');
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/instagram`)).datos.cuentas[0].permisoComentarios, false);
+  const est = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/estado`)).datos;
+  assert.ok(est.controles.some((c) => c.id === 'comentarios' && /no dio el permiso/.test(c.texto)), JSON.stringify(est.controles));
+  rechazar = false;
+
+  // En pausa no responde comentarios.
+  await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/asistente`, { pausa: { hasta: T0 + 3600_000 } });
+  const antesPausa = ia.length;
+  assert.deepEqual((await comentar('¿Tienen facturas?', { quien: '17841400000000012' })).publicas, []);
+  assert.equal(ia.length, antesPausa);
+});

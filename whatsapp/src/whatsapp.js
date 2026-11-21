@@ -226,8 +226,11 @@ const juntar = (...partes) => partes.filter((x) => String(x ?? '').trim()).join(
 // `pedidos` (ZL-139): pedidosDeCharla() de pedidos-charla.js, solo para un negocio con pedidos encendidos.
 // `consultas` (ZL-146): consultasDeCharla() de consultas.js, para registrar consultas y pases al equipo de un negocio.
 export async function atender(ev, deps) {
-  const r = await atenderEvento(ev, deps);
   const { memoria, perfil = PERFIL_ESTUDIO, now = Date.now() } = deps ?? {};
+  // ZL-159: el dueño pausó el asistente (vacaciones, local cerrado): a cada persona se le dice una vez cuándo vuelven
+  // (con su mensaje de ausencia, si lo escribió) y nada más. BORRAR sigue andando.
+  const enPausa = perfil.negocio === true && memoria && perfil.pausa?.hasta > now && !(ev.kind === 'text' && comando(ev.text) === 'borrar');
+  const r = enPausa ? await atenderEnPausa(ev, deps) : await atenderEvento(ev, deps);
   if (perfil.negocio !== true || !memoria || r.metrica === 'repetido') return r;
   // ZL-157: cualquier mensaje de la persona (también una foto o un audio) abre las 24 h de Meta: queda anotado, así el
   // aviso de su pedido sale solo mientras se puede.
@@ -244,6 +247,22 @@ export async function atender(ev, deps) {
   const i = r.send.findIndex((m) => typeof m.text?.body === 'string');
   const send = i >= 0 ? r.send.map((m, j) => (j === i ? { ...m, text: { ...m.text, body: `${cuerpo}\n\n${m.text.body}` } } : m)) : [msgTexto(ev.from, cuerpo), ...r.send];
   return { ...r, send, avisos: avisos.length };
+}
+
+async function atenderEnPausa(ev, { memoria, perfil, now }) {
+  if (await memoria.visto(ev.id)) return { send: [], metrica: 'repetido' };
+  const estado = (await memoria.get(ev.from)) ?? {};
+  const p = perfil.pausa;
+  if (estado.ausencia === p.desde) return { send: [], metrica: 'pausa' };
+  const idioma = estado.idioma ?? (ev.kind === 'text' ? esSaludo(ev.text) ?? idiomaDelTexto(ev.text) : null) ?? perfil.idiomas[0];
+  const T = perfil.textos(perfil.idiomas.includes(idioma) ? idioma : perfil.idiomas[0]);
+  let fecha;
+  try {
+    fecha = new Intl.DateTimeFormat(idioma === 'en' ? 'en-GB' : idioma === 'hr' ? 'hr-HR' : 'es-AR', { timeZone: p.zona || 'America/Argentina/Buenos_Aires', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(p.hasta));
+  } catch { fecha = new Date(p.hasta).toISOString().slice(0, 10); }
+  const texto = p.mensaje ? `${p.mensaje}\n\n(${T.ausencia(fecha).replace(/^[^🙏]*🙏\s*/, '')})` : T.ausencia(fecha);
+  await memoria.put(ev.from, { ...estado, humanoHasta: estado.humanoHasta ?? 0, ausencia: p.desde });
+  return { send: [msgTexto(ev.from, texto)], metrica: 'pausa_aviso' };
 }
 
 async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null }) {
@@ -294,6 +313,9 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
   if (cmd === 'borrar') {
     await memoria?.delete(ev.from);
     await charlas?.delete(ev.from);
+    // ZL-159: también sus datos (nombre, dirección, resumen) de los pedidos y consultas ya cerrados.
+    await pedidos?.olvidar?.();
+    await consultas?.olvidar?.();
     return { send: [msgTexto(ev.from, T.borrado)], metrica: 'borrar' };
   }
 

@@ -6,11 +6,12 @@
 // - equipo.zustrolabs.com → panel de atención humana, detrás de Cloudflare Access (panel.js).
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
-import { appDe, conectarCuenta, enviarIg, esInstagram, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, secretosDe, urlAutorizar } from './instagram.js';
-import { conAjustes, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
-import { ajustesDeVenta, limiteDiaDe } from './atencion.js';
+import { appDe, armarFrom, conectarCuenta, enviarIg, esInstagram, leerComentariosIg, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, responderComentario, responderEnPrivado, secretosDe, textoDePublicacion, urlAutorizar } from './instagram.js';
+import { configComentarios, esRuido, MAX_EDAD_COMENTARIO_MS, preguntadorComentario, TOPE_COMENTARIOS_DIA } from './comentarios.js';
+import { conAjustes, conAvisoDia, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { ajustesDeVenta, HISTORIAL_MAX, HISTORIAL_MS, limiteDiaDe } from './atencion.js';
 import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
-import { avisar, panel } from './panel.js';
+import { avisar, avisarEquipo, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
 import { claveMemoria, claveValida, enviarYCloud, firmaYCloud, leerYCloud, normalizar, numeroDeCharla, webhookDeYCloud } from './ycloud.js';
@@ -74,8 +75,8 @@ const catalogoDe = (env, deps) => deps.catalogo ?? ((id) => (env.CATALOGO ? env.
 const consultaCatalogo = (env, deps, negocioId, ficha) => {
   const cat = negocioId ? catalogoDe(env, deps)(negocioId) : null;
   if (!cat) return null;
-  return async (texto, { refs = false } = {}) => {
-    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios, refs }]);
+  return async (texto, { refs = false, contexto = '' } = {}) => {
+    const r = await cat.ejecutar('paraAsistente', [texto, { precios: ficha.precios, refs, contexto }]);
     return r?.ok ? r.valor : null;
   };
 };
@@ -86,7 +87,9 @@ const consultaCatalogo = (env, deps, negocioId, ficha) => {
  */
 function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
   // ZL-149: lo que carga el negocio en «Cómo vendés» (retiro, envío, pago) también lo sabe el asistente.
-  const ficha = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
+  const conVenta = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
+  // ZL-159: el aviso del día del dueño, mientras esté vigente.
+  const ficha = conAvisoDia(conVenta, dueño?.avisoDia, deps.now ?? Date.now());
   const catalogo = consultaCatalogo(env, deps, dueño?.id, ficha);
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
   return async (texto, idioma, opciones) => {
@@ -115,6 +118,9 @@ export function cupoDeIa(env, negocioId, deps = {}, intentos = 3) {
     return 'global';
   };
 }
+
+/** ZL-159: la pausa que puso el dueño (con la zona horaria del negocio, para decir cuándo vuelven). */
+const conPausa = (perfil, dueño) => (dueño?.pausa ? { ...perfil, pausa: { ...dueño.pausa, zona: ajustesDeVenta(dueño.ajustes).zona } } : perfil);
 
 /** ZL-157: Meta deja escribirle solo dentro de las 24 h de su último mensaje; con media hora de margen. */
 export const VENTANA_SEGURA_MS = 23.5 * 3600_000;
@@ -280,12 +286,49 @@ export async function recordarPedidos(env, deps, now) {
           ? { titulo: `Pedido N.º ${p.numero}: aceptalo antes de las ${hora}`, cuerpo: `A las ${hora} se cierran las 24 h de ${canal}: después el aviso no le llega solo y se lo tenés que mandar vos.` }
           : { titulo: `Pedido N.º ${p.numero} sigue esperando`, cuerpo: `Cuando lo aceptes o lo rechaces, la app te deja el mensaje listo para mandárselo por ${canal}.` };
       }
-      await avisarNegocio(a, negocio.id, aviso, fetchImpl, now);
+      const llegaron = await avisarNegocio(a, negocio.id, aviso, fetchImpl, now);
+      // ZL-159: si el negocio no tiene los avisos activados, nadie se entera: a la hora, se le avisa al equipo.
+      if (p.tipo === '1h' && !llegaron) {
+        await correoAlEquipo(env, deps)(`un pedido de ${negocio.nombre} espera sin que nadie se entere`, [
+          `El pedido N.º ${p.numero} de ${negocio.nombre} (por ${canal}) espera hace una hora y el negocio no tiene los avisos al celular activados.`,
+          'Conviene avisarle al negocio y ayudarlo a activar «Avisos en este celular» en Inicio.',
+        ]).catch(() => false);
+      }
       out.push({ que: 'recordatorio', tipo: p.tipo });
     }
   }
   if (out.length) console.log(JSON.stringify({ canal: 'pedidos', que: 'recordatorios', n: out.length }));
   return out;
+}
+
+/** ZL-159: el correo al equipo (en las pruebas, `deps.avisarEquipo`). */
+const correoAlEquipo = (env, deps) => deps.avisarEquipo ?? ((asunto, lineas) => avisarEquipo(env, asunto, lineas));
+
+/**
+ * ZL-159, una vez por día: el semáforo de cada negocio con algún canal encendido (sin charla de prueba, no gasta IA).
+ * Si algo está en rojo (un token vencido, un webhook borrado, una ficha apagada), un solo correo al equipo con todo.
+ */
+export async function revisarNegocios(env, deps, now) {
+  const a = almacen(env, deps);
+  if (!a.negocios?.list) return [];
+  const rojos = [];
+  for (const n of await a.negocios.list()) {
+    const c = canalesDe(n);
+    if (!c.instagram && !c.whatsapp) continue;
+    const r = await datosVerificar(env, deps, n.id, now, { charla: false }).catch(() => null);
+    const mal = (r?.controles ?? []).filter((x) => x.estado === 'mal');
+    if (mal.length) rojos.push({ nombre: n.nombre, mal: mal.map((x) => `${x.texto}${x.arreglo ? ` → ${x.arreglo}` : ''}`) });
+  }
+  if (rojos.length) {
+    await correoAlEquipo(env, deps)(`${rojos.length === 1 ? 'un negocio tiene' : `${rojos.length} negocios tienen`} algo en rojo`, [
+      'El semáforo de cada negocio, revisado hoy:',
+      '',
+      ...rojos.flatMap((x) => [`${x.nombre}:`, ...x.mal.map((m) => `  - ${m}`), '']),
+      'Detalle: Admin → el negocio → Verificar, o Conexiones → Estado.',
+    ]).catch(() => false);
+  }
+  console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', rojos: rojos.length }));
+  return rojos;
 }
 
 /**
@@ -397,7 +440,9 @@ async function conectar(request, env, deps) {
     // Conectada desde la app de negocios (estado con negocio) = cuenta de un cliente, aunque use la app del estudio:
     // responde solo con la ficha de su negocio, nunca con lo de Zustro Labs (ZL-140).
     const antes = await cuentas.get(c.id);
-    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence, app: c.app, cliente: Boolean(estado.negocio) || antes?.cliente === true });
+    // ZL-160: si dio el permiso de comentarios (sin el dato, queda lo que había).
+    const permisoComentarios = c.permisoComentarios ?? antes?.permisoComentarios;
+    await cuentas.put(c.id, { username: c.username, token: c.token, vence: c.vence, app: c.app, cliente: Boolean(estado.negocio) || antes?.cliente === true, ...(permisoComentarios !== undefined && { permisoComentarios }) });
     console.log(JSON.stringify({ canal: 'ig', que: 'conectada', suscripta: c.suscripta, propia: app.id === String(env.IG_APP_ID), negocio: Boolean(estado.negocio) }));
     // Desde la app de negocios (ZL-137): la cuenta queda vinculada sola a ese negocio, con Instagram encendido.
     if (estado.negocio) {
@@ -447,11 +492,100 @@ async function webhook(request, env, ctx, deps, canal) {
     canal: canal.clave, que: 'aviso', objeto: String(payload?.object ?? '').slice(0, 40), entradas: (payload?.entry ?? []).length,
     forma: (payload?.entry ?? []).map((e) => (e.messaging ? 'messaging' : e.changes ? 'changes' : 'otra')).join(','), eventos: eventos.length,
   }));
+  // ZL-160: los comentarios de las publicaciones (solo Instagram), aparte de los mensajes.
+  const comentarios = canal.clave === 'ig' ? leerComentariosIg(payload) : [];
   // En Cloudflare (con waitUntil) se esperan las ráfagas; en las pruebas, no (salvo que la prueba lo pida).
-  const trabajo = procesar(eventos, env, fetchImpl, { ...deps, rafagaMs: deps.rafagaMs ?? (ctx?.waitUntil ? RAFAGA_MS : 0) }, canal);
+  const trabajo = Promise.all([
+    procesar(eventos, env, fetchImpl, { ...deps, rafagaMs: deps.rafagaMs ?? (ctx?.waitUntil ? RAFAGA_MS : 0) }, canal),
+    comentarios.length ? atenderComentarios(comentarios, env, fetchImpl, deps) : null,
+  ]);
   if (ctx?.waitUntil) ctx.waitUntil(trabajo);
   else await trabajo;
   return json({ ok: true }, 200);
+}
+
+/**
+ * ZL-160: los comentarios de las publicaciones de Instagram de un negocio con «Responder comentarios» encendido.
+ * Con la ficha y el catálogo del negocio, una respuesta corta en público y el detalle por privado (o solo por privado,
+ * según el modo). Un reclamo o algo que no está en la ficha: nada en público y un aviso al dueño. Uno por comentario,
+ * con tope diario y dentro del cupo de IA del negocio. El texto no se guarda, salvo en la memoria corta de la charla
+ * cuando se le escribe por privado (para que, si contesta, el asistente sepa de qué viene). → una línea por comentario.
+ */
+export async function atenderComentarios(comentarios, env, fetchImpl, deps) {
+  const a = almacen(env, deps);
+  const now = deps.now ?? Date.now();
+  const out = [];
+  const fin = (que, extra = {}) => { console.log(JSON.stringify({ canal: 'ig', que: 'comentario', r: que, ...extra })); out.push({ que, ...extra }); };
+  for (const c of comentarios) {
+    try {
+      if (c.ts && now - c.ts * 1000 > MAX_EDAD_COMENTARIO_MS) { fin('viejo'); continue; }
+      const cuenta = await a.cuentas?.get(c.cuenta);
+      if (!cuenta?.token) { fin('cuenta_desconocida'); continue; }
+      // Lo que comenta la propia cuenta (por las dudas: las respuestas ya se filtran por ser de un hilo).
+      if (c.usuario && cuenta.username && c.usuario.toLowerCase() === String(cuenta.username).toLowerCase()) { fin('propio'); continue; }
+      const negocio = await a.negocios?.deCuenta(c.cuenta);
+      const conf = configComentarios(negocio);
+      if (!negocio || !conf.activo) { fin('apagado'); continue; }
+      if (!canalesDe(negocio).instagram) { fin('canal_apagado'); continue; }
+      if (negocio.pausa?.hasta > now) { fin('pausa'); continue; }
+      if (esRuido(c.texto)) { fin('ruido'); continue; }
+      const f = await a.fichas?.get(c.cuenta);
+      if (!f?.texto || !f.activa) { fin('sin_ficha'); continue; }
+      const pf = parsearFicha(f.texto);
+      if (!pf.ok) { fin('ficha_invalida'); continue; }
+      // Meta reenvía el mismo aviso si tardamos: una sola respuesta por comentario.
+      if (await a.memoria?.visto?.(`cm:${c.id}`)) { fin('repetido'); continue; }
+      if (!env.LIMITE?.limit || !env.LIMITE_GLOBAL?.limit) { fin('config'); continue; }
+      // Por persona: el mismo freno que en los mensajes (alguien que comenta 30 veces seguidas).
+      if (!(await env.LIMITE.limit({ key: `igc:${c.cuenta}.${c.quien}` })).success) { fin('limite'); continue; }
+      const zona = ajustesDeVenta(negocio.ajustes).zona;
+      const dia = diaLocal(now, zona);
+      if ((await a.negocios.sumarMetrica(negocio.id, 'comentariosIa', dia)) > TOPE_COMENTARIOS_DIA) { fin('tope'); continue; }
+      if ((await cupoDeIa(env, negocio.id, deps)()) !== 'ok') { fin('cupo'); continue; }
+      // La misma ficha que en la charla: con lo de «Cómo vendés» y el aviso del día.
+      const conVenta = negocio.ajustes ? conAjustes(pf.ficha, ajustesDeVenta(negocio.ajustes)) : pf.ficha;
+      const ficha = conAvisoDia(conVenta, negocio.avisoDia, now);
+      const catalogo = consultaCatalogo(env, deps, negocio.id, ficha);
+      const publicacion = await textoDePublicacion(env, cuenta.token, c.media, fetchImpl);
+      const preguntar = deps.preguntarComentario ? deps.preguntarComentario(ficha, catalogo) : preguntadorComentario(env, ficha, { catalogo, fetchImpl });
+      const r = await preguntar(c.texto, { publicacion, modo: conf.modo });
+      let publica = false, privada = false, sinPermiso = false;
+      if (r.publica) {
+        const x = await responderComentario(env, cuenta.token, c.id, r.publica, fetchImpl);
+        publica = x.ok; sinPermiso = sinPermiso || Boolean(x.sinPermiso);
+      }
+      if (r.privada && !sinPermiso) {
+        const x = await responderEnPrivado(env, cuenta.token, c.id, r.privada, fetchImpl);
+        privada = x.ok; sinPermiso = sinPermiso || Boolean(x.sinPermiso);
+        // Si contesta, sigue la charla normal: el asistente sabe qué comentó y qué le dijo (memoria corta, 48 h).
+        if (privada && a.memoria) {
+          const from = armarFrom(c.cuenta, c.quien);
+          const e = (await a.memoria.get(from)) ?? {};
+          const previa = e.histT && now - e.histT < HISTORIAL_MS && Array.isArray(e.hist) ? e.hist : [];
+          const hist = [...previa, { r: 'u', t: `(Comentario en una publicación) ${c.texto}`.slice(0, 500) }, { r: 'a', t: r.privada.slice(0, 500) }].slice(-HISTORIAL_MAX);
+          await a.memoria.put(from, {
+            ...e, humanoHasta: e.humanoHasta ?? 0, hist, histT: now,
+            ...(!e.idioma && ['es', 'en', 'hr'].includes(r.idioma) && { idioma: r.idioma }),
+            ...(!e.resumen && { resumen: `Comentó una publicación: «${c.texto.slice(0, 150)}»` }),
+            ...(!e.usuario && c.usuario && { usuario: c.usuario }),
+          });
+        }
+      }
+      // La cuenta se conectó antes de pedir el permiso: se marca y la app le pide que vuelva a conectarla.
+      if (sinPermiso && cuenta.permisoComentarios !== false) await a.cuentas.put(c.cuenta, { ...cuenta, permisoComentarios: false });
+      if (publica || privada) await a.negocios.sumarMetrica(negocio.id, 'comentarios', dia);
+      if (r.tipo === 'reclamo' || r.persona) {
+        await avisarNegocio(a, negocio.id, {
+          titulo: 'Un comentario de Instagram espera tu respuesta',
+          cuerpo: r.tipo === 'reclamo' ? 'Parece un reclamo: respondelo vos desde Instagram.' : 'Preguntan algo que no está en tu información: respondelo vos desde Instagram.',
+        }, fetchImpl, now).catch(() => 0);
+      }
+      fin(sinPermiso ? 'sin_permiso' : 'ok', { tipo: r.tipo, publica, privada, persona: Boolean(r.persona), notas: r.notas, uso: r.uso });
+    } catch (e) {
+      fin('error', { error: String(e?.message ?? 'error').slice(0, 60) });
+    }
+  }
+  return out;
 }
 
 async function procesar(eventos, env, fetchImpl, deps, canal) {
@@ -489,8 +623,8 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); continue; }
       const pf = parsearFicha(f.texto);
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
-      perfil = perfilNegocio(pf.ficha);
       const dueño = await a.negocios?.deCuenta(ev.cuenta);
+      perfil = conPausa(perfilNegocio(pf.ficha), dueño);
       dueñoEv = dueño;
       // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
@@ -597,7 +731,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
   if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); return; }
   const pf = parsearFicha(f.texto);
   if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); return; }
-  const perfil = perfilNegocio(pf.ficha);
+  const perfil = conPausa(perfilNegocio(pf.ficha), dueño);
   const preguntar = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'WhatsApp');
   // La memoria guarda cada charla con los números normalizados: así el eco del dueño pausa la misma charla aunque Meta
   // escriba el número de la persona distinto (con o sin el 9). Para responder se usa el número tal como vino.
@@ -786,7 +920,7 @@ async function datosVerificar(env, deps, id, now, { charla: conCharla = true } =
   const cuentas = [];
   for (const cid of negocio.cuentas ?? []) {
     const c = await a.cuentas.get(cid);
-    cuentas.push({ id: cid, username: c?.username ?? null, conectada: Boolean(c?.token), venceEnDias: c?.vence ? Math.floor((c.vence - now) / 86_400_000) : null });
+    cuentas.push({ id: cid, username: c?.username ?? null, conectada: Boolean(c?.token), venceEnDias: c?.vence ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: c?.permisoComentarios ?? null });
   }
   const numeros = [];
   for (const r of ((await a.ycloud?.list?.()) ?? []).filter((x) => x.negocio === id)) {
@@ -986,6 +1120,8 @@ export default {
     if (!cuentas) { console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', error: 'sin memoria' })); return []; }
     const r = await mantenerCuentas(env, cuentas, fetchImpl, deps.now ?? Date.now()).catch((e) => [{ error: String(e?.name ?? 'Error').slice(0, 40) }]);
     console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', cuentas: r }));
+    // ZL-159: después del mantenimiento, el semáforo de todos los negocios; si algo está en rojo, correo al equipo.
+    await revisarNegocios(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', error: String(e?.message ?? 'error').slice(0, 60) })));
     return r;
   },
 };

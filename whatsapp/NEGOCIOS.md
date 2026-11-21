@@ -213,13 +213,73 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 - **Números para el dueño:** en Inicio, los últimos 7 días: charlas atendidas, consultas, pedidos y ventas cerradas
   (consultas ganadas más pedidos entregados, con el total vendido). `GET /api/n/<id>/numeros`.
 
+## El negocio en sus manos (ZL-159)
+
+- **Dueño y empleados:** en Admin, de los correos del negocio se marcan los empleados (tiene que quedar al menos un
+  dueño). Un empleado atiende pedidos, consultas y productos, y ve el Estado; conectar WhatsApp o Instagram, cambiar
+  «Cómo vendés» y pausar el asistente lo hace el dueño (la API responde 403 «eso lo cambia el dueño del negocio»).
+- **Pestaña Asistente para el negocio** (`PUT /api/n/<id>/asistente`):
+  - **Pausa** (vacaciones, local cerrado), hasta 60 días, con un mensaje de ausencia opcional. A cada persona que
+    escribe se le dice una sola vez cuándo vuelven y nada más; la IA no responde. BORRAR sigue andando.
+  - **Aviso del día** (hasta 7 días): «hoy cerramos a las 18», «se terminó el pan de campo». Va al final de la ficha
+    y manda sobre lo de arriba.
+  - **Charla de prueba**: el dueño le escribe como si fuera un cliente, con su ficha y sus productos, sin mandar nada
+    a nadie. Hasta 40 pruebas por día (`POST /api/n/<id>/prueba`).
+  - El equipo además ve la ficha completa, como antes.
+- **Búsqueda de productos con contexto:** la IA recibe los productos que vienen al caso del mensaje y de los dos
+  anteriores de la persona («¿y en chocolate?»), y entiende diminutivos y plurales («tortita», «cajas»).
+- **Listas largas:** productos y pedidos de a 50, con «Ver más».
+- **Excel completo:** la hoja Pedidos trae número, fecha, estado, canal, comprador, entrega, productos y total (sin la
+  dirección).
+- **Privacidad:** el nombre, la dirección y las notas de un pedido cerrado, y el nombre y el resumen de una consulta
+  cerrada, se borran solos a los 180 días (alarma diaria del `Catalogo`, `RETENCION_DATOS_MS`); quedan los productos y
+  el total para las cuentas. BORRAR en el chat los borra al instante (lo que está en curso se termina primero).
+  La política modelo para cada negocio está en [`fichas/PRIVACIDAD_MODELO.md`](fichas/PRIVACIDAD_MODELO.md): el
+  responsable es el negocio y Zustro Labs procesa por cuenta de él.
+- **Avisos de respaldo al equipo** (correo a `AVISO_PARA`, `avisarEquipo()` en `src/panel.js`):
+  - si en Inicio ningún celular tiene los avisos activados, se lo dice arriba al negocio;
+  - si un pedido espera una hora y el negocio no tiene avisos al celular, correo al equipo (sin datos del comprador);
+  - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
+    charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
+
+## Comentarios de Instagram (ZL-160)
+
+El asistente también responde los comentarios de las publicaciones, con la misma ficha y el mismo catálogo (precios si
+la ficha lo permite, dónde está, horarios, stock). Lo enciende el **dueño** en Conexiones → Instagram («Responder
+comentarios», `PUT /api/n/<id>/instagram/comentarios {activo, modo}`); arranca apagado.
+
+| Modo | En público | Por privado |
+|---|---|---|
+| `publico_privado` (recomendado) | Una frase corta que responde y dice que le escribimos por privado | El detalle, de 1 a 3 oraciones, con una pregunta para seguir |
+| `privado` | Nada | Igual |
+
+- **Qué se contesta:** comentarios nuevos (menos de 24 h) y de primer nivel; las respuestas dentro de un hilo (donde
+  caen también las nuestras) y los de la propia cuenta, no. Sin IA: solo emojis, menos de tres letras o una mención a
+  un amigo (`esRuido`).
+- **Qué hace la IA** (`src/comentarios.js`): clasifica (consulta, elogio, reclamo, otro) y escribe las dos respuestas.
+  Pasan por `controlarNegocio` (links, teléfonos, correos y montos que no están en la ficha o el catálogo) y se les
+  sacan las @menciones. Elogio: gracias en público, nada por privado. Reclamo, o una consulta que no está en la ficha:
+  nada en ningún lado y aviso al celular del dueño. Lee el texto de la publicación como dato.
+- **El privado** va por `comment_id` (Meta: uno por comentario, dentro de 7 días). Queda en la memoria corta de esa
+  persona (`ig:<cuenta>.<quien>`): si contesta, la charla sigue sabiendo qué comentó y qué le dijimos.
+- **Frenos:** una respuesta por comentario (`visto('cm:<id>')`), el límite por persona (`LIMITE`, clave `igc:`),
+  200 comentarios con IA por negocio y por día (`TOPE_COMENTARIOS_DIA`, métrica `comentariosIa`), el cupo de IA del
+  negocio, la pausa del asistente y el canal de Instagram del negocio.
+- **Permiso:** `instagram_business_manage_comments` y el campo `comments` del webhook. Al conectar se guarda si lo dio
+  (`permisoComentarios` en la cuenta); la suscripción pide `messages,comments` solo con el permiso y, si Meta rechaza
+  `comments`, deja `messages` (nunca se pierden los mensajes). Si Meta responde sin permiso, la cuenta queda marcada,
+  la app pide «Conectar Instagram» de nuevo y el semáforo lo avisa.
+- **Números:** métrica `comentarios` (los que respondió) → «Comentarios respondidos» en Reportes, por día y en el Excel.
+- **Registro:** `"que":"comentario"` con `r` y el tipo; nunca el texto ni el usuario.
+
 ## Lo que falta (próximas etapas)
 
-- **Pedidos, etapa 2:** avisos al celular con la app cerrada (Web Push), aviso por correo de pedido nuevo, el alias
-  de pago en el mensaje de «aceptado», y avisarle al comprador cuando su pedido vence.
 - **Fotos por chat** y **planilla de Google en vivo**.
-- **Privacidad:** cuando haya pedidos se guardan datos de los compradores: hace falta una política modelo para cada
-  negocio (responsable: el negocio; Zustro Labs procesa por cuenta de él) y el plazo de borrado.
+- **Cobro en línea** (Mercado Pago) y el alias de pago en el mensaje de «aceptado».
+- **Plantillas de Meta** para avisar al comprador pasadas las 24 h sin que lo mande el dueño (requiere aprobarlas en
+  Meta y tienen costo por mensaje).
+- Decididos para más adelante: decir en la charla que es un asistente automático, y el ícono para iPhone de la app
+  instalada.
 
 ## WhatsApp de cada cliente (ZL-135)
 
@@ -232,4 +292,5 @@ contesta desde su celular. Detalle en [`WHATSAPP_CLIENTES.md`](WHATSAPP_CLIENTES
 
 `src/catalogo.js` (base de un negocio) · `src/negocios.js` (API y permisos) · `src/negocios-ui.js` (la página) ·
 `src/lector.js` (Excel y CSV) · `src/objeto.js` (Durable Objects) · tests en `test/catalogo.test.js`,
-`test/negocios.test.js`, `test/lector.test.js` y, en un navegador, `tests/negocios.spec.ts`.
+`test/negocios.test.js`, `test/lector.test.js`, `test/alertas.test.js` (ZL-159), `test/comentarios.test.js` (ZL-160) y, en un navegador,
+`tests/negocios.spec.ts`.
