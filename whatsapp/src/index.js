@@ -6,7 +6,7 @@
 // - equipo.zustrolabs.com → panel de atención humana, detrás de Cloudflare Access (panel.js).
 // Separado del Radar Croacia: otra app de Meta, otro número, otra memoria y la clave de IA del estudio.
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
-import { appDe, armarFrom, conectarCuenta, enviarIg, esInstagram, leerComentariosIg, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, responderComentario, responderEnPrivado, secretosDe, textoDePublicacion, urlAutorizar } from './instagram.js';
+import { appDe, armarFrom, conectarCuenta, enviarIg, textosIg, esInstagram, leerComentariosIg, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, responderComentario, responderEnPrivado, secretosDe, textoDePublicacion, urlAutorizar } from './instagram.js';
 import { configComentarios, esRuido, MAX_EDAD_COMENTARIO_MS, preguntadorComentario, TOPE_COMENTARIOS_DIA } from './comentarios.js';
 import { conAjustes, conAvisoDia, conInfo, conPreguntas, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
 import { ajustesDeVenta, HISTORIAL_MAX, HISTORIAL_MS, limiteDiaDe } from './atencion.js';
@@ -179,26 +179,58 @@ const sinPedidosAhora = (dueño, now = Date.now()) => {
 export const VENTANA_SEGURA_MS = 23.5 * 3600_000;
 
 /**
+ * ZL-166: Instagram manda un eco de cada mensaje que sale de la cuenta, nuestro o del dueño desde su app. Antes de
+ * mandar, cada texto queda marcado (una hora); un eco sin marca es del dueño, y el asistente se calla en esa charla.
+ */
+const huella = (t) => {
+  let h = 2166136261;
+  for (const c of String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, 300)) h = Math.imul(h ^ c.codePointAt(0), 16777619) >>> 0;
+  return h.toString(36);
+};
+export const claveEco = (from, texto) => `eco:${from}:${huella(texto)}`;
+async function marcarEcosIg(memoria, m) {
+  if (!memoria?.visto || !esInstagram(m?.to)) return;
+  for (const t of textosIg(m)) await memoria.visto(claveEco(m.to, t)).catch(() => null);
+}
+
+/** ZL-166: un texto largo se manda en partes (por oraciones), nunca cortado sin avisar. */
+export function partirTexto(texto, max = 1000) {
+  const t = String(texto ?? '').trim();
+  if (t.length <= max) return t ? [t] : [];
+  const partes = [];
+  let resto = t;
+  while (resto.length > max) {
+    const corte = resto.slice(0, max);
+    const i = Math.max(corte.lastIndexOf('\n'), corte.lastIndexOf('. '), corte.lastIndexOf('? '), corte.lastIndexOf('! '));
+    const fin = i > max * 0.4 ? i + 1 : corte.lastIndexOf(' ') > max * 0.4 ? corte.lastIndexOf(' ') : max;
+    partes.push(resto.slice(0, fin).trim());
+    resto = resto.slice(fin).trim();
+  }
+  if (resto) partes.push(resto);
+  return partes;
+}
+
+/**
  * Le avisa al comprador por el mismo canal del pedido (ZL-139): Instagram con el token de la cuenta del negocio, o
  * WhatsApp con la clave de YCloud del número del negocio. Solo cuentas y números de ESE negocio. → true o el motivo.
  * ZL-157: fuera de las 24 h de su último mensaje ni se intenta (YCloud acepta el envío y Meta lo rechaza después, sin
  * que nos enteremos): devuelve 'fuera_24h' y quien llama guarda el aviso para cuando vuelva a escribir.
  */
 async function avisarComprador(env, a, negocio, charla, texto, fetchImpl = fetch, now = Date.now()) {
-  const msg = { to: charla, text: { body: String(texto).slice(0, 1000) } };
+  // ZL-166: lo largo va en partes (antes se cortaba a los 1.000 caracteres sin avisar).
+  const msgs = partirTexto(texto, 1000).map((body) => ({ to: charla, text: { body } }));
   try {
     const e = a.memoria ? await a.memoria.get(claveMemoria(charla)) : null;
     if (!e?.ultimo || now - e.ultimo > VENTANA_SEGURA_MS) return 'fuera_24h';
     if (/^yc:\d+:\d+$/.test(charla)) {
       const reg = ((await a.ycloud?.list?.()) ?? []).find((r) => r.negocio === negocio.id && normalizar(r.numero) === normalizar(numeroDeCharla(charla)));
       if (!reg) return 'el número ya no está conectado';
-      await enviarYCloud(reg.apiKey, msg, fetchImpl);
-      await contarEnviadoWa(a, negocio, now);
+      for (const msg of msgs) { await enviarYCloud(reg.apiKey, msg, fetchImpl); await contarEnviadoWa(a, negocio, now); }
       return true;
     }
     const cuenta = /^ig:(\d+)\./.exec(charla)?.[1];
     if (cuenta && (negocio.cuentas ?? []).includes(cuenta)) {
-      await enviarIg(env, msg, fetchImpl, a.cuentas);
+      for (const msg of msgs) { await marcarEcosIg(a.memoria, msg); await enviarIg(env, msg, fetchImpl, a.cuentas); }
       return true;
     }
     return 'la cuenta ya no es de este negocio';
@@ -449,6 +481,27 @@ export async function revisarNegocios(env, deps, now) {
  * especial y ese día suele abrir, se le avisa una vez al celular para que diga si abre (si no, el asistente diría que
  * está abierto). Solo los negocios con horarios cargados y una zona cuyo país sabemos calcular.
  */
+/**
+ * ZL-166, cron diario: con coexistencia, Meta corta la conexión si la app de WhatsApp Business no se usa en 14 días.
+ * Al día 10 sin mensajes del dueño desde la app, le llega un aviso al celular (una vez por período).
+ */
+export async function recordarCoexistencia(env, deps, now) {
+  const a = almacen(env, deps);
+  if (!a.ycloud?.list || !a.negocios?.get) return [];
+  const out = [];
+  for (const r of await a.ycloud.list()) {
+    if (r.ecos === false) continue;
+    const desde = r.ultimoEco ?? r.creado ?? 0;
+    const dias = Math.floor((now - desde) / 86_400_000);
+    if (!desde || dias < 10 || (r.avisoCoex ?? 0) >= desde) continue;
+    const enviados = await avisarNegocio(a, r.negocio, { titulo: 'Abrí WhatsApp Business', cuerpo: `Hace ${dias} días que no se usa la app de WhatsApp Business del ${r.numero}. Si pasan 14, Meta corta la conexión y el asistente deja de responder: abrila y mandá un mensaje.`, tag: `coex-${r.clave}` }, deps.fetch ?? fetch, now).catch(() => 0);
+    await a.ycloud.put(r.clave, { avisoCoex: now });
+    out.push({ numero: r.clave, dias, enviados });
+  }
+  if (out.length) console.log(JSON.stringify({ canal: 'negocio', que: 'coexistencia', avisos: out.length }));
+  return out;
+}
+
 /** ZL-165, cron diario: «Charlas» de la app guarda 30 días; lo más viejo se borra en cada negocio. */
 export async function purgarCharlas(env, deps, now) {
   const a = almacen(env, deps);
@@ -728,6 +781,7 @@ export async function atenderComentarios(comentarios, env, fetchImpl, deps) {
         publica = x.ok; sinPermiso = sinPermiso || Boolean(x.sinPermiso);
       }
       if (r.privada && !sinPermiso) {
+        await marcarEcosIg(a.memoria, { to: armarFrom(c.cuenta, c.quien), text: { body: r.privada } });
         const x = await responderEnPrivado(env, cuenta.token, c.id, r.privada, fetchImpl);
         privada = x.ok; sinPermiso = sinPermiso || Boolean(x.sinPermiso);
         // Si contesta, sigue la charla normal: el asistente sabe qué comentó y qué le dijo (memoria corta, 48 h).
@@ -771,7 +825,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
   const preguntar = deps.preguntar ?? preguntador(env, { canal: canal.nota });
   const aviso = deps.avisar ?? (() => avisar(env, undefined, undefined, canal.clave));
   const now = deps.now ?? Date.now();
-  const mandar = (m) => canal.enviar(env, m, fetchImpl, cuentas);
+  const mandar = async (m) => { await marcarEcosIg(memoria, m); return canal.enviar(env, m, fetchImpl, cuentas); };
 
   for (const ev of eventos) {
     const t0 = Date.now();
@@ -805,6 +859,17 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       pedidosEv = pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'ig');
       consultasEv = consultasDe(env, deps, dueño, ev.from, 'ig');
       if (cliente) charlasEv = null;
+    }
+    // ZL-166: el eco de un mensaje. Si lo mandamos nosotros, nada; si lo mandó el dueño desde su Instagram, el asistente
+    // se calla en esa charla las horas de la ficha (como con WhatsApp) y queda en «Charlas».
+    if (ev.eco) {
+      if (!negocio || !dueñoEv || !memoria) { log({ ok: true, que: 'eco_ignorado' }); continue; }
+      if (await memoria.visto(claveEco(ev.from, ev.text))) { log({ ok: true, que: 'eco_propio' }); continue; }
+      const estado = await memoria.get(ev.from);
+      await memoria.put(ev.from, { ...(estado ?? {}), humanoHasta: now + (perfil?.horasPausa ?? 12) * 3600_000, pase: 0, avisos: [] });
+      await anotarCharla(env, deps, dueñoEv.id, ev.from, [{ de: 'negocio', texto: ev.text, t: now }]);
+      log({ ok: true, que: 'eco_dueño' });
+      continue;
     }
     try {
       // Sin límites no se responde: son el freno al abuso y al gasto en IA.
@@ -847,6 +912,12 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       log({ ok: true, ms: Date.now() - t0, que: r.metrica, negocio, ...(fichaEstudio?.texto && { estudio: 'ficha' }), idioma: r.idioma, fuera: r.fuera, notas: r.notas, uso: r.uso, handoff: r.handoff, avisado, avisoError });
     } catch (e) {
       log({ ok: false, ms: Date.now() - t0, error: String(e?.message || 'error').slice(0, 60) });
+      // ZL-166: Instagram dice que el permiso ya no vale (lo sacaron o venció): queda marcado y el dueño se entera una vez.
+      if (Number(e?.code) === 190 && ev.cuenta && cuenta && !cuenta.tokenInvalido) {
+        await cuentas.put(ev.cuenta, { ...cuenta, tokenInvalido: now }).catch(() => null);
+        if (dueñoEv) await avisarNegocio(a, dueñoEv.id, { titulo: 'Instagram se desconectó', cuerpo: 'El asistente no puede responder por Instagram. Abrí la app → Más → Conexiones → Instagram y tocá «Conectar Instagram».', tag: 'ig-token' }, fetchImpl, now).catch(() => 0);
+        continue;
+      }
       // El aviso de falla va en el idioma de la charla (si la memoria responde).
       const st = await Promise.resolve(memoria?.get(ev.from)).catch(() => null);
       const falla = perfil ? perfil.textos().falla : textos(st?.idioma).falla;
@@ -925,6 +996,8 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
     if (!ev.ts || now - ev.ts * 1000 > MAX_EDAD_MS) { log({ ok: true, que: 'viejo' }); continue; }
     // El dueño contestó desde su app (coexistencia): el asistente se calla en esa charla las horas de pausa de la ficha.
     if (ev.eco) {
+      // ZL-166: la última vez que el dueño usó la app de WhatsApp Business (para el control de los 14 días).
+      if (now - (reg.ultimoEco ?? 0) > 3600_000) { reg.ultimoEco = now; await a.ycloud.put(reg.clave, { ultimoEco: now }).catch(() => {}); }
       if (memoria) {
         const estado = await memoria.get(ev.from);
         // Lo tomó el dueño: la pausa es la de la ficha y ya no vuelve el asistente a los 15 minutos (ZL-149).
@@ -1169,11 +1242,11 @@ async function datosVerificar(env, deps, id, now, { charla: conCharla = true } =
   const cuentas = [];
   for (const cid of negocio.cuentas ?? []) {
     const c = await a.cuentas.get(cid);
-    cuentas.push({ id: cid, username: c?.username ?? null, conectada: Boolean(c?.token), venceEnDias: c?.vence ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: c?.permisoComentarios ?? null });
+    cuentas.push({ id: cid, username: c?.username ?? null, conectada: Boolean(c?.token), ...(c?.tokenInvalido && { tokenInvalido: c.tokenInvalido }), venceEnDias: c?.vence ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: c?.permisoComentarios ?? null });
   }
   const numeros = [];
   for (const r of ((await a.ycloud?.list?.()) ?? []).filter((x) => x.negocio === id)) {
-    numeros.push({ clave: r.clave, numero: r.numero, ecos: r.ecos, ultimo: r.ultimo ?? null, webhook: await webhookDeYCloud(r.apiKey, r.endpointId, fetchImpl) });
+    numeros.push({ clave: r.clave, numero: r.numero, ecos: r.ecos, ultimo: r.ultimo ?? null, ultimoEco: r.ultimoEco ?? null, creado: r.creado ?? null, webhook: await webhookDeYCloud(r.apiKey, r.endpointId, fetchImpl) });
   }
   let productos = null;
   try {
@@ -1378,6 +1451,7 @@ export default {
     // ZL-159: después del mantenimiento, el semáforo de todos los negocios; si algo está en rojo, correo al equipo.
     await revisarNegocios(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', error: String(e?.message ?? 'error').slice(0, 60) })));
     await recordarFeriados(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'feriados', error: String(e?.message ?? 'error').slice(0, 60) })));
+    await recordarCoexistencia(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'coexistencia', error: String(e?.message ?? 'error').slice(0, 60) })));
     await purgarCharlas(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'purgar_charlas', error: String(e?.message ?? 'error').slice(0, 60) })));
     return r;
   },

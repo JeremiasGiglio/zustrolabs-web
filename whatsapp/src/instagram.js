@@ -50,7 +50,16 @@ export function leerWebhookIg(payload) {
     const cambios = (entry.changes ?? []).filter((c) => c.field === 'messages' && c.value?.sender).map((c) => c.value);
     for (const m of [...(entry.messaging ?? []), ...cambios]) {
       const msg = m.message;
-      if (!msg || msg.is_echo || msg.is_deleted) continue;
+      if (!msg || msg.is_deleted) continue;
+      // ZL-166: un eco con texto es lo que salió de la cuenta: nuestro (se reconoce después) o del dueño desde su app.
+      if (msg.is_echo) {
+        const cuenta = String(m.sender?.id ?? entry.id ?? '');
+        const quien = String(m.recipient?.id ?? '');
+        if (typeof msg.text === 'string' && msg.text.trim() && ID_RE.test(cuenta) && ID_RE.test(quien) && quien !== cuenta && msg.mid) {
+          out.push({ eco: true, id: String(msg.mid), from: armarFrom(cuenta, quien), cuenta, ts: Math.floor(Number(m.timestamp ?? 0) / 1000), text: msg.text });
+        }
+        continue;
+      }
       const cuenta = String(m.recipient?.id ?? entry.id ?? '');
       const quien = String(m.sender?.id ?? '');
       if (!ID_RE.test(cuenta) || !ID_RE.test(quien) || quien === cuenta) continue;
@@ -145,6 +154,9 @@ export function convertir(m) {
   const corto = (t) => { const a = [...String(t).trim()]; return a.length > 20 ? `${a.slice(0, 19).join('')}…` : a.join(''); };
   return trozos.map((t, i) => ({ recipient: { id }, message: { text: t, ...(ops.length && i === trozos.length - 1 && { quick_replies: ops.map((o) => ({ content_type: 'text', title: corto(o.titulo), payload: String(o.id) })) }) } }));
 }
+
+/** ZL-166: los textos tal como salen por Instagram (en trozos), para reconocer después sus ecos. */
+export const textosIg = (m) => convertir(m).map((x) => x.message?.text).filter(Boolean);
 
 /** Token de la cuenta que recibió el mensaje: la guardada al conectarse, o la de la variable IG_TOKEN para IG_ID. */
 export async function tokenDe(env, cuentas, cuenta) {

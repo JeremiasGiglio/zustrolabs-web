@@ -66,7 +66,9 @@ test('leerWebhookIg: texto, adjuntos, ecos, borrados; la persona se identifica c
     { reaction: { mid: 'm1', action: 'react', emoji: '❤️' } },
     { message: { mid: 'm5', text: 'otra' }, sender: { id: 'no-es-id' } },
   ]));
-  assert.deepEqual(evs.map((e) => [e.kind, e.id]), [['text', 'm1'], ['otro', 'm2']]);
+  assert.deepEqual(evs.filter((e) => !e.eco).map((e) => [e.kind, e.id]), [['text', 'm1'], ['otro', 'm2']]);
+  // ZL-166: el eco con texto sale como evento aparte (de la cuenta a la persona), para saber si contestó el dueño.
+  assert.deepEqual(evs.filter((e) => e.eco).map((e) => [e.id, e.from, e.text]), [['m3', FROM, 'Mandé esto yo']]);
   assert.equal(evs[0].from, FROM);
   assert.equal(evs[0].cuenta, CUENTA);
   assert.equal(evs[0].ts, T0 / 1000);

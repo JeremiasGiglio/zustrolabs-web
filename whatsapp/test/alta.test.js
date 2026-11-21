@@ -222,3 +222,17 @@ test('ZL-166: Access saca los correos que se borraron, nunca los protegidos (equ
   assert.deepEqual(r, { ok: false, error: 'la política quedaría vacía' });
   assert.deepEqual(await quitarDeAcceso({}, cf.fetch, 'negocios.zustrolabs.com', ['x@example.com']), { ok: false, error: 'sin configurar (CF_API_TOKEN, CF_ACCOUNT_ID)' });
 });
+
+test('ZL-166 semáforo: clave de YCloud revocada en rojo; coexistencia con aviso al día 10 y rojo al 14; permiso de Instagram revocado', () => {
+  const DIA = 86_400_000;
+  let d = base(); d.numeros[0].webhook = { error: 'la clave de YCloud ya no sirve', clave: false };
+  let r = verificarNegocio(d);
+  assert.ok(r.controles.some((c) => c.id === 'whatsapp' && c.estado === 'mal' && /clave de YCloud ya no sirve/.test(c.texto)));
+  d = base(); d.numeros[0].ultimoEco = T0 - 3 * DIA; assert.equal(estados(verificarNegocio(d)).coexistencia, undefined);
+  d = base(); d.numeros[0].ultimoEco = T0 - 11 * DIA; assert.equal(estados(verificarNegocio(d)).coexistencia, 'aviso');
+  d = base(); d.numeros[0].ultimoEco = T0 - 15 * DIA; r = verificarNegocio(d); assert.equal(estados(r).coexistencia, 'mal'); assert.match(r.controles.find((c) => c.id === 'coexistencia').texto, /hace 15 días/);
+  d = base(); d.numeros[0].creado = T0 - 12 * DIA; assert.equal(estados(verificarNegocio(d)).coexistencia, 'aviso', 'sin ningún eco cuenta desde que se conectó');
+  d = base(); d.numeros[0].ecos = false; d.numeros[0].creado = T0 - 30 * DIA; assert.equal(estados(verificarNegocio(d)).coexistencia, undefined, 'sin ecos no se puede saber');
+  d = base(); d.cuentas[0].tokenInvalido = T0; r = verificarNegocio(d);
+  assert.ok(r.controles.some((c) => c.id === 'instagram' && c.estado === 'mal' && /Instagram desconectó @laespiga/.test(c.texto)));
+});

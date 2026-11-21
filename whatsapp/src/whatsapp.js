@@ -435,9 +435,10 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
   }
   // ZL-157: con un pedido abierto, una foto, un archivo o un audio (el comprobante, casi siempre) es para el negocio: la
   // IA no lo mira ni contesta, y al dueño le llega un aviso.
-  if (ev.kind === 'otro' && neg && pedidos?.abierto) {
+  // ZL-166: con texto al pie también (es el comprobante con «ya pagué»), y al comprador se le confirma que llegó.
+  if ((ev.kind === 'otro' || ev.archivo) && neg && pedidos?.abierto) {
     const n = await pedidos.abierto().catch(() => null);
-    if (n) return { send: [], metrica: 'archivo_pedido', pedido: n, archivo: ev.audio ? 'audio' : 'archivo' };
+    if (n) return { send: T.recibido ? [msgTexto(ev.from, T.recibido(n))] : [], metrica: 'archivo_pedido', pedido: n, archivo: ev.audio ? 'audio' : 'archivo' };
   }
   // ZL-157: una publicación de Instagram compartida: no la vemos, así que se le pregunta qué quiere saber.
   if (ev.kind === 'compartido') return { send: [msgTexto(ev.from, T.compartido ?? T.soloTexto)], metrica: 'compartido' };
@@ -715,7 +716,7 @@ export function memoriaParaIa(estado, now) {
 async function recordarCharla(memoria, de, estado, now, idioma, neg, entrada, salida, extra) {
   if (!neg || !memoria) return;
   const ahora = (await memoria.get(de)) ?? estado ?? {};
-  const hist = [...historial(ahora, now), { r: 'u', t: limpiarTexto(entrada).slice(0, 500) }, { r: 'a', t: String(salida ?? '').slice(0, 500) }].slice(-HISTORIAL_MAX);
+  const hist = [...historial(ahora, now), { r: 'u', t: limpiarTexto(entrada).slice(0, 1200) }, { r: 'a', t: String(salida ?? '').slice(0, 1200) }].slice(-HISTORIAL_MAX);
   // El idioma no se fija acá: si todavía no lo eligió, se le sigue preguntando.
   await memoria.put(de, { ...ahora, humanoHasta: ahora.humanoHasta ?? 0, ...extra, hist, histT: now, ultimo: now });
 }

@@ -498,6 +498,7 @@ const sinEmojis = (s) => s.replace(/\p{Extended_Pictographic}|[️‍]/gu, '').r
 
 function base(ficha, idioma = ficha.idioma) {
   const n = ficha.nombre;
+  const n_ = n;
   const hor = ficha.horarios ? ficha.horarios[idioma] : idioma === ficha.idioma ? ficha.horarioPersona : '';
   const h = hor ? ` (${hor})` : '';
   // ZL-146: ningún texto empuja a escribir PERSONA. La persona del negocio entra sola cuando hace falta (lo pidió, es un
@@ -524,6 +525,8 @@ function base(ficha, idioma = ficha.idioma) {
       ausencia: (fecha) => `Hi! We’re not answering here right now 🙏 We’re back on ${fecha} and will reply as soon as we return.`,
       // ZL-164: fuera de horario, con «no atender».
       cerrado: (cuando) => `Hi! We’re closed right now 🙏 We open ${cuando} and will reply to you then.`,
+      // ZL-166: acuse de una foto o un archivo con un pedido abierto (el comprobante, casi siempre).
+      recibido: (n) => `Got it 🙌 I’ve passed it on to the ${n_} team with your order no. ${n}.`,
       falla: 'Oops, I couldn’t answer just now 😓 Could you send that again in a moment?',
       limite: 'Lots of messages at once ⏳ Could you write again in a few minutes?',
       tope: 'We’ve chatted a lot today 😅 Let’s carry on tomorrow, right here.',
@@ -555,6 +558,7 @@ function base(ficha, idioma = ficha.idioma) {
       compartido: 'Hvala na dijeljenju! 🙌 Objave ne mogu vidjeti: o kojem je proizvodu riječ ili što biste htjeli znati?',
       ausencia: (fecha) => `Pozdrav! Trenutno ne odgovaramo ovdje 🙏 Vraćamo se ${fecha} i javit ćemo vam se čim se vratimo.`,
       cerrado: (cuando) => `Pozdrav! Trenutno smo zatvoreni 🙏 Otvaramo ${cuando} i tada ćemo vam odgovoriti.`,
+      recibido: (n) => `Primljeno 🙌 Proslijedio sam to timu ${n_} uz vašu narudžbu br. ${n}.`,
       falla: 'Ups, trenutačno ne mogu odgovoriti 😓 Možete li poslati ponovno za koji trenutak?',
       limite: 'Trenutačno stiže puno poruka ⏳ Možete li se javiti za nekoliko minuta?',
       tope: 'Danas smo puno razgovarali 😅 Nastavljamo sutra, ovdje.',
@@ -587,6 +591,7 @@ function base(ficha, idioma = ficha.idioma) {
     compartido: `¡Gracias por compartirlo! 🙌 Las publicaciones no las puedo ver: ¿me ${v.decis} qué producto es o qué ${v.queres} saber?`,
     ausencia: (fecha) => `¡Hola! Ahora no estamos atendiendo por acá 🙏 Volvemos el ${fecha} y ${v.te} respondemos apenas estemos de vuelta.`,
     cerrado: (cuando) => `¡Hola! Ahora estamos cerrados 🙏 Abrimos ${cuando} y ${v.te} respondemos ahí.`,
+    recibido: (n) => `¡Recibido! 🙌 Se lo paso a ${n_} junto con ${v.tu} pedido N.º ${n}.`,
     falla: `Uy, se me complicó responder recién 😓 ¿Me lo ${v.repetis} en un ratito?`,
     limite: `Hay muchas consultas a la vez ⏳ ¿Me ${v.escribis} de nuevo en unos minutos?`,
     tope: 'Por hoy ya charlamos un montón 😅 Mañana seguimos por acá.',

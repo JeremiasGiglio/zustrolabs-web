@@ -682,9 +682,11 @@ test('ZL-157: el pedido pendiente espera al dueño; pasadas las 24 h el aviso qu
   // Dentro de las 24 h, el aviso sale solo.
   const pago = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/pedidos/1`, { estado: 'pagado' });
   assert.equal(pago.datos.aviso, true);
-  // Con el pedido abierto, una foto (el comprobante) no la ve la IA ni se contesta: es para el dueño.
+  // Con el pedido abierto, una foto (el comprobante) no la ve la IA: es para el dueño. ZL-166: al comprador se le
+  // confirma que llegó; con texto al pie, igual (no va a la IA).
   const consultasIa = ia.length;
-  assert.deepEqual(await llega({ type: 'image', image: { id: 'img1' } }), []);
+  assert.deepEqual(await llega({ type: 'image', image: { id: 'img1' } }), ['¡Recibido! 🙌 Se lo paso a Panadería La Espiga junto con tu pedido N.º 1.']);
+  assert.equal((await llega({ type: 'image', image: { id: 'img3', caption: 'ya pagué' } })).length, 1);
   assert.equal(ia.length, consultasIa);
   // Pasadas otras 24 h, «Ya se lo mandé» borra el aviso guardado.
   d.now += 25 * 3600_000;
@@ -1132,4 +1134,40 @@ test('ZL-165: Equipo (el dueño suma y saca empleados; un empleado no) y «Ya lo
   const id = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas`)).datos.charlas[0].id;
   assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${id}/resuelta`, {})).datos.resuelta, true);
   assert.equal((await d.catalogo(a.id).ejecutar('consulta', [1])).valor.estado, 'resuelta');
+});
+
+test('ZL-166: Instagram se calla cuando el dueño contesta desde su app (los ecos propios no), y un permiso revocado queda marcado y en rojo', async () => {
+  const { d, a, pedir, enviados } = await armar();
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A] });
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/n/${a.id}/ficha`, { texto: FICHA, activa: true })).status, 200);
+  const QUIEN = '17841400000000009';
+  let n = 0;
+  const llega = async (m) => {
+    const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ timestamp: d.now, ...m }] }] });
+    const antes = enviados.length;
+    const r = await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'X-Hub-Signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d);
+    assert.equal(r.status, 200);
+    return enviados.slice(antes).filter((e) => e.url.endsWith('/me/messages')).map((e) => e.body.message.text);
+  };
+  const escribe = (text) => llega({ sender: { id: QUIEN }, recipient: { id: CUENTA_A }, message: { mid: `m${++n}`, text } });
+  const eco = (text) => llega({ sender: { id: CUENTA_A }, recipient: { id: QUIEN }, message: { mid: `e${++n}`, text, is_echo: true } });
+  assert.deepEqual(await escribe('¿Tienen medialunas?'), ['Respuesta de Panadería La Espiga.']);
+  // El eco de nuestra respuesta no pausa.
+  await eco('Respuesta de Panadería La Espiga.');
+  assert.deepEqual(await escribe('¿Y facturas?'), ['Respuesta de Panadería La Espiga.']);
+  // El dueño contesta desde su Instagram: el asistente se calla en esa charla y queda en «Charlas».
+  await eco('Hola, soy Laura del local. Sí, tenemos.');
+  assert.deepEqual(await escribe('¡Gracias!'), []);
+  const c = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas`)).datos.charlas[0];
+  const det = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas/${c.id}`)).datos;
+  assert.ok(det.mensajes.some((m) => m.de === 'negocio' && /Laura/.test(m.texto)));
+  assert.ok(det.pausaHasta > d.now);
+  // Permiso revocado (código 190 de Meta) en otra charla: la cuenta queda marcada y el semáforo en rojo.
+  const original = d.fetch;
+  d.fetch = async (url, o) => (String(url).endsWith('/me/messages') ? Response.json({ error: { code: 190 } }, { status: 400 }) : original(url, o));
+  await llega({ sender: { id: '17841400000000008' }, recipient: { id: CUENTA_A }, message: { mid: `m${++n}`, text: 'hola' } });
+  d.fetch = original;
+  assert.ok((await d.cuentas.get(CUENTA_A)).tokenInvalido);
+  const est = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/estado`)).datos;
+  assert.ok(est.controles.some((x) => x.estado === 'mal' && /Instagram desconectó/.test(x.texto)));
 });
