@@ -3,7 +3,8 @@
 //
 // Necesita dos secretos del Worker: CF_API_TOKEN (un token con permiso «Access: Apps and Policies — Edit», solo eso)
 // y CF_ACCOUNT_ID. Sin ellos no hace nada y el script avisa que va a mano. Solo AGREGA correos: nunca saca a nadie
-// (sacar a alguien por error deja al equipo afuera); quitar un correo sigue siendo a mano.
+// (sacar a alguien por error deja al equipo afuera). Desde ZL-166, `quitarDeAcceso` saca los correos que se borraron de un
+// negocio, nunca los del equipo ni los que siguen en otro negocio.
 
 const CF = 'https://api.cloudflare.com/client/v4';
 // Lo que se reenvía de la política al guardarla (el resto lo pone Cloudflare: ids, fechas, contadores).
@@ -80,5 +81,34 @@ export async function agregarAAcceso(env, fetchImpl, host, emails) {
     const error = String(e?.message ?? e).slice(0, 120);
     console.log(JSON.stringify({ canal: 'acceso', que: 'agregar', ok: false, error }));
     return { ok: false, error, faltan: pedidos };
+  }
+}
+
+/**
+ * ZL-166: saca de la política los correos que ya no entran a ningún negocio. Nunca saca a alguien de `protegidos` (el
+ * equipo y los correos de otros negocios) ni deja la política vacía. → {ok, quitados[]} o {ok: false, error}.
+ */
+export async function quitarDeAcceso(env, fetchImpl, host, emails, protegidos = []) {
+  const prot = new Set((protegidos ?? []).map((c) => String(c).trim().toLowerCase()));
+  const pedidos = [...new Set((emails ?? []).map((c) => String(c).trim().toLowerCase()).filter((c) => correoValido(c) && !prot.has(c)))];
+  if (!pedidos.length) return { ok: true, quitados: [] };
+  if (!accesoConfigurado(env)) return { ok: false, error: 'sin configurar (CF_API_TOKEN, CF_ACCOUNT_ID)' };
+  try {
+    const { app, politica, reusable } = await politicaDe(env, fetchImpl, host);
+    const hay = correosDe(politica);
+    const quitar = new Set(pedidos.filter((c) => hay.has(c)));
+    if (!quitar.size) return { ok: true, quitados: [] };
+    const include = (politica.include ?? []).filter((r) => !quitar.has(String(r?.email?.email ?? '').toLowerCase()));
+    if (!include.length) return { ok: false, error: 'la política quedaría vacía' };
+    const nueva = Object.fromEntries(CAMPOS.filter((k) => politica[k] !== undefined).map((k) => [k, politica[k]]));
+    nueva.include = include;
+    if (!reusable && politica.precedence !== undefined) nueva.precedence = politica.precedence;
+    await cf(env, fetchImpl, 'PUT', reusable ? `/access/policies/${politica.id}` : `/access/apps/${app.id}/policies/${politica.id}`, nueva);
+    console.log(JSON.stringify({ canal: 'acceso', que: 'quitados', n: quitar.size }));
+    return { ok: true, quitados: [...quitar] };
+  } catch (e) {
+    const error = String(e?.message ?? e).slice(0, 120);
+    console.log(JSON.stringify({ canal: 'acceso', que: 'quitar', ok: false, error }));
+    return { ok: false, error };
   }
 }

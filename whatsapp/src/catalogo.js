@@ -5,6 +5,7 @@
 
 import { operacionesPedidos } from './pedidos.js';
 import { operacionesConsultas } from './consultas.js';
+import { operacionesMensajes } from './mensajes.js';
 
 export const MAX_PRODUCTOS = 5000;
 export const MAX_IMPORTAR = 3000;
@@ -159,10 +160,12 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
 
   const pedidos = operacionesPedidos({ sql, transaccion, reloj, porId, anotar, ErrorCatalogo });
   const consultas = operacionesConsultas({ sql, reloj, ErrorCatalogo });
+  const mensajes = operacionesMensajes({ sql, reloj, ErrorCatalogo });
 
   return {
     ...pedidos,
     ...consultas,
+    ...mensajes,
     numeros(desde) { return { ...pedidos.numerosPedidos(desde), ...consultas.numerosConsultas(desde) }; },
     datosReporte(desde, hasta) { return { ...pedidos.datosReporte(desde, hasta), consultas: consultas.consultasReporte(desde, hasta) }; },
 
@@ -217,6 +220,30 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
         anotar(actual.id, actual.nombre, 'baja', actual.stock, '', 'borrado', quien);
         return true;
       });
+    },
+
+    /**
+     * ZL-165: cambio de precios en bloque (inflación): un porcentaje para todos o para una categoría, redondeado a
+     * 1, 10, 50 o 100. Con `probar`, solo dice cuántos cambiarían y cómo quedan los primeros (no toca nada).
+     */
+    ajustarPrecios({ porcentaje, categoria = '', redondeo = 1, probar = false } = {}, quien) {
+      const pc = Number(porcentaje);
+      if (!Number.isFinite(pc) || pc === 0 || pc < -90 || pc > 500) throw new ErrorCatalogo('el porcentaje tiene que estar entre -90 y 500 (y no ser 0)', 'porcentaje');
+      const r = [1, 10, 50, 100].includes(Number(redondeo)) ? Number(redondeo) : 1;
+      const cat = String(categoria ?? '').trim();
+      const lista = (cat ? filas('SELECT * FROM productos WHERE precio IS NOT NULL AND categoria = ? ORDER BY nombre_n', cat) : filas('SELECT * FROM productos WHERE precio IS NOT NULL ORDER BY nombre_n'));
+      const nuevoDe = (p) => Math.max(0, r === 1 ? Math.round(p * (1 + pc / 100) * 100) / 100 : Math.round((p * (1 + pc / 100)) / r) * r);
+      const muestra = lista.slice(0, 5).map((p) => ({ nombre: p.nombre, antes: p.precio, despues: nuevoDe(p.precio) }));
+      if (probar) return { cambian: lista.length, muestra };
+      transaccion(() => {
+        for (const p of lista) {
+          const nuevo = nuevoDe(p.precio);
+          if (nuevo === p.precio) continue;
+          sql.exec('UPDATE productos SET precio = ?, actualizado = ? WHERE id = ?', nuevo, reloj(), p.id);
+          anotar(p.id, p.nombre, 'precio', p.precio, nuevo, `${pc > 0 ? '+' : ''}${pc}% en bloque${cat ? ` (${cat})` : ''}`, quien);
+        }
+      });
+      return { cambian: lista.length, muestra };
     },
 
     /**
@@ -419,13 +446,15 @@ export function tipoDeImagen(b) {
 }
 
 /** Operaciones que se pueden pedir al catálogo desde afuera (el Worker, por RPC). */
-export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
+export const OPERACIONES = ['resumen', 'lista', 'obtener', 'crear', 'actualizar', 'borrar', 'moverStock', 'ajustarPrecios', 'importar', 'exportar', 'historial', 'guardarFoto', 'foto', 'paraAsistente',
   // Pedidos (ZL-139): pedidos.js.
-  'carrito', 'carritoDe', 'renovar', 'corregirComprador', 'avisosVencimiento', 'comprasDe', 'recordatorios', 'olvidarCompradores', 'olvidarConsultas', 'confirmar', 'cambiarEstado', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
+  'carrito', 'carritoDe', 'renovar', 'corregirComprador', 'avisosVencimiento', 'comprasDe', 'recordatorios', 'olvidarCompradores', 'olvidarConsultas', 'confirmar', 'cambiarEstado', 'borrarPedido', 'vencer', 'proximoVencimiento', 'pedidos', 'pedido',
   // Consultas (ZL-146): consultas.js.
   'crearConsulta', 'consultas', 'cambiarConsulta', 'consultaAbierta', 'consulta',
   // Números para el dueño (ZL-151).
-  'numeros', 'datosReporte'];
+  'numeros', 'datosReporte',
+  // Charlas en la app (ZL-165): mensajes.js.
+  'guardarMensajes', 'charlasApp', 'charlaApp', 'marcarMal', 'olvidarCharla', 'purgarMensajes'];
 
 /**
  * Corre una operación y devuelve {ok: true, valor} o {ok: false, error, campo}: los errores para mostrar cruzan el RPC

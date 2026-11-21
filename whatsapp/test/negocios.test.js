@@ -1023,3 +1023,113 @@ test('ZL-164: «Mi negocio» lo cambia el dueño (con historial); el empleado re
   assert.deepEqual(ns.preguntas.map((x) => x.p), ['¿Tienen sin TACC?', '¿Hacen tortas?']);
   assert.equal(ns.cambios[0].quien, 'empleado@example.com');
 });
+
+test('ZL-165: «Charlas» guarda la charla (sin el número en la dirección), el negocio responde desde la app y el asistente se calla; 👎 lleva a la pregunta; BORRAR la borra', async () => {
+  const { d, a, pedir, enviados } = await armar();
+  const FICHA = readFileSync(new URL('./ficha-prueba.md', import.meta.url), 'utf8');
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { canales: { instagram: true, whatsapp: true } })).status, 200);
+  await pedir('duena@example.com', 'POST', `/api/n/${a.id}/whatsapp`, { numero: '+5493410000001', apiKey: CLAVE_YC });
+  const clave = /\/ycloud\/([0-9a-f]{24})$/.exec(enviados.find((e) => e.url.endsWith('/webhookEndpoints')).body.url)[1];
+  let n = 0;
+  const escribir = async (texto) => {
+    const t = new Date(d.now).toISOString();
+    const cuerpo = JSON.stringify({ id: `ev${++n}`, type: 'whatsapp.inbound_message.received', createTime: t, whatsappInboundMessage: { id: `m${n}`, wamid: `w${n}`, from: '+5493410000009', to: '+5493410000001', sendTime: t, type: 'text', text: { body: texto } } });
+    const r = await worker.fetch(new Request(`https://zustrolabs.com/api/whatsapp/ycloud/${clave}`, { method: 'POST', headers: { 'YCloud-Signature': await firmarYCloud(cuerpo, FIRMA_FALSA, d.now / 1000) }, body: cuerpo }), ENV, {}, d);
+    assert.equal(r.status, 200);
+  };
+  await escribir('¿Tienen pan sin TACC?');
+  const lista = (await pedir('empleado@example.com', 'GET', `/api/n/${a.id}/charlas`)).datos;
+  assert.equal(lista.charlas.length, 1);
+  assert.equal(lista.sinLeer, 1);
+  const c = lista.charlas[0];
+  assert.equal(c.canal, 'wa');
+  assert.ok(Number.isInteger(c.id));
+  assert.doesNotMatch(JSON.stringify(lista), /5493410000009/, 'la lista no trae el número (ni va en la dirección)');
+  let det = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas/${c.id}`)).datos;
+  assert.equal(det.charla, undefined);
+  assert.deepEqual(det.mensajes.map((m) => [m.de, m.texto]), [['cliente', '¿Tienen pan sin TACC?'], ['asistente', 'Respuesta de Panadería La Espiga.']]);
+  assert.ok(det.ventanaHasta > d.now);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas`)).datos.sinLeer, 0, 'al abrirla queda vista');
+  // 👎: devuelve la pregunta para cargarla bien; cuenta en las métricas.
+  const asis = det.mensajes.find((m) => m.de === 'asistente');
+  const mal = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${c.id}/mensajes/${asis.id}/mal`, { mal: true })).datos;
+  assert.deepEqual(mal, { pregunta: '¿Tienen pan sin TACC?', respuesta: 'Respuesta de Panadería La Espiga.' });
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${c.id}/mensajes/${det.mensajes[0].id}/mal`, {})).status, 400, 'solo a respuestas del asistente');
+  // Responder desde la app: sale por YCloud, queda en la charla y el asistente se calla en esa charla.
+  const antes = enviados.length;
+  det = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${c.id}/responder`, { texto: 'Sí, los viernes. ¡Te esperamos!' })).datos;
+  assert.equal(textoYC(enviados.slice(antes).find((e) => e.url.endsWith('/sendDirectly')).body), 'Sí, los viernes. ¡Te esperamos!');
+  assert.deepEqual(det.mensajes.at(-1), { ...det.mensajes.at(-1), de: 'negocio', texto: 'Sí, los viernes. ¡Te esperamos!' });
+  assert.ok(det.pausaHasta > d.now);
+  // «Que siga el asistente».
+  det = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${c.id}/asistente`, {})).datos;
+  assert.equal(det.pausaHasta, 0);
+  // Pasadas las 24 h: no se puede escribir desde la app (lo dice claro).
+  d.now = T0 + 25 * 3600_000;
+  const tarde = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${c.id}/responder`, { texto: 'hola' }, { token: { exp: Math.floor(d.now / 1000) + 3600 } });
+  assert.equal(tarde.status, 409);
+  assert.match(tarde.datos.error, /Pasaron más de 24 horas/);
+  // BORRAR: la charla desaparece de la app.
+  await escribir('BORRAR');
+  await escribir('BORRAR');
+  const final = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas`, undefined, { token: { exp: Math.floor(d.now / 1000) + 3600 } })).datos;
+  assert.deepEqual(final.charlas, [], 'BORRAR borra su charla de la app');
+});
+
+test('ZL-165: avisos por dispositivo (probar y sacar), guía de arranque, números de hoy, precios en bloque, qué mostrar y borrar pedidos de prueba', async () => {
+  const { d, a, pedir } = await armar();
+  const sub = { endpoint: 'https://push.example.com/abc', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } };
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push`, { suscripcion: sub, nombre: 'Android · Chrome' })).status, 200);
+  const p = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/push`)).datos;
+  assert.deepEqual(p.dispositivos.map((x) => [x.n, x.nombre, x.email]), [[0, 'Android · Chrome', 'duena@example.com']]);
+  assert.doesNotMatch(JSON.stringify(p), /push\.example\.com/, 'sin el endpoint');
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push/0/probar`, {})).status, 200);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/push/5/probar`, {})).status, 404);
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/push/0`)).datos.celulares, 0);
+  // Guía: qué falta para que ande.
+  const g = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/guia`)).datos;
+  assert.equal(g.listo, false);
+  assert.deepEqual(g.pasos.map((x) => x.id), ['asistente', 'canal', 'productos', 'horarios', 'avisos']);
+  assert.ok(g.pasos.every((x) => !x.hecho));
+  // Hoy.
+  const nu = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/numeros`)).datos;
+  assert.deepEqual(Object.keys(nu.hoy).sort(), ['charlas', 'consultas', 'fueraHorario', 'mensajes', 'pedidos', 'vendido']);
+  // Precios en bloque: vista previa y después en serio, redondeado; queda en el historial.
+  await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Pan francés', precio: 2500, categoria: 'Panes' });
+  await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Torta', precio: 18000, categoria: 'Tortas' });
+  const previa = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos/precios`, { porcentaje: 7, categoria: 'Panes', redondeo: 50, probar: true })).datos;
+  assert.deepEqual(previa, { cambian: 1, muestra: [{ nombre: 'Pan francés', antes: 2500, despues: 2700 }] });
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos?q=pan`)).datos.productos[0].precio, 2500, 'la vista previa no toca nada');
+  await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/productos/precios`, { porcentaje: 7, categoria: 'Panes', redondeo: 50 });
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos?q=pan`)).datos.productos[0].precio, 2700);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos/precios`, { porcentaje: 0 })).status, 400);
+  // Qué mostrar: servicios y sin stock.
+  const aj = (await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/ajustes`, { vende: 'servicios', campos: { stock: false } })).datos;
+  assert.deepEqual([aj.vende, aj.campos], ['servicios', { codigo: true, unidad: true, stock: false, categoria: true }]);
+  // Borrar un pedido de prueba: solo el equipo; libera lo reservado.
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/pedidos/1`)).status, 403);
+  assert.equal((await pedir('equipo@example.com', 'DELETE', `/api/n/${a.id}/pedidos/99`)).status, 400);
+  assert.ok(d);
+});
+
+test('ZL-165: Equipo (el dueño suma y saca empleados; un empleado no) y «Ya lo resolví» en una charla', async () => {
+  const { d, a, pedir } = await armar();
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['empleado@example.com'] })).status, 200);
+  assert.deepEqual((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}/equipo`)).datos.personas, [{ email: 'duena@example.com', rol: 'dueño' }, { email: 'empleado@example.com', rol: 'empleado' }]);
+  assert.equal((await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/equipo`, { email: 'nuevo@example.com' })).status, 403);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/equipo`, { email: 'no es correo' })).status, 400);
+  const r = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/equipo`, { email: 'Nuevo@Example.com' })).datos;
+  assert.deepEqual(r.personas.at(-1), { email: 'nuevo@example.com', rol: 'empleado' });
+  assert.equal((await pedir('nuevo@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.rol, 'empleado');
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/equipo`, { email: 'duena@example.com' })).status, 403, 'a un dueño no');
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/equipo`, { email: 'nuevo@example.com' })).status, 200);
+  assert.equal((await pedir('nuevo@example.com', 'GET', `/api/n/${a.id}`)).status, 404);
+  // «Ya lo resolví»: la consulta abierta de esa charla queda resuelta.
+  const CH = 'yc:5493410000001:5493410000009';
+  await d.catalogo(a.id).ejecutar('crearConsulta', [CH, { tipo: 'persona', nombre: 'Ana', canal: 'wa' }]);
+  await d.catalogo(a.id).ejecutar('guardarMensajes', [CH, 'wa', [{ de: 'cliente', texto: 'Hola' }], 'Ana']);
+  const id = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas`)).datos.charlas[0].id;
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${id}/resuelta`, {})).datos.resuelta, true);
+  assert.equal((await d.catalogo(a.id).ejecutar('consulta', [1])).valor.estado, 'resuelta');
+});

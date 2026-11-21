@@ -76,7 +76,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await montar(page, 'duena@example.com');
     // ZL-148: arranca en Inicio; Productos es una de las tres secciones.
     // ZL-159: «Asistente» también para el negocio (pausa, aviso del día y charla de prueba).
-    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Mi negocio', 'Reportes', 'Conexiones', 'Asistente']);
+    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Charlas', 'Productos', 'Mi negocio', 'Más']);
     await page.getByRole('tab', { name: 'Productos' }).click();
     await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();
     await expect(page.getByText('Asistente activo')).toBeVisible();
@@ -123,7 +123,7 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('el equipo ve Asistente y Administración, prueba la charla y crea un negocio', async ({ page }) => {
     await montar(page, 'equipo@example.com');
-    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Asistente', exact: true }).click();
     // ZL-150: la ficha se abre en el formulario; en Markdown está la misma.
     await expect(page.getByLabel('Nombre del negocio')).toHaveValue('Panadería La Espiga');
     await expect(page.getByLabel('Opción 2: título')).toHaveValue('🎂 Tortas por encargo');
@@ -143,7 +143,7 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('la charla de prueba con una ficha en dos idiomas arranca en el idioma del mensaje, lo recuerda y se reinicia (ZL-126, ZL-153)', async ({ page }) => {
     await montar(page, 'equipo@example.com');
-    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Asistente', exact: true }).click();
     const dos = FICHA.replace('- Idioma: castellano', '- Idioma: castellano, inglés') +
       '\n## Saludo (inglés)\n\nHi from the bakery.\n\n## Menú (inglés)\n\n### 1. Bread\nFresh.\n\n### 2. Cakes\nTo order.\n\n### 3. Hours\nMon to Sat.\n';
     await page.getByRole('button', { name: 'Markdown' }).click();
@@ -167,7 +167,7 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('WhatsApp (ZL-136): la dueña conecta su número sola, ve el estado y lo desconecta; la página es accesible', async ({ page }) => {
     await montar(page, 'duena@example.com');
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'WhatsApp', exact: true }).click();
     await expect(page.getByText('Todavía no hay un número de WhatsApp conectado.')).toBeVisible();
     await expect(page.getByRole('link', { name: 'YCloud' })).toHaveAttribute('href', 'https://www.ycloud.com/console#/entry/register');
@@ -187,7 +187,7 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('Instagram (ZL-137): la dueña pide la invitación y «Conectar Instagram» la lleva a Instagram con la app compartida; la página es accesible', async ({ page }) => {
     const { n } = await montar(page, 'duena@example.com');
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'Instagram', exact: true }).click();
     await expect(page.getByText('Todavía no hay una cuenta de Instagram conectada.')).toBeVisible();
     // Sin app compartida registrada, se usa la del estudio (ZL-140): el botón ya se puede usar.
@@ -200,7 +200,7 @@ test.describe('app de negocios (ZL-121)', () => {
     // El equipo registra la app compartida: el botón lleva a Instagram con esa app y vuelve a zustrolabs.com.
     await n.apps.put('3000000000000003', { secreto: 'secreto-app-compartida', nombre: 'Clientes', compartida: true });
     await page.reload();
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'Instagram', exact: true }).click();
     let destino = '';
     await page.route('https://www.instagram.com/**', async (route) => { destino = route.request().url(); await route.fulfill({ status: 200, body: 'instagram' }); });
@@ -220,7 +220,7 @@ test.describe('app de negocios (ZL-121)', () => {
       await n.negocios.sumarMetrica(neg.id, 'comentarios', dia);
       await n.negocios.sumarMetrica(neg.id, 'comentarios', dia);
     });
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'Instagram', exact: true }).click();
     const activo = page.getByLabel('Responder comentarios');
     await expect(activo).not.toBeChecked();
@@ -235,11 +235,12 @@ test.describe('app de negocios (ZL-121)', () => {
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
     await page.reload();
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'Instagram', exact: true }).click();
     await expect(page.getByLabel('Responder comentarios')).toBeChecked();
     await expect(page.getByLabel('Cómo responde')).toHaveValue('privado');
-    await page.getByRole('tab', { name: 'Reportes' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Reportes', exact: true }).click();
+    await page.getByText('Más números').click();
     await expect(page.locator('.resumen').getByText('comentarios respondidos')).toBeVisible();
     await expect(page.locator('.resumen div').filter({ hasText: 'comentarios respondidos' }).locator('strong')).toHaveText('2');
   });
@@ -263,10 +264,10 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('tab', { name: 'Inicio' })).toHaveAttribute('aria-selected', 'true');
     const tarjeta = page.locator('article.pedido');
     await expect(tarjeta.getByRole('heading', { name: 'Pedido N.º 1 · Ana' })).toBeVisible();
-    await expect(page.locator('.resumen').first()).toContainText('1pedidos para aceptar');
+    await expect(page.locator('.resumen', { hasText: 'pedidos para aceptar' })).toContainText('1pedidos para aceptar');
     // ZL-151: los números de la semana y el botón de avisos al celular.
     await expect(page.getByRole('heading', { name: 'Últimos 7 días' })).toBeVisible();
-    await expect(page.getByLabel('Últimos 7 días')).toContainText('1pedidos');
+    await expect(page.getByLabel('Últimos 7 días')).toContainText('1 pedido ');
     // ZL-163: corregir los datos del comprador (cambió de envío a retiro).
     await tarjeta.getByRole('button', { name: 'Corregir datos' }).click();
     await expect(tarjeta.getByLabel('A nombre de')).toBeFocused();
@@ -287,7 +288,9 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(tarjeta).toContainText('Espera tu respuesta: los productos quedan reservados hasta que lo aceptes o lo rechaces.');
     // ZL-158: cuánto lleva del cupo gratis de WhatsApp del mes, con aviso a partir de 800.
     await expect(page.locator('.chip.alerta', { hasText: 'WhatsApp este mes' })).toContainText('WhatsApp este mes: 850 de 1.000 mensajes gratis. Te quedan 150.');
-    await expect(page.getByRole('button', { name: 'Nuevos (1)' })).toBeVisible();
+    // ZL-165: el pedido nuevo está en «Te necesitan ahora»; abajo, los aceptados.
+    await expect(page.getByRole('heading', { name: 'Te necesitan ahora' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Aceptados' })).toHaveAttribute('aria-pressed', 'true');
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
     expect((await stock()).reservado).toBe(3);
@@ -364,7 +367,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('status')).toContainText('el asistente vuelve a responder');
     await expect(tarjeta.locator('.pausa')).toHaveCount(0);
     await tarjeta.getByRole('button', { name: 'Ganada' }).click();
-    await expect(page.getByText('No hay consultas para responder.')).toBeVisible();
+    await expect(page.getByText('Nada para hacer ahora.')).toBeVisible();
   });
 
   test('exportar a Excel: un nombre que empieza con «=» no se vuelve fórmula', async ({ page }) => {
@@ -403,7 +406,7 @@ test.describe('app de negocios (ZL-121)', () => {
     const barra = await page.locator('nav.tabs').boundingBox();
     expect(barra && barra.y + barra.height).toBeGreaterThan(800);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'Cómo vendés' }).click();
     await page.getByLabel('¿Cómo entregás?').selectOption('retiro');
     await page.getByLabel('Retiro: dónde y cuándo').fill('Calle Ficticia 123, de 9 a 20');
@@ -421,7 +424,7 @@ test.describe('app de negocios (ZL-121)', () => {
     // El formulario es largo y el revisor corre 7 charlas: en el celular emulado tarda más.
     test.setTimeout(90_000);
     await montar(page, 'equipo@example.com');
-    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Asistente', exact: true }).click();
     await page.getByLabel('Plantilla por rubro').selectOption('servicios');
     await page.getByRole('button', { name: 'Usar plantilla' }).click();
     await expect(page.getByLabel('A qué cierre lleva la charla')).toHaveValue('consultas');
@@ -433,7 +436,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByText(/Falta completar/).first()).toBeVisible();
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await page.getByRole('button', { name: 'Estado', exact: true }).click();
     await expect(page.locator('.chip').filter({ hasText: /Todo funcionando|Falta algo/ })).toBeVisible();
   });
@@ -457,10 +460,11 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('tab', { name: 'Productos' }).click();
     await expect(page.getByText('3 reservadas', { exact: true })).toBeVisible();
     await expect(page.getByText('1 reservada', { exact: true })).toBeVisible();
-    await page.getByRole('tab', { name: 'Reportes' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Reportes', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Semana', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText('Las horas con más mensajes: 20:00, 11:00.')).toBeVisible();
-    await expect(page.locator('.resumen')).toContainText('7mensajes recibidos');
+    await page.getByText('Más números').click();
+    await expect(page.locator('.resumen').last()).toContainText('7mensajes recibidos');
     await expect(page.getByRole('cell', { name: 'Pan francés' })).toBeVisible();
     // La barra más alta ocupa todo el alto (el estilo se pone por CSSOM: la política de seguridad no lo bloquea).
     const alto = await page.locator('.grafico').first().locator('.barra-dato').nth(20).evaluate((el) => el.style.height);
@@ -491,7 +495,7 @@ test.describe('app de negocios (ZL-121)', () => {
     const { negocio, n } = await montar(page, 'duena@example.com', async (n, neg) => {
       await n.negocios.guardar(neg.id, { emails: ['duena@example.com', 'empleado@example.com'], empleados: ['empleado@example.com'] });
     });
-    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Asistente', exact: true }).click();
     await expect(page.getByText('Atendiendo: responde cada mensaje')).toBeVisible();
     // Pausa de 3 días con mensaje de ausencia.
     await page.getByText('Pausar el asistente (vacaciones, local cerrado)').click();
@@ -522,11 +526,11 @@ test.describe('app de negocios (ZL-121)', () => {
     await montar(page, 'empleado@example.com', async (n, neg) => {
       await n.negocios.guardar(neg.id, { emails: ['duena@example.com', 'empleado@example.com'], empleados: ['empleado@example.com'] });
     });
-    await page.getByRole('tab', { name: 'Asistente' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Asistente', exact: true }).click();
     await expect(page.getByText('Atendiendo: responde cada mensaje')).toBeVisible();
     await expect(page.getByText('Pausar el asistente (vacaciones, local cerrado)')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Guardar el aviso' })).toHaveCount(0);
-    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('tab', { name: 'Más' }).click(); await page.getByRole('button', { name: 'Conexiones', exact: true }).click();
     await expect(page.getByText('Conectar WhatsApp o Instagram y cambiar cómo se vende lo hace el dueño del negocio.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cómo vendés' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toHaveCount(0);
@@ -569,6 +573,57 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('button', { name: 'Responder y guardar' }).click();
     await expect(page.getByRole('status')).toContainText('preguntas frecuentes');
     expect((await n.negocios.get(negocio.id)).preguntas.map((x: any) => x.p)).toEqual(['¿Hacen tortas sin TACC?']);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+  });
+
+  test('Charlas (ZL-165): la dueña ve la charla, marca 👎 y deja la respuesta correcta; pasadas las 24 h no puede escribir desde acá; accesible', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { negocio, n } = await montar(page, 'duena@example.com', async (nn, neg, deps) => {
+      await deps.catalogo(neg.id).ejecutar('guardarMensajes', ['yc:5493410000001:5493410000009', 'wa', [{ de: 'cliente', texto: '¿Hacen tortas sin TACC? (dato ficticio)' }, { de: 'asistente', texto: 'Eso no lo tengo confirmado.' }], 'Ana']);
+    });
+    await page.getByRole('tab', { name: 'Charlas' }).click();
+    await page.getByRole('button', { name: /Ana/ }).click();
+    await expect(page.locator('.msg.cli')).toContainText('¿Hacen tortas sin TACC?');
+    await expect(page.getByText('Pasaron más de 24 horas desde su último mensaje')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enviar' })).toBeDisabled();
+    await page.getByRole('button', { name: 'Esta respuesta estuvo mal' }).click();
+    await page.getByLabel('¿Qué tendría que haber respondido?').fill('Sí, los viernes por encargo.');
+    await page.getByRole('button', { name: 'Guardar como pregunta frecuente' }).click();
+    await expect(page.getByRole('status')).toContainText('preguntas frecuentes');
+    expect((await n.negocios.get(negocio.id)).preguntas.map((x: any) => [x.p, x.r])).toEqual([['¿Hacen tortas sin TACC? (dato ficticio)', 'Sí, los viernes por encargo.']]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    await page.getByRole('button', { name: '← Todas las charlas' }).click();
+    await expect(page.getByRole('heading', { name: 'Charlas' })).toBeVisible();
+  });
+
+  test('Productos (ZL-165): «Se agotó» con un toque, precios en bloque con vista previa y «Servicios»; Más → Avisos', async ({ page }) => {
+    const { negocio, deps } = await montar(page, 'duena@example.com', async (nn, neg, dd) => {
+      await dd.catalogo(neg.id).ejecutar('crear', [{ nombre: 'Pan francés', precio: 2500, categoria: 'Panes' }, 'duena@example.com']);
+    });
+    await page.getByRole('tab', { name: 'Productos' }).click();
+    await expect(page.getByText('Mostrando 1 de 1.')).toBeVisible();
+    await page.getByRole('button', { name: 'Se agotó' }).click();
+    await expect(page.getByRole('button', { name: 'Volvió' })).toBeVisible();
+    expect((await deps.catalogo(negocio.id).ejecutar('lista', [{}])).valor.productos[0].activo).toBeFalsy();
+    await page.getByRole('button', { name: 'Cambiar precios' }).click();
+    await page.getByLabel('Porcentaje (negativo para bajar)').fill('10');
+    await expect(page.getByText('Pan francés: $ 2.500 → $ 2.750')).toBeVisible();
+    await page.getByRole('button', { name: 'Aplicar' }).click();
+    await expect(page.getByRole('status')).toContainText('cambiaron 1 precios');
+    await page.getByText('Qué mostrar').click();
+    await page.getByLabel('Vendés').selectOption('servicios');
+    await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Servicios' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Más' }).click();
+    await page.getByRole('button', { name: 'Avisos', exact: true }).click();
+    await expect(page.getByText('Ningún dispositivo tiene los avisos activados')).toBeVisible();
+    await page.getByRole('button', { name: 'Equipo', exact: true }).click();
+    await page.getByLabel('Sumar un empleado').fill('ayudante@example.com');
+    await page.getByRole('button', { name: 'Sumar', exact: true }).click();
+    await expect(page.getByText('ayudante@example.com')).toBeVisible();
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
   });

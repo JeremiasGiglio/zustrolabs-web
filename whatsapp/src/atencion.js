@@ -83,6 +83,9 @@ export function ajustesDeVenta(a) {
     pago: corto(a?.pago, 300),
     // ZL-152: la zona horaria del negocio (para los reportes: a qué hora y qué día escriben).
     zona: ZONAS.some(([z]) => z === a?.zona) ? a.zona : ZONA_POR_DEFECTO,
+    // ZL-165: si vende productos o servicios (cómo se llama la sección) y qué campos usa (los demás no se muestran).
+    vende: a?.vende === 'servicios' ? 'servicios' : 'productos',
+    campos: Object.fromEntries(['codigo', 'unidad', 'stock', 'categoria'].map((k) => [k, a?.campos?.[k] !== false])),
   };
 }
 export const RETENCION_MEMORIA_MS = 90 * DIA_MS;
@@ -248,10 +251,11 @@ export function crearAtencion(storage) {
       return k.clave;
     },
     /** Celulares suscriptos a los avisos de un negocio (como mucho 10; el más nuevo reemplaza al mismo endpoint). */
-    async suscribirPush(id, sub, email, now) {
+    async suscribirPush(id, sub, email, now, nombre = '') {
       const k = `push:${id}`;
       const lista = ((await s.get(k))?.lista ?? []).filter((x) => x.endpoint !== sub.endpoint);
-      lista.push({ endpoint: String(sub.endpoint).slice(0, 600), keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) }, email: String(email ?? '').slice(0, 120), creado: now });
+      // ZL-165: con un nombre del dispositivo («Android · Chrome»), para la lista de la app.
+      lista.push({ endpoint: String(sub.endpoint).slice(0, 600), keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) }, email: String(email ?? '').slice(0, 120), nombre: limpio(nombre, 60), creado: now });
       await s.put(k, { lista: lista.slice(-10) });
       return lista.length;
     },
@@ -268,7 +272,7 @@ export function crearAtencion(storage) {
     async sumarMetrica(id, clave, now, dia = null) {
       // ZL-158: «enviadosWa», lo que manda el sistema por WhatsApp (Meta cobra pasando los 1.000 por número por mes).
       // ZL-160: «comentarios», los que respondió la IA; «comentariosIa», cuántos le pasaron (el tope diario).
-      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas', 'comentarios', 'comentariosIa', 'noSupo', 'fueraHorario'].includes(clave)) return 0;
+      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas', 'comentarios', 'comentariosIa', 'noSupo', 'fueraHorario', 'mal'].includes(clave)) return 0;
       const k = `negmet:${id}:${/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : diaDe(now)}`;
       const x = (await s.get(k)) ?? {};
       x[clave] = (x[clave] ?? 0) + 1;
@@ -607,7 +611,7 @@ export function adaptadores(a, reloj = () => Date.now()) {
     vapid: () => a.vapid(),
     claveFotos: () => a.claveFotos(),
     sumarNoSupo: (id, p) => a.sumarNoSupo(id, p, reloj()),
-    suscribirPush: (id, sub, email) => a.suscribirPush(id, sub, email, reloj()),
+    suscribirPush: (id, sub, email, nombre) => a.suscribirPush(id, sub, email, reloj(), nombre),
     suscripcionesPush: (id) => a.suscripcionesPush(id),
     borrarPush: (id, endpoints) => a.borrarPush(id, endpoints),
     sumarMetrica: (id, clave, dia) => a.sumarMetrica(id, clave, reloj(), dia),

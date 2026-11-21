@@ -21,7 +21,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .marca svg{width:22px;height:22px}.marca span{font-size:1.05rem}
 .top select{max-width:14rem}.yo{color:var(--gris);font-size:.85rem}
 .tabs{display:flex;gap:.25rem;padding:0 1rem;background:#fff;border-bottom:1px solid var(--linea);overflow-x:auto}
-.tabs button{border:0;background:none;padding:.7rem .8rem;border-bottom:3px solid transparent;color:var(--gris);cursor:pointer;white-space:nowrap}
+.tabs button{border:0;background:none;padding:.7rem .8rem;border-bottom:3px solid transparent;color:var(--gris);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:.4rem}
+.ico{width:20px;height:20px;flex:none}
 .tabs button[aria-selected="true"]{color:var(--tinta);border-bottom-color:var(--rojo);font-weight:600}
 main{max-width:960px;margin:0 auto;padding:1rem}
 h2{margin:.2rem 0 .8rem;font-size:1.25rem}h3{margin:1.2rem 0 .5rem;font-size:1.05rem}
@@ -36,12 +37,13 @@ label{display:block;font-size:.9rem;font-weight:600;margin:.7rem 0 .25rem}
 label.check{display:flex;align-items:center;gap:.45rem;font-weight:400}
 .ayuda{font-size:.85rem;color:var(--gris);margin:.2rem 0}
 .btn{display:inline-flex;align-items:center;gap:.35rem;border:1px solid #C9CED6;background:#fff;border-radius:8px;padding:.5rem .85rem;cursor:pointer;text-decoration:none}
-.btn:hover{border-color:var(--tinta)}.btn.prim{background:var(--rojo);border-color:var(--rojo);color:#fff;font-weight:600}
+.btn:hover{border-color:var(--tinta)}.btn.prim{background:var(--tinta);border-color:var(--tinta);color:#fff;font-weight:600}.btn.prim:hover{background:#2C3547}
 .btn.peligro{color:var(--rojo);border-color:var(--rojo)}.btn[disabled]{opacity:.5;cursor:default}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .8rem}
 .chip{font-size:.8rem;padding:.15rem .55rem;border-radius:99px;background:#fff;border:1px solid var(--linea);color:var(--gris)}
 .chip.mal{background:#FDECEE;border-color:#F3C2C9;color:var(--rojo)}.chip.ok{background:#E8F5EE;border-color:#BFE3CF;color:var(--ok)}
 .chip.alerta{background:#FFF4E5;border-color:#F5D3A6;color:var(--alerta)}
+button.chip{cursor:pointer;font:inherit;font-size:.8rem}
 .lista{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
 .prod{display:grid;grid-template-columns:56px 1fr;gap:.7rem;background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.6rem}
 .prod.pausado{opacity:.6}
@@ -89,7 +91,7 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .seg button[aria-pressed="true"]{background:#fff;color:var(--tinta);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.5rem;margin:0 0 1rem}
 .resumen div{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.6rem .8rem}
-.resumen strong{display:block;font-size:1.4rem;line-height:1.2}.resumen span{font-size:.82rem;color:var(--gris)}
+.resumen strong{display:block;font-size:1.4rem;line-height:1.2}.resumen.grande strong{font-size:1.9rem}.resumen span{font-size:.82rem;color:var(--gris)}
 .tarjeta{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.9rem 1rem;margin-bottom:.7rem}
 .tarjeta h3{margin:0 0 .4rem}.tarjeta.nuevo{border-left:4px solid var(--rojo)}
 .tarjeta .acciones{margin-top:.6rem}
@@ -107,11 +109,26 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .estado-ahora{display:inline-block;font-weight:600;border-radius:99px;padding:.15rem .7rem;font-size:.9rem;margin:0 0 .6rem}
 .estado-ahora.ok{background:#E8F5EE;color:var(--ok)}.estado-ahora.cerrado{background:#FDECEE;color:var(--rojo)}
 .guardar-fijo{position:sticky;bottom:.5rem;display:flex;justify-content:flex-end;gap:.5rem;padding:.5rem 0;z-index:3}
+.charla-fila{display:grid;grid-template-columns:1fr auto;gap:.15rem .6rem;width:100%;text-align:left;background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.7rem .9rem;cursor:pointer;font:inherit;color:inherit}
+.charla-fila:hover{border-color:var(--tinta)}.charla-fila.nueva{border-left:4px solid var(--rojo)}
+.charla-fila .quien{font-weight:600}.charla-fila .punto{color:var(--rojo);font-weight:600}.charla-fila .previa{color:var(--gris);font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.charla-fila .cuando{color:var(--gris);font-size:.8rem;justify-self:end}
+.conversa{display:grid;gap:.45rem;max-height:60vh;overflow:auto;padding:.7rem;background:var(--fondo);border:1px solid var(--linea);border-radius:12px;margin:.6rem 0}
+.msg{max-width:85%;padding:.45rem .7rem;border-radius:12px;font-size:.93rem;position:relative}
+.msg p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.msg .de{display:block;font-size:.72rem;color:var(--gris);margin-bottom:.1rem}
+.msg.cli{justify-self:start;background:#fff;border:1px solid var(--linea)}
+.msg.asi{justify-self:end;background:#EEF1F5}.msg.neg{justify-self:end;background:var(--tinta);color:#fff}.msg.neg .de{color:#C9CED6}
+.msg.sis{justify-self:center;background:none;color:var(--gris);font-size:.82rem}
+.msg.marcado{outline:2px solid #F3C2C9}.msg .mal{margin-top:.3rem;padding:.05rem .45rem}.msg .mal.activo{background:#FDECEE;border-color:var(--rojo)}
+.msg .corregir{margin-top:.4rem;display:grid;gap:.3rem}.responder{display:grid;gap:.3rem}
+.guia li{display:flex;align-items:center;gap:.6rem;justify-content:space-between;padding:.45rem 0;border-bottom:1px solid var(--linea)}.guia li:last-child{border-bottom:0}
+.guia .hecho{color:var(--ok);text-decoration:line-through}.actualizado{font-size:.78rem;color:var(--gris);margin:0 0 .6rem}
+.semana{font-size:.92rem;margin:.2rem 0 1rem}
 .pausa{background:#FFF4E5;border:1px solid #F5D3A6;color:var(--alerta);border-radius:8px;padding:.4rem .6rem;font-size:.85rem;margin:.4rem 0}
 @media (max-width:699px){
   .yo{display:none}.top{padding:.5rem .8rem}.top select{max-width:11rem}
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;justify-content:space-around;border-top:1px solid var(--linea);border-bottom:0;padding:0 .2rem calc(.1rem + env(safe-area-inset-bottom));box-shadow:0 -2px 10px rgba(0,0,0,.05)}
-  .tabs button{flex:1 1 0;padding:.65rem .2rem;font-size:.82rem;border-bottom:0;border-top:3px solid transparent}
+  .tabs button{flex:1 1 0;padding:.45rem .1rem .4rem;font-size:.74rem;border-bottom:0;border-top:3px solid transparent;flex-direction:column;gap:.15rem}
   .tabs button[aria-selected="true"]{border-top-color:var(--rojo)}
   main{padding-bottom:5.5rem}
   .dosc{grid-template-columns:1fr}
@@ -161,7 +178,8 @@ function app() {
     return h('label', { for: campo.id }, texto);
   }
   const pesos = (n) => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
-  const fecha = (t) => new Date(t).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+  // ZL-165: fecha y hora de 24 h («21/11 14:05»), sin «a. m.».
+  const fecha = (t) => new Date(t).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
   let avisoT;
   function aviso(texto, mal) {
     let a = document.getElementById('aviso');
@@ -208,10 +226,41 @@ function app() {
   // seguido: lo que el asistente le deja listo para confirmar o responder. El equipo ve además Asistente y Admin.
   // ZL-159: «Asistente» también para el negocio (pausa, aviso del día y charla de prueba); el equipo además ve la ficha.
   // ZL-164: «Mi negocio» (horarios, fechas especiales, dirección, envíos, pagos, preguntas frecuentes).
-  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['minegocio', 'Mi negocio'], ['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente']]
+  // ZL-165: cinco secciones con ícono: Inicio · Charlas · Productos (o Servicios) · Mi negocio · Más (Reportes,
+  // Conexiones, Asistente y Avisos). El equipo ve además Admin.
+  const servicios = () => ((estado.datos && estado.datos.negocio.ajustes) || {}).vende === 'servicios';
+  const PESTANAS = () => [['inicio', 'Inicio'], ['charlas', 'Charlas'], ['productos', servicios() ? 'Servicios' : 'Productos'], ['minegocio', 'Mi negocio'], ['mas', 'Más']]
     .concat(estado.yo.admin ? [['admin', 'Admin']] : []);
   // Lo guardado con los nombres de antes lleva a la sección nueva.
-  const VIEJAS = { pedidos: ['inicio'], importar: ['productos', 'importar'], historial: ['productos', 'historial'], instagram: ['conexiones', 'instagram'], whatsapp: ['conexiones', 'whatsapp'] };
+  const VIEJAS = { pedidos: ['inicio'], importar: ['productos', 'importar'], historial: ['productos', 'historial'], instagram: ['mas', 'conexiones'], whatsapp: ['mas', 'conexiones'],
+    reportes: ['mas', 'reportes'], conexiones: ['mas', 'conexiones'], asistente: ['mas', 'asistente'] };
+  /** Ir a una sección (y a una parte de ella). */
+  function ir(tab, sub) {
+    const vieja = VIEJAS[tab];
+    if (vieja) { tab = vieja[0]; sub = sub || vieja[1]; }
+    estado.tab = tab;
+    if (sub) estado.sub[tab] = sub;
+    recordar();
+    pintar();
+  }
+  const ICONOS = {
+    inicio: 'M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10',
+    charlas: 'M4 5h16v11H9l-5 4z',
+    productos: 'M4 8l8-4 8 4v9l-8 4-8-4zM4 8l8 4 8-4M12 12v9',
+    minegocio: 'M4 10l2-6h12l2 6M4 10h16v10H4zM9 20v-5h6v5',
+    mas: 'M5 12h.01M12 12h.01M19 12h.01',
+    admin: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  };
+  function icono(id) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'ico');
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', ICONOS[id] || ICONOS.mas); p.setAttribute('fill', 'none'); p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', id === 'mas' ? '3.2' : '1.8'); p.setAttribute('stroke-linecap', 'round'); p.setAttribute('stroke-linejoin', 'round');
+    svg.append(p);
+    return svg;
+  }
   /** Botones para elegir una parte de una sección (Lista · Importar · Historial). */
   function segmento(clave, opciones, alCambiar) {
     const actual = estado.sub[clave] || opciones[0][0];
@@ -221,8 +270,15 @@ function app() {
 
   function pintar() {
     poner(raiz);
+    // ZL-165: al cambiar de negocio, lo de antes se borra y se ve «Cargando…» (antes quedaban un rato los datos del otro).
     const sel = estado.yo.negocios.length > 1 || estado.yo.admin
-      ? h('select', { 'aria-label': 'Negocio', onchange: (e) => { estado.negocio = e.target.value; recordar(); cargarNegocio(); } },
+      ? h('select', { 'aria-label': 'Negocio', onchange: (e) => {
+        estado.negocio = e.target.value; estado.datos = null; recordar();
+        if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
+        const v = document.getElementById('vista');
+        if (v) poner(v, h('p', { class: 'cargando', role: 'status' }, 'Cargando…'));
+        conError(cargarNegocio)();
+      } },
           estado.yo.negocios.map((n) => h('option', { value: n.id, selected: n.id === estado.negocio }, n.nombre)))
       : h('strong', {}, (estado.yo.negocios[0] || {}).nombre || '');
     // poner() saltea lo vacío: sin negocio no hay pestañas (append escribiría «null»).
@@ -233,7 +289,7 @@ function app() {
         h('span', { class: 'yo' }, estado.yo.email),
         h('a', { class: 'btn', href: '/cdn-cgi/access/logout' }, 'Salir')),
       estado.negocio ? h('nav', { class: 'tabs', role: 'tablist' }, PESTANAS().map(([id, t]) =>
-        h('button', { role: 'tab', 'aria-selected': estado.tab === id ? 'true' : 'false', onclick: () => { estado.tab = id; recordar(); pintarVista(); } }, t))) : null,
+        h('button', { role: 'tab', 'aria-selected': estado.tab === id ? 'true' : 'false', onclick: () => { if (id !== estado.tab) estado.charlaAbierta = null; estado.tab = id; recordar(); pintarVista(); } }, icono(id), h('span', {}, t)))) : null,
       h('main', { id: 'vista' }));
     pintarVista();
   }
@@ -248,6 +304,18 @@ function app() {
     caja.append(segmento('productos', [['lista', 'Lista'], ['importar', 'Importar Excel'], ['historial', 'Historial']]), cuerpo);
     return caja;
   }
+  // ── Más (ZL-165): Reportes, Conexiones, Asistente y Avisos. ──
+  function vistaMas() {
+    const caja = h('section', {});
+    const cuerpo = h('div', {});
+    const id = estado.sub.mas || 'reportes';
+    const asistente = () => (estado.yo.admin ? h('div', {}, vistaMiAsistente(), vistaAsistente()) : vistaMiAsistente());
+    poner(cuerpo, id === 'conexiones' ? vistaConexiones() : id === 'asistente' ? asistente() : id === 'avisos' ? vistaAvisos() : id === 'equipo' ? vistaEquipo() : vistaReportes());
+    caja.append(segmento('mas', [['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente'], ['avisos', 'Avisos'], ['equipo', 'Equipo']]), cuerpo,
+      h('div', { class: 'acciones', estilo: { justifyContent: 'flex-start' } }, h('a', { class: 'btn', href: '/cdn-cgi/access/logout' }, 'Salir de la app')));
+    return caja;
+  }
+
   function vistaConexiones() {
     const caja = h('section', {});
     const cuerpo = h('div', {});
@@ -263,6 +331,32 @@ function app() {
   }
 
   // ── Estado (ZL-150): el semáforo del negocio. Qué anda y, si algo falta, qué hacer. ──
+  // ZL-165: los pasos técnicos (YCloud, Access, Admin, la ficha) son para el equipo; el dueño ve qué hacer él o «escribinos».
+  const TECNICO = /YCloud|Access|Admin|webhook|ficha|IA|whatsapp\.smb|política|Meta/i;
+  const paraElDueño = (t) => (estado.yo.admin || !TECNICO.test(t) ? t : 'Esto lo resuelve el equipo de Zustro Labs: escribinos a contact@zustrolabs.com y lo vemos.');
+
+  // ── Equipo (ZL-165): quién entra a la app y con qué rol. El dueño suma o saca empleados (van solos a Access). ──
+  function vistaEquipo() {
+    const caja = h('section', {}, h('h2', {}, 'Equipo'), h('p', { class: 'ayuda' }, 'Cargando…'));
+    const pintarEquipo = (d) => {
+      const dueño = estado.datos.negocio.rol !== 'empleado';
+      const correo = h('input', { type: 'email', maxlength: 120, placeholder: 'correo@ejemplo.com' });
+      poner(caja, h('h2', {}, 'Equipo'),
+        h('p', { class: 'ayuda' }, 'Quién entra a la app. Un empleado ve pedidos, consultas, charlas y productos; no conecta canales, no pausa el asistente ni cambia Mi negocio.'),
+        h('ul', { class: 'lista' }, d.personas.map((x) => h('li', { class: 'tarjeta' },
+          h('strong', {}, x.email), ' ', h('span', { class: 'chip' }, x.rol === 'dueño' ? 'Dueño' : 'Empleado'),
+          dueño && x.rol === 'empleado' ? h('div', { class: 'acciones' }, ...dosPasos('Sacar', 'Confirmar: ya no entra', conError(async () => { pintarEquipo(await api(base() + '/equipo', { metodo: 'DELETE', cuerpo: { email: x.email } })); aviso('Listo: ya no entra a la app.'); }))) : null))),
+        dueño ? h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
+          e.preventDefault();
+          const r = await api(base() + '/equipo', { metodo: 'POST', cuerpo: { email: correo.value } });
+          pintarEquipo(r);
+          aviso(r.acceso && r.acceso.ok === false ? 'Agregado. Avisanos para habilitarle la entrada (no se pudo hacer solo).' : 'Agregado: ya puede entrar con su correo.');
+        }) }, etiqueta('Sumar un empleado', correo), correo, h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Sumar'))) : null);
+    };
+    api(base() + '/equipo').then(pintarEquipo).catch((e) => { if (e.message !== 'sesión') poner(caja, h('h2', {}, 'Equipo'), h('p', { class: 'errores' }, e.message)); });
+    return caja;
+  }
+
   function vistaEstado() {
     const lista = h('div', { 'aria-live': 'polite' }, h('p', { class: 'ayuda' }, 'Revisando…'));
     const ICONO = { ok: '✓', mal: '✗', aviso: '•' };
@@ -272,7 +366,7 @@ function app() {
         h('p', { class: 'chip ' + (r.verde ? 'ok' : 'mal') }, r.verde ? 'Todo funcionando' : 'Falta algo: mirá lo que está en rojo'),
         h('ul', { class: 'lista' }, r.controles.map((c) => h('li', { class: 'tarjeta' },
           h('strong', { class: c.estado === 'mal' ? 'errores' : '' }, ICONO[c.estado] + ' ' + c.texto),
-          c.arreglo && c.estado !== 'ok' ? h('p', { class: 'ayuda' }, c.arreglo) : null))));
+          c.arreglo && c.estado !== 'ok' ? h('p', { class: 'ayuda' }, paraElDueño(c.arreglo)) : null))));
     })();
     return h('section', {}, h('h2', {}, 'Estado'), h('p', { class: 'ayuda' }, 'Si algo está en rojo, el asistente no puede responder por ahí. Abajo dice qué hacer.'), lista);
   }
@@ -312,15 +406,20 @@ function app() {
       const tarjeta = (n, t) => h('div', {}, h('strong', {}, String(n)), h('span', {}, t));
       poner(cuerpo,
         h('h3', {}, 'Reporte de ' + r.negocio + ' · ' + rango),
-        h('div', { class: 'resumen' },
-          tarjeta(s.charlas, 'charlas atendidas'), tarjeta(s.mensajes, 'mensajes recibidos'), tarjeta(s.respuestas, 'respuestas del asistente'),
+        // ZL-165: cuatro números claros arriba; el resto, en «Más números».
+        h('div', { class: 'resumen grande' },
+          tarjeta(s.charlas, 'personas atendidas'),
+          estado.datos.negocio.pedidos ? tarjeta(s.pedidos, 'pedidos') : tarjeta(s.consultas, 'consultas'),
+          tarjeta(plata(s.vendido), 'vendido'),
+          tarjeta(s.fueraHorario || 0, 'mensajes con el local cerrado')),
+        h('details', {}, h('summary', {}, 'Más números'), h('div', { class: 'resumen' },
+          tarjeta(s.mensajes, 'mensajes recibidos'), tarjeta(s.respuestas, 'respuestas del asistente'),
           tarjeta(s.consultas, 'consultas'), tarjeta(s.ganadas, 'consultas ganadas'), tarjeta(s.pedidos, 'pedidos'),
-          tarjeta(s.entregados, 'pedidos entregados'), tarjeta(plata(s.vendido), 'vendido'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null,
+          tarjeta(s.entregados, 'pedidos entregados'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null,
           // ZL-160: los comentarios de Instagram que respondió el asistente (si los tiene encendidos o ya respondió alguno).
           s.comentarios || (estado.datos.negocio.comentarios || {}).activo ? tarjeta(s.comentarios || 0, 'comentarios respondidos') : null,
-          // ZL-164: lo que atendió con el negocio cerrado y lo que no supo (para cargarlo en Mi negocio).
-          s.fueraHorario ? tarjeta(s.fueraHorario, 'mensajes con el negocio cerrado') : null,
-          s.noSupo ? tarjeta(s.noSupo, 'preguntas que no supo') : null),
+          // ZL-164: lo que no supo (para cargarlo en Mi negocio).
+          tarjeta(s.noSupo || 0, 'preguntas que no supo'))),
         h('p', { class: 'ayuda' }, 'Por WhatsApp: ' + s.canales.whatsapp + ' mensajes · por Instagram: ' + s.canales.instagram + '. Pases al equipo: ' + s.pasesAlEquipo + '. Recordatorios enviados: ' + s.seguimientos + '.' + (s.enviadosWa ? ' Mensajes que mandó el asistente por WhatsApp: ' + s.enviadosWa + '.' : '')),
         h('div', { class: 'caja' }, h('h3', {}, 'A qué hora te escriben'),
           h('p', { class: 'ayuda' }, s.mensajes ? 'Las horas con más mensajes: ' + r.horasPico.map(hs).join(', ') + '.' : 'Todavía no hay mensajes en este período.'),
@@ -564,7 +663,8 @@ function app() {
       return;
     }
     if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
-    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, minegocio: vistaMiNegocio, reportes: vistaReportes, conexiones: vistaConexiones, asistente: () => (estado.yo.admin ? h('div', {}, vistaMiAsistente(), vistaAsistente()) : vistaMiAsistente()), admin: vistaAdmin };
+    if (estado.timerCharla) { clearInterval(estado.timerCharla); estado.timerCharla = null; }
+    const vistas = { inicio: vistaPedidos, charlas: vistaCharlas, productos: vistaSeccionProductos, minegocio: vistaMiNegocio, mas: vistaMas, admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaPedidos)());
   }
 
@@ -574,14 +674,72 @@ function app() {
   }
 
   // ── Productos ──
+  // ZL-165: «Productos» o «Servicios», y qué campos usa cada negocio.
+  const cosa = () => (servicios() ? 'servicio' : 'producto');
+  const usa = (campo) => (((estado.datos && estado.datos.negocio.ajustes) || {}).campos || {})[campo] !== false;
+
+  /** ZL-165: qué vende (productos o servicios) y qué campos usa. Lo cambia el dueño. */
+  function queMostrar() {
+    const aj = estado.datos.negocio.ajustes || {};
+    const c = Object.assign({ codigo: true, unidad: true, stock: true, categoria: true }, aj.campos || {});
+    const vende = h('select', {}, h('option', { value: 'productos', selected: aj.vende !== 'servicios' }, 'Productos'), h('option', { value: 'servicios', selected: aj.vende === 'servicios' }, 'Servicios'));
+    const checks = [['stock', 'Controlo el stock'], ['unidad', 'Uso unidades (kg, caja…)'], ['codigo', 'Uso códigos'], ['categoria', 'Uso categorías']].map(([k, t]) => {
+      const i = h('input', { type: 'checkbox', checked: c[k] });
+      i.dataset.k = k;
+      return h('label', { class: 'check' }, i, t);
+    });
+    return h('details', {}, h('summary', {}, 'Qué mostrar'),
+      h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
+        e.preventDefault();
+        const campos = {};
+        e.target.querySelectorAll('input[type=checkbox]').forEach((i) => { campos[i.dataset.k] = i.checked; });
+        estado.datos.negocio.ajustes = await api(base() + '/ajustes', { metodo: 'PUT', cuerpo: { vende: vende.value, campos } });
+        aviso('Guardado.');
+        pintar();
+      }) }, etiqueta('Vendés', vende), vende, h('p', { class: 'ayuda' }, 'Con servicios (turnos, clases, trabajos) la sección se llama «Servicios».'),
+        h('p', { class: 'ayuda' }, 'Campos que usás (los demás no se muestran):'), checks,
+        h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Guardar'))));
+  }
+
+  /** ZL-165: subir o bajar precios en bloque (todos o una categoría), con vista previa antes. */
+  function preciosEnBloque(categorias) {
+    const dlg = h('dialog', { 'aria-label': 'Cambiar precios en bloque' });
+    const pc = h('input', { type: 'number', step: 'any', min: -90, max: 500, placeholder: 'Ejemplo: 10', required: true });
+    const cat = h('select', {}, h('option', { value: '' }, 'Todos'), categorias.map((c) => h('option', { value: c.nombre }, c.nombre)));
+    const red = h('select', {}, [[1, 'Sin redondear'], [10, 'A $ 10'], [50, 'A $ 50'], [100, 'A $ 100']].map(([v, t]) => h('option', { value: v }, t)));
+    const previa = h('div', { 'aria-live': 'polite' });
+    const aplicar = h('button', { type: 'submit', class: 'btn prim', disabled: true }, 'Aplicar');
+    const cuerpo = () => ({ porcentaje: Number(pc.value), categoria: cat.value, redondeo: Number(red.value) });
+    const ver = conError(async () => {
+      if (!pc.value) { poner(previa); aplicar.disabled = true; return; }
+      const r = await api(base() + '/productos/precios', { metodo: 'POST', cuerpo: Object.assign(cuerpo(), { probar: true }) });
+      poner(previa, h('p', { class: 'ayuda' }, 'Cambian ' + r.cambian + (r.cambian === 1 ? ' precio' : ' precios') + '. Por ejemplo:'),
+        h('ul', { class: 'ayuda' }, r.muestra.map((m) => h('li', {}, m.nombre + ': ' + pesos(m.antes) + ' → ' + pesos(m.despues)))));
+      aplicar.disabled = !r.cambian;
+    });
+    [pc, cat, red].forEach((x) => x.addEventListener('change', ver));
+    pc.addEventListener('input', ver);
+    dlg.append(h('form', { onsubmit: conError(async (e) => {
+      e.preventDefault();
+      const r = await api(base() + '/productos/precios', { metodo: 'POST', cuerpo: cuerpo() });
+      dlg.close(); aviso('Listo: cambiaron ' + r.cambian + ' precios. Queda en el historial.');
+      if (estado.recargarProductos) estado.recargarProductos();
+    }) }, h('h2', {}, 'Cambiar precios en bloque'),
+      etiqueta('Porcentaje (negativo para bajar)', pc), pc, etiqueta('A cuáles', cat), cat, etiqueta('Redondeo', red), red, previa,
+      h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Cancelar'), aplicar)));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+  }
+
   function vistaProductos() {
     const caja = h('section', {});
     const d = estado.datos;
     const as = d.asistente;
     caja.append(
-      h('h2', {}, 'Productos'),
+      h('h2', {}, servicios() ? 'Servicios' : 'Productos'),
       h('div', { class: 'chips' },
-        h('span', { class: 'chip' }, (d.resumen ? d.resumen.total : 0) + ((d.resumen && d.resumen.total === 1) ? ' producto' : ' productos')),
+        h('span', { class: 'chip' }, (d.resumen ? d.resumen.total : 0) + ' ' + cosa() + ((d.resumen && d.resumen.total === 1) ? '' : 's')),
         h('span', { class: 'chip' }, (d.resumen ? d.resumen.activos : 0) + ' a la venta'),
         d.resumen && d.resumen.agotados ? h('span', { class: 'chip mal' }, d.resumen.agotados + (d.resumen.agotados === 1 ? ' agotado' : ' agotados')) : null,
         h('span', { class: 'chip ' + (as.activo ? 'ok' : 'alerta') }, as.activo ? 'Asistente activo' : as.tiene ? 'Asistente apagado' : 'Asistente sin configurar'),
@@ -590,18 +748,25 @@ function app() {
     const cats = h('select', { 'aria-label': 'Categoría' }, h('option', { value: '' }, 'Todas las categorías'));
     const pausados = h('input', { type: 'checkbox', checked: estado.pausados });
     const lista = h('ul', { class: 'lista', 'aria-live': 'polite' });
+    const contador = h('p', { class: 'ayuda', 'aria-live': 'polite' });
+    let categorias = [];
     caja.append(
-      h('div', { class: 'barra' }, buscar, cats,
+      h('div', { class: 'barra' }, buscar, usa('categoria') ? cats : null,
         h('label', { class: 'check' }, pausados, 'Ver pausados'),
-        h('button', { class: 'btn prim', onclick: () => editor(null) }, '+ Nuevo producto'),
+        h('button', { class: 'btn prim', onclick: () => editor(null) }, '+ Nuevo ' + cosa()),
+        h('button', { class: 'btn', onclick: () => preciosEnBloque(categorias) }, 'Cambiar precios'),
         h('button', { class: 'btn', onclick: conError(exportar) }, 'Exportar a Excel')),
-      lista);
+      estado.datos.negocio.rol !== 'empleado' ? queMostrar() : null,
+      contador, lista);
     let t;
     const cargar = conError(async () => {
       const p = new URLSearchParams({ q: estado.q, categoria: estado.categoria, pausados: estado.pausados ? '1' : '0' });
       const r = await api(base() + '/productos?' + p);
+      categorias = r.categorias;
       poner(cats, h('option', { value: '' }, 'Todas las categorías'), r.categorias.map((c) => h('option', { value: c.nombre, selected: c.nombre === estado.categoria }, c.nombre + ' (' + c.n + ')')));
       poner(lista);
+      // ZL-165: cuántos se ven de cuántos hay.
+      poner(contador, r.total ? 'Mostrando ' + Math.min(r.productos.length, r.total) + ' de ' + r.total + '.' : '');
       if (!r.productos.length) {
         lista.append(h('li', { class: 'vacio' }, estado.q || estado.categoria ? 'No hay productos con esa búsqueda.' : 'Todavía no hay productos. Cargá uno con «+ Nuevo producto» o subí tu Excel en «Importar Excel».'));
         return;
@@ -617,6 +782,7 @@ function app() {
           li.remove();
           for (const p of sig.productos) lista.append(filaProducto(p, cargar));
           mostrados += sig.productos.length;
+          poner(contador, 'Mostrando ' + mostrados + ' de ' + r.total + '.');
           const otro = sig.productos.length ? mas() : null;
           if (otro) lista.append(otro);
         }) }, 'Ver más (' + mostrados + ' de ' + r.total + ')'));
@@ -647,8 +813,14 @@ function app() {
       ctrl.classList.toggle('cero', r.stock <= 0);
       refrescarResumen();
     });
-    const ctrl = p.stock === null
-      ? h('span', { class: 'meta' }, 'Sin control de stock')
+    // ZL-165: «Se agotó» con un toque (lo pausa: el asistente deja de ofrecerlo) y «Volvió» para ponerlo a la venta.
+    const agotar = h('button', { type: 'button', class: 'btn chico', onclick: conError(async () => {
+      await api(base() + '/productos/' + p.id, { metodo: 'PUT', cuerpo: { activo: !p.activo } });
+      aviso(p.activo ? 'Listo: el asistente ya no lo ofrece. Tocá «Volvió» cuando haya.' : 'De nuevo a la venta.');
+      recargar(); refrescarResumen();
+    }) }, p.activo ? 'Se agotó' : 'Volvió');
+    const ctrl = p.stock === null || !usa('stock')
+      ? (usa('stock') ? h('span', { class: 'meta' }, 'Sin control de stock') : null)
       : h('span', { class: 'stock' + (disp <= 0 ? ' cero' : '') },
           h('button', { 'aria-label': 'Restar uno a ' + p.nombre, onclick: mover(-1) }, '−'), num,
           h('button', { 'aria-label': 'Sumar uno a ' + p.nombre, onclick: mover(1) }, '+'));
@@ -656,12 +828,13 @@ function app() {
       miniFoto(p),
       h('div', {},
         h('button', { class: 'nombre', onclick: () => editor(p, recargar) }, p.nombre),
-        h('div', { class: 'meta' }, [p.categoria, p.codigo ? 'código ' + p.codigo : '', p.activo ? '' : 'pausado'].filter(Boolean).join(' · ')),
+        h('div', { class: 'meta' }, [usa('categoria') ? p.categoria : '', usa('codigo') && p.codigo ? 'código ' + p.codigo : '', p.activo ? '' : 'pausado (no se ofrece)'].filter(Boolean).join(' · ')),
         h('div', { class: 'fila' },
-          h('span', { class: 'precio' }, p.precio === null ? 'Sin precio' : pesos(p.precio) + (p.unidad ? ' / ' + p.unidad : '')),
+          h('span', { class: 'precio' }, p.precio === null ? 'Sin precio' : pesos(p.precio) + (p.unidad && usa('unidad') ? ' / ' + p.unidad : '')),
           ctrl,
           p.reservado ? h('span', { class: 'chip alerta' }, p.reservado + (p.reservado === 1 ? ' reservada' : ' reservadas')) : null,
-          disp !== null && disp <= 0 && p.activo ? h('span', { class: 'chip mal' }, 'Agotado') : null)));
+          disp !== null && disp <= 0 && p.activo && usa('stock') ? h('span', { class: 'chip mal' }, 'Agotado') : null,
+          agotar)));
   }
 
   async function refrescarResumen() {
@@ -684,7 +857,7 @@ function app() {
 
   function editor(p, recargar) {
     recargar = recargar || estado.recargarProductos || (() => {});
-    const dlg = h('dialog', { 'aria-label': p ? 'Editar producto' : 'Nuevo producto' });
+    const dlg = h('dialog', { 'aria-label': p ? 'Editar ' + cosa() : 'Nuevo ' + cosa() });
     let foto = p ? p.foto : null;
     const campos = {
       nombre: h('input', { type: 'text', required: true, maxlength: 120, value: p ? p.nombre : '' }),
@@ -730,17 +903,18 @@ function app() {
         if (err.datos && err.datos.campo && campos[err.datos.campo]) campos[err.datos.campo].focus();
         return;
       }
-      dlg.close(); aviso(p ? 'Guardado' : 'Producto creado'); recargar(); refrescarResumen();
+      dlg.close(); aviso(p ? 'Guardado' : (servicios() ? 'Servicio creado' : 'Producto creado')); recargar(); refrescarResumen();
     }) },
-      h('h2', {}, p ? 'Editar producto' : 'Nuevo producto'),
+      h('h2', {}, p ? 'Editar ' + cosa() : 'Nuevo ' + cosa()),
       etiqueta('Nombre *', campos.nombre), campos.nombre,
+      // ZL-165: solo los campos que usa el negocio (se eligen en «Qué mostrar»).
       h('div', { class: 'dosc' },
         h('div', {}, etiqueta('Precio', campos.precio), campos.precio),
-        h('div', {}, etiqueta('Por', campos.unidad), campos.unidad),
-        h('div', {}, etiqueta('Stock', campos.stock), campos.stock),
-        h('div', {}, etiqueta('Código', campos.codigo), campos.codigo)),
-      h('p', { class: 'ayuda' }, 'Stock vacío: el asistente no informa cantidades (lo ofrece siempre). Precio vacío: no dice precio.'),
-      etiqueta('Categoría', campos.categoria), campos.categoria,
+        usa('unidad') ? h('div', {}, etiqueta('Por', campos.unidad), campos.unidad) : null,
+        usa('stock') ? h('div', {}, etiqueta('Stock', campos.stock), campos.stock) : null,
+        usa('codigo') ? h('div', {}, etiqueta('Código', campos.codigo), campos.codigo) : null),
+      h('p', { class: 'ayuda' }, (usa('stock') ? 'Stock vacío: el asistente no informa cantidades (lo ofrece siempre). ' : '') + 'Precio vacío: no dice precio.'),
+      usa('categoria') ? h('div', {}, etiqueta('Categoría', campos.categoria), campos.categoria) : null,
       etiqueta('Descripción (lo que el asistente puede contar)', campos.descripcion), campos.descripcion,
       h('p', { class: 'ayuda' }, 'Foto (se achica sola antes de subirla)'), h('div', { class: 'vista-foto' }, vista, subir,
         (() => { const l = etiqueta(foto ? 'Cambiar foto' : 'Subir foto', subir); l.className = 'btn'; return l; })(),
@@ -900,9 +1074,129 @@ function app() {
     const { clave } = await api(base() + '/push');
     const bytes = Uint8Array.from(atob(clave.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((clave.length + 3) % 4)), (c) => c.charCodeAt(0));
     const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes }));
-    await api(base() + '/push', { metodo: 'POST', cuerpo: { suscripcion: sub.toJSON() } });
+    await api(base() + '/push', { metodo: 'POST', cuerpo: { suscripcion: sub.toJSON(), nombre: nombreDispositivo() } });
     await api(base() + '/push/probar', { metodo: 'POST', cuerpo: {} });
     aviso('Listo: te va a llegar un aviso por cada pedido o consulta nueva, aunque la app esté cerrada.');
+  }
+
+  /** ZL-165: un nombre para reconocer el dispositivo en la lista («Android · Chrome»). */
+  function nombreDispositivo() {
+    const ua = navigator.userAgent || '';
+    const so = /iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : /Mac OS/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Otro';
+    const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'navegador';
+    return so + ' · ' + nav;
+  }
+
+  // ── Avisos (ZL-165): en qué dispositivos llegan, probar cada uno y sacar los que ya no se usan. ──
+  function vistaAvisos() {
+    const lista = h('div', { 'aria-live': 'polite' }, h('p', { class: 'ayuda' }, 'Cargando…'));
+    const cargar = conError(async () => {
+      const r = await api(base() + '/push');
+      poner(lista, r.dispositivos.length
+        ? h('ul', { class: 'lista' }, r.dispositivos.map((x) => h('li', { class: 'tarjeta' },
+            h('strong', {}, x.nombre), h('p', { class: 'ayuda' }, 'Lo activó ' + (x.email || 'alguien') + (x.creado ? ' el ' + fecha(x.creado) : '')),
+            h('div', { class: 'acciones' },
+              h('button', { type: 'button', class: 'btn peligro', onclick: conError(async () => { await api(base() + '/push/' + x.n, { metodo: 'DELETE' }); aviso('Listo, ese dispositivo ya no recibe avisos.'); cargar(); }) }, 'Sacar'),
+              h('button', { type: 'button', class: 'btn', onclick: conError(async () => { const p = await api(base() + '/push/' + x.n + '/probar', { metodo: 'POST', cuerpo: {} }); aviso(p.enviados ? 'Mandé un aviso de prueba: fijate si llegó.' : 'No llegó: activalo de nuevo en ese dispositivo.', !p.enviados); cargar(); }) }, 'Probar')))))
+        : h('p', { class: 'chip alerta' }, 'Ningún dispositivo tiene los avisos activados: si entra un pedido con la app cerrada, no te enterás.'));
+    });
+    cargar();
+    return h('section', {}, h('h2', {}, 'Avisos'),
+      h('p', { class: 'ayuda' }, 'Cada pedido o consulta nueva te llega como aviso, aunque la app esté cerrada. Activalo en el celular de cada persona que atiende.'),
+      h('div', { class: 'acciones', estilo: { justifyContent: 'flex-start' } }, h('button', { type: 'button', class: 'btn prim', onclick: conError(async () => { await activarAvisos(); cargar(); }) }, 'Activar en este dispositivo')),
+      h('h3', {}, 'Dispositivos con avisos'), lista);
+  }
+
+  // ── Charlas (ZL-165): lo que habló cada persona (30 días). Responder desde acá, 👎 a una respuesta mala. ──
+  const hace = (t) => {
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 60) return 'recién';
+    if (s < 3600) return 'hace ' + Math.round(s / 60) + ' min';
+    if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+    return fecha(t);
+  };
+  function vistaCharlas() {
+    if (estado.charlaAbierta) return vistaUnaCharla(estado.charlaAbierta);
+    const buscar = h('input', { type: 'search', placeholder: 'Buscar por nombre o por lo que escribieron', 'aria-label': 'Buscar charlas', value: estado.qCharlas || '' });
+    const lista = h('ul', { class: 'lista', 'aria-live': 'polite' }, h('li', { class: 'ayuda' }, 'Cargando…'));
+    const cargar = conError(async () => {
+      const r = await api(base() + '/charlas?' + new URLSearchParams({ q: estado.qCharlas || '' }));
+      poner(lista, r.charlas.length ? r.charlas.map((c) => h('li', {},
+        h('button', { type: 'button', class: 'charla-fila' + (c.sinLeer ? ' nueva' : ''), onclick: () => { estado.charlaAbierta = c.id; pintarVista(); } },
+          h('span', { class: 'quien' }, c.nombre || 'Sin nombre', c.sinLeer ? h('span', { class: 'punto' }, ' · nuevo') : null),
+          h('span', { class: 'chip' }, c.canal === 'wa' ? 'WhatsApp' : 'Instagram'),
+          h('span', { class: 'previa' }, c.previa),
+          h('span', { class: 'cuando' }, hace(c.ultimo)))))
+        : h('li', { class: 'vacio' }, estado.qCharlas ? 'No hay charlas con esa búsqueda.' : 'Todavía no hay charlas. Cuando alguien escriba, la vas a ver acá con lo que le respondió el asistente.'));
+    });
+    let t;
+    buscar.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { estado.qCharlas = buscar.value; cargar(); }, 250); });
+    cargar();
+    estado.timerCharla = setInterval(() => { if (!document.hidden) cargar(); }, 20000);
+    return h('section', {}, h('h2', {}, 'Charlas'),
+      h('p', { class: 'ayuda' }, 'Lo que te escribieron y lo que respondió el asistente, de los últimos 30 días.'),
+      h('div', { class: 'barra' }, buscar), lista);
+  }
+  function vistaUnaCharla(id) {
+    const caja = h('section', {});
+    const mensajes = h('div', { class: 'conversa', 'aria-live': 'polite' });
+    const estadoLinea = h('div', {});
+    const texto = h('textarea', { rows: 2, maxlength: 1000, placeholder: 'Escribí tu respuesta' });
+    const enviar = h('button', { type: 'submit', class: 'btn prim' }, 'Enviar');
+    const titulo = h('h2', {}, 'Charla');
+    let ultimoId = 0;
+    const volver = () => { estado.charlaAbierta = null; pintarVista(); };
+    function burbuja(m, c) {
+      const cls = m.de === 'cliente' ? 'cli' : m.de === 'negocio' ? 'neg' : m.de === 'asistente' ? 'asi' : 'sis';
+      const quien = m.de === 'cliente' ? (c.nombre || 'Cliente') : m.de === 'negocio' ? 'Vos' : m.de === 'asistente' ? 'Asistente' : '';
+      const mal = m.de === 'asistente' ? h('button', { type: 'button', class: 'btn chico mal' + (m.mal ? ' activo' : ''), 'aria-pressed': m.mal ? 'true' : 'false', 'aria-label': 'Esta respuesta estuvo mal', title: 'Esta respuesta estuvo mal', onclick: conError(async () => {
+        const r = await api(base() + '/charlas/' + id + '/mensajes/' + m.id + '/mal', { metodo: 'POST', cuerpo: { mal: !m.mal } });
+        m.mal = !m.mal;
+        if (!m.mal) { cargar(); return; }
+        // Lo que tendría que haber dicho pasa a las preguntas frecuentes: la próxima vez lo sabe.
+        const resp = h('textarea', { rows: 2, maxlength: 600, 'aria-label': '¿Qué tendría que haber respondido?', placeholder: '¿Qué tendría que haber respondido?' });
+        fila.append(h('div', { class: 'corregir' }, resp, h('div', { class: 'acciones' },
+          h('button', { type: 'button', class: 'btn prim chico', onclick: conError(async () => {
+            if (!resp.value.trim() || !r.pregunta) { aviso(r.pregunta ? 'Escribí la respuesta primero.' : 'No encontré la pregunta de esa respuesta.', true); return; }
+            await api(base() + '/mi-negocio/no-supo', { metodo: 'POST', cuerpo: { pregunta: r.pregunta, respuesta: resp.value } });
+            aviso('Guardado en las preguntas frecuentes: la próxima vez responde eso.');
+            cargar();
+          }) }, 'Guardar como pregunta frecuente'))));
+        resp.focus();
+      }) }, '👎') : null;
+      const fila = h('div', { class: 'msg ' + cls + (m.mal ? ' marcado' : '') },
+        quien ? h('span', { class: 'de' }, quien + ' · ' + fecha(m.t)) : null,
+        h('p', {}, m.texto), mal);
+      return fila;
+    }
+    async function cargar() {
+      const c = await api(base() + '/charlas/' + id);
+      poner(titulo, c.nombre || 'Charla', ' ', h('span', { class: 'chip' }, c.canal === 'wa' ? 'WhatsApp' : 'Instagram'));
+      poner(mensajes, c.mensajes.map((m) => burbuja(m, c)));
+      const ultimo = c.mensajes.length ? c.mensajes[c.mensajes.length - 1].id : 0;
+      if (ultimo !== ultimoId) { mensajes.scrollTop = mensajes.scrollHeight; ultimoId = ultimo; }
+      const pausa = c.pausaHasta && c.pausaHasta > Date.now();
+      poner(estadoLinea,
+        pausa ? h('p', { class: 'pausa' }, 'La atendés vos: el asistente no responde en esta charla hasta las ' + new Date(c.pausaHasta).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '.',
+          ' ', h('button', { type: 'button', class: 'btn chico', onclick: conError(async () => { await api(base() + '/charlas/' + id + '/asistente', { metodo: 'POST', cuerpo: {} }); aviso('El asistente sigue con esta charla.'); cargar(); }) }, 'Que siga el asistente'),
+          ' ', h('button', { type: 'button', class: 'btn chico', onclick: conError(async () => { await api(base() + '/charlas/' + id + '/resuelta', { metodo: 'POST', cuerpo: {} }); aviso('Listo: quedó resuelta y el asistente sigue con esta charla.'); cargar(); }) }, 'Ya lo resolví'))
+          : h('p', { class: 'ayuda' }, 'El asistente está atendiendo. Si respondés desde acá, se calla en esta charla para no pisarse con vos.'),
+        c.ventanaHasta ? null : h('p', { class: 'chip alerta' }, 'Pasaron más de 24 horas desde su último mensaje: WhatsApp e Instagram no dejan escribirle desde acá. Respondele desde tu app de ' + (c.canal === 'wa' ? 'WhatsApp' : 'Instagram') + '.'));
+      texto.disabled = !c.ventanaHasta; enviar.disabled = !c.ventanaHasta;
+    }
+    const form = h('form', { class: 'responder', onsubmit: conError(async (e) => {
+      e.preventDefault();
+      if (!texto.value.trim()) { texto.focus(); return; }
+      enviar.disabled = true;
+      try { await api(base() + '/charlas/' + id + '/responder', { metodo: 'POST', cuerpo: { texto: texto.value } }); } finally { enviar.disabled = false; }
+      texto.value = '';
+      aviso('Enviado. El asistente se calla en esta charla mientras la atendés.');
+      await cargar();
+    }) }, etiqueta('Tu respuesta', texto), texto, h('div', { class: 'acciones' }, enviar));
+    conError(cargar)();
+    estado.timerCharla = setInterval(() => { if (!document.hidden) cargar().catch(() => {}); }, 15000);
+    caja.append(h('button', { type: 'button', class: 'btn chico', onclick: volver }, '← Todas las charlas'), titulo, mensajes, estadoLinea, form);
+    return caja;
   }
 
   /** El botón para responderle a esa persona desde la app del negocio (WhatsApp con su número, o Instagram). */
@@ -1041,6 +1335,8 @@ function app() {
     if (p.estado === 'pendiente') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('aceptado') }, 'Aceptar'), ...dosPasos('Rechazar', 'Confirmar rechazo', (m) => accion('rechazado', { motivo: m })(), true));
     if (p.estado === 'aceptado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), h('button', { type: 'button', class: 'btn', onclick: accion('pagado') }, 'Ya pagó'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
     if (p.estado === 'pagado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
+    // ZL-165: el equipo borra un pedido de prueba (no le avisa a nadie; libera lo reservado).
+    if (estado.yo.admin && p.estado !== 'entregado') botones.push(...dosPasos('Borrar (prueba)', 'Confirmar: borrar sin avisar', conError(async () => { await api(base() + '/pedidos/' + p.numero, { metodo: 'DELETE' }); aviso('Pedido de prueba borrado.'); recargar(); })));
     const c = p.comprador || {};
     // ZL-157: un pedido pendiente no se vence: espera a que lo aceptes o lo rechaces (los productos quedan reservados).
     const vence = p.estado === 'pendiente' ? 'Espera tu respuesta: los productos quedan reservados hasta que lo aceptes o lo rechaces.' : p.vence ? 'Guardado hasta el ' + hora(p.vence) + ' si no paga.' : null;
@@ -1048,7 +1344,7 @@ function app() {
       h('h3', {}, 'Pedido N.º ' + p.numero + ' · ' + (c.nombre || (c.olvidado ? 'Datos borrados por privacidad' : 'Sin nombre'))),
       h('div', { class: 'chips' },
         h('span', { class: 'chip ' + (p.estado === 'pendiente' ? 'alerta' : ['pagado', 'entregado'].includes(p.estado) ? 'ok' : '') }, ESTADO_PEDIDO[p.estado] || p.estado),
-        h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') : 'Retira en el local'),
+        h('span', { class: 'chip' }, c.entrega === 'envio' ? 'Envío: ' + (c.direccion || '') + (c.zona ? ' (' + c.zona + (c.envio ? ', ' + pesos(c.envio) : ', sin cargo') + ')' : '') : 'Retira en el local'),
         h('span', { class: 'chip' }, fecha(p.creado))),
       lineaContacto(p),
       h('ul', {}, p.items.map((i) => h('li', {}, i.cantidad + ' × ' + i.nombre + (i.subtotal !== null ? ' — ' + plata(i.subtotal) : '')))),
@@ -1084,8 +1380,21 @@ function app() {
       h('div', { class: 'acciones' }, mandar, a.canal === 'whatsapp' ? null : copiar, listo));
   }
 
+  /** ZL-165: arriba de Hoy, cómo está el asistente, el aviso del día y los agotados, con un toque para cambiarlos. */
+  function estadoHoy() {
+    const n = estado.datos.negocio;
+    const r = estado.datos.resumen || {};
+    const as = estado.datos.asistente || {};
+    return h('div', { class: 'chips' },
+      h('button', { type: 'button', class: 'chip ' + (n.pausa ? 'alerta' : as.activo ? 'ok' : 'alerta'), onclick: () => ir('mas', 'asistente') },
+        n.pausa ? 'Asistente en pausa' : as.activo ? 'Asistente atendiendo' : 'Asistente apagado'),
+      h('button', { type: 'button', class: 'chip', onclick: () => ir('mas', 'asistente') }, n.avisoDia ? 'Aviso de hoy: ' + n.avisoDia.texto.slice(0, 40) + (n.avisoDia.texto.length > 40 ? '…' : '') : '+ Aviso del día'),
+      r.agotados ? h('button', { type: 'button', class: 'chip mal', onclick: () => ir('productos', 'lista') }, r.agotados + (r.agotados === 1 ? ' agotado' : ' agotados')) : null);
+  }
+
   function vistaPedidos() {
-    const filtro = estado.filtroPedidos || 'pendiente';
+    // ZL-165: los nuevos van arriba («Te necesitan ahora»); abajo, de entrada, los que están en curso (aceptados).
+    const filtro = estado.filtroPedidos && estado.filtroPedidos !== 'pendiente' ? estado.filtroPedidos : 'aceptado';
     const conPedidos = estado.datos.negocio.pedidos || estado.yo.admin;
     const resumen = h('div', { class: 'resumen', 'aria-live': 'polite' });
     const listaConsultas = h('div', { 'aria-live': 'polite' });
@@ -1099,19 +1408,27 @@ function app() {
       const r = await api(base() + '/push').catch(() => null);
       poner(sinAvisos, r && !r.celulares ? h('p', { class: 'chip alerta' }, 'Ningún celular tiene los avisos activados: si entra un pedido con la app cerrada, no te enterás. Tocá «Avisos en este celular» en el celular del negocio.') : null);
     }
-    const semana = h('div', { class: 'resumen', 'aria-label': 'Últimos 7 días' });
+    // ZL-165: Inicio en cuatro partes: Hoy · Te necesitan ahora · En curso · la semana en una línea (y la guía hasta
+    // que todo esté andando). Se actualiza solo cada 20 segundos y dice hace cuánto.
+    const semana = h('p', { class: 'semana', 'aria-label': 'Últimos 7 días' });
+    const hoy = h('div', { class: 'resumen', 'aria-label': 'Hoy' });
+    const guia = h('div', {});
+    const listaFiltro = h('div', { 'aria-live': 'polite' });
+    const actualizado = h('p', { class: 'actualizado', 'aria-live': 'off' });
     const consumo = h('div', { 'aria-live': 'polite' });
+    let cuando = 0;
     const caja = h('section', {},
       h('h2', {}, 'Hola' + (estado.datos.negocio.nombre ? ', ' + estado.datos.negocio.nombre : '')),
-      h('p', { class: 'ayuda' }, 'El asistente atiende y guía cada charla hasta el final. Acá te deja solo lo que necesita de vos.'),
-      sinAvisos, resumen,
-      h('h3', {}, 'Últimos 7 días'), semana, consumo,
-      h('div', { class: 'acciones' }, avisos),
-      h('h3', {}, 'Consultas para responder'),
+      actualizado,
+      sinAvisos, guia,
+      h('h3', {}, 'Hoy'), estadoHoy(), hoy,
+      h('h3', {}, 'Te necesitan ahora'), resumen,
       listaConsultas,
-      conPedidos ? h('h3', {}, 'Pedidos') : null,
       conPedidos && !estado.datos.negocio.pedidos ? h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Admin.') : null,
-      conPedidos ? chips : null, conPedidos ? lista : null);
+      conPedidos ? lista : null,
+      conPedidos ? h('h3', {}, 'Pedidos en curso y anteriores') : null, conPedidos ? chips : null, conPedidos ? listaFiltro : null,
+      h('h3', {}, 'Últimos 7 días'), semana, consumo,
+      h('div', { class: 'acciones' }, avisos));
     let ultimos = null;
 
     async function cargar() {
@@ -1119,7 +1436,7 @@ function app() {
       const cuantasK = estado.cuantasConsultas || 20;
       const k = await api(base() + '/consultas?' + new URLSearchParams({ cuantos: String(cuantasK) }));
       const abiertas = k.consultas.filter((c) => ['nueva', 'atendiendo'].includes(c.estado));
-      poner(listaConsultas, abiertas.length ? abiertas.map((c) => tarjetaConsulta(c, cargar)) : h('div', { class: 'vacio' }, 'No hay consultas para responder. Cuando alguien quiera avanzar o necesite a alguien del negocio, aparece acá y suena.'));
+      poner(listaConsultas, abiertas.length ? abiertas.map((c) => tarjetaConsulta(c, cargar)) : null);
       if ((k.abiertas || 0) > abiertas.length && cuantasK < 200) {
         listaConsultas.append(h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: conError(async () => { estado.cuantasConsultas = Math.min(200, cuantasK + 20); await cargar(); }) }, 'Ver más consultas (' + abiertas.length + ' de ' + k.abiertas + ')')));
       }
@@ -1127,6 +1444,12 @@ function app() {
       const cuantos = estado.cuantosPedidos || 50;
       const r = conPedidos ? await api(base() + '/pedidos?' + new URLSearchParams({ ...(filtro === 'todos' ? {} : { estado: filtro }), cuantos: String(cuantos) })) : { pedidos: [], cuenta: {} };
       const cuenta = r.cuenta || {};
+      // Te necesitan ahora: los pedidos para aceptar (siempre) y, en «Todos los pedidos», el filtro elegido.
+      const nuevosP = conPedidos ? await api(base() + '/pedidos?' + new URLSearchParams({ estado: 'pendiente', cuantos: '100' })) : { pedidos: [] };
+      poner(lista, nuevosP.pedidos.map((p) => tarjetaPedido(p, cargar)));
+      if (!abiertas.length && !nuevosP.pedidos.length) poner(conPedidos ? lista : listaConsultas, h('div', { class: 'vacio' }, 'Nada para hacer ahora. Cuando ' + (conPedidos ? 'entre un pedido o ' : '') + 'alguien necesite al negocio, aparece acá y suena.'));
+      cuando = Date.now();
+      poner(actualizado, 'Actualizado recién · se actualiza solo');
       const nuevos = (cuenta.pendiente || 0) + (k.nuevas || 0);
       if (ultimos !== null && nuevos > ultimos) {
         sonar();
@@ -1138,27 +1461,42 @@ function app() {
         h('div', {}, h('strong', {}, String(k.nuevas || 0)), h('span', {}, 'consultas nuevas')),
         conPedidos ? h('div', {}, h('strong', {}, String(cuenta.pendiente || 0)), h('span', {}, 'pedidos para aceptar')) : null,
         conPedidos ? h('div', {}, h('strong', {}, String((cuenta.aceptado || 0) + (cuenta.pagado || 0))), h('span', {}, 'pedidos para entregar')) : null);
-      poner(chips, [['pendiente', 'Nuevos'], ['aceptado', 'Aceptados'], ['pagado', 'Pagados'], ['entregado', 'Entregados'], ['todos', 'Todos']].map(([id, t]) =>
+      poner(chips, [['aceptado', 'Aceptados'], ['pagado', 'Pagados'], ['entregado', 'Entregados'], ['todos', 'Todos']].map(([id, t]) =>
         h('button', { type: 'button', 'aria-pressed': id === filtro ? 'true' : 'false', onclick: () => { estado.filtroPedidos = id; estado.cuantosPedidos = 50; pintarVista(); } }, t + (id !== 'todos' && cuenta[id] ? ' (' + cuenta[id] + ')' : ''))));
-      poner(lista, r.pedidos.length ? r.pedidos.map((p) => tarjetaPedido(p, cargar)) : h('div', { class: 'vacio' }, filtro === 'pendiente' ? 'No hay pedidos nuevos. Cuando el asistente arme uno, aparece acá y suena.' : 'No hay pedidos en esta lista.'));
+      poner(listaFiltro, r.pedidos.length ? r.pedidos.map((p) => tarjetaPedido(p, cargar)) : h('div', { class: 'vacio' }, filtro === 'aceptado' ? 'No hay pedidos aceptados para entregar.' : 'No hay pedidos en esta lista.'));
       const totalFiltro = filtro === 'todos' ? Object.values(cuenta).reduce((a, x) => a + x, 0) : cuenta[filtro] || 0;
       if (totalFiltro > r.pedidos.length && cuantos < 500) {
-        lista.append(h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: conError(async () => { estado.cuantosPedidos = Math.min(500, cuantos + 50); await cargar(); }) }, 'Ver más pedidos (' + r.pedidos.length + ' de ' + totalFiltro + ')')));
+        listaFiltro.append(h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: conError(async () => { estado.cuantosPedidos = Math.min(500, cuantos + 50); await cargar(); }) }, 'Ver más pedidos (' + r.pedidos.length + ' de ' + totalFiltro + ')')));
       }
     }
     conError(cargar)();
     conError(revisarAvisos)();
-    conError(async () => {
+    const numeros = conError(async () => {
       const n = await api(base() + '/numeros');
-      poner(semana,
-        h('div', {}, h('strong', {}, String(n.charlas)), h('span', {}, 'charlas atendidas')),
-        h('div', {}, h('strong', {}, String(n.consultas)), h('span', {}, 'consultas')),
-        conPedidos ? h('div', {}, h('strong', {}, String(n.pedidos)), h('span', {}, 'pedidos')) : null,
-        h('div', {}, h('strong', {}, String((n.ganadas || 0) + (n.entregados || 0))), h('span', {}, 'ventas cerradas' + (n.vendido ? ' · ' + plata(n.vendido) : ''))));
+      const d = n.hoy || {};
+      poner(hoy,
+        h('div', {}, h('strong', {}, String(d.charlas || 0)), h('span', {}, 'charlas')),
+        conPedidos ? h('div', {}, h('strong', {}, String(d.pedidos || 0)), h('span', {}, 'pedidos')) : h('div', {}, h('strong', {}, String(d.consultas || 0)), h('span', {}, 'consultas')),
+        h('div', {}, h('strong', {}, plata(d.vendido || 0)), h('span', {}, 'vendido')),
+        d.fueraHorario ? h('div', {}, h('strong', {}, String(d.fueraHorario)), h('span', {}, 'mensajes con el local cerrado')) : null);
+      const cuantos = (x, uno, varios) => (x || 0) + ' ' + (x === 1 ? uno : varios);
+      poner(semana, cuantos(n.charlas, 'charla atendida', 'charlas atendidas') + ' · ' + cuantos(n.consultas, 'consulta', 'consultas') + (conPedidos ? ' · ' + cuantos(n.pedidos, 'pedido', 'pedidos') : '') + ' · ' + cuantos((n.ganadas || 0) + (n.entregados || 0), 'venta cerrada', 'ventas cerradas') + (n.vendido ? ' (' + plata(n.vendido) + ')' : '') + '.');
       poner(consumo, lineaConsumoWa(n.whatsappMes));
+    });
+    numeros();
+    // La guía para dejar todo andando (desaparece cuando está todo hecho).
+    conError(async () => {
+      const g = await api(base() + '/guia');
+      poner(guia, g.listo ? null : h('div', { class: 'caja' }, h('h3', { estilo: { marginTop: '0' } }, 'Para dejar todo andando'),
+        h('ul', { class: 'lista guia' }, g.pasos.map((p) => h('li', {},
+          h('span', { class: p.hecho ? 'hecho' : '' }, (p.hecho ? '✓ ' : '○ ') + p.texto),
+          !p.hecho && p.ir ? h('button', { type: 'button', class: 'btn chico', onclick: () => (p.ir === 'avisos' ? ir('mas', 'avisos') : p.ir === 'conexiones' ? ir('mas', 'conexiones') : ir(p.ir)) }, 'Ir') : null)))));
     })();
     // Mientras la pestaña está abierta, se mira cada 20 segundos.
-    estado.timerPedidos = setInterval(() => { if (!document.hidden) cargar().catch(() => {}); }, 20000);
+    estado.timerPedidos = setInterval(() => {
+      if (cuando) poner(actualizado, 'Actualizado ' + hace(cuando) + ' · se actualiza solo');
+      if (!document.hidden) { cargar().catch(() => {}); numeros(); }
+    }, 20000);
     return caja;
   }
 
@@ -1347,6 +1685,14 @@ function app() {
       pintarVista();
     };
     const cuando = (t) => new Date(t).toLocaleString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    // ZL-165: cómo trabaja, en palabras: qué busca en cada charla y si arma pedidos.
+    const obj = (estado.datos.asistente || {}).objetivo;
+    const comoTrabaja = h('div', { class: 'caja' }, h('h3', { estilo: { marginTop: '0' } }, 'Cómo trabaja'),
+      h('p', {}, h('strong', {}, 'En cada charla busca: '), obj === 'pedidos' ? 'que la persona haga un pedido.' : obj === 'consultas' ? 'dejarte una consulta lista (nombre y qué necesita) para que la cierres vos.' : 'responder bien y, si hace falta, pasarte la charla.'),
+      h('p', {}, h('strong', {}, 'Pedidos por chat: '), n.pedidos
+        ? 'encendidos. Arma el pedido con tus productos, reserva el stock y te avisa para que lo aceptes en Inicio.'
+        : 'apagados. No arma pedidos: si querés que los tome, pedíselo al equipo de Zustro Labs.'),
+      h('p', { class: 'ayuda' }, 'Lo que sabe sale de tu ficha (la prepara el equipo), de Mi negocio y de tus ' + (servicios() ? 'servicios' : 'productos') + '. Nunca inventa precios ni horarios.'));
     // Estado y pausa.
     if (n.pausa) {
       caja.append(h('p', { class: 'chip alerta' }, 'En pausa hasta el ' + cuando(n.pausa.hasta) + '. A quien escriba se le dice una vez cuándo vuelven, y nada más.'),
@@ -1418,6 +1764,7 @@ function app() {
         chat.scrollTop = chat.scrollHeight;
       }) }, msg, h('button', { class: 'btn prim', type: 'submit' }, 'Enviar')),
       h('div', { class: 'acciones' }, h('button', { class: 'btn', type: 'button', onclick: () => { estadoPrueba = null; poner(chat); msg.focus(); } }, 'Empezar de nuevo')));
+    caja.append(comoTrabaja);
     return caja;
   }
 
@@ -1616,7 +1963,7 @@ function app() {
         h('div', { class: 'acciones' }, h('button', { class: 'btn prim', onclick: conError(async () => {
           const n = await api('/admin/negocios', { metodo: 'POST', cuerpo: { nombre: nombre.value, emails: emails.value } });
           aviso('Negocio creado' + textoAcceso(n.acceso)); nombre.value = ''; emails.value = '';
-          estado.yo = await api('/yo'); estado.negocio = n.id; estado.tab = 'asistente'; recordar(); cargarNegocio();
+          estado.yo = await api('/yo'); estado.negocio = n.id; estado.tab = 'mas'; estado.sub.mas = 'asistente'; recordar(); cargarNegocio();
         }) }, 'Crear'))),
       lista);
     conError(async () => {

@@ -26,6 +26,7 @@ Para eso usamos estos servicios, que procesan los datos solo para eso:
 | Dato | Para qué | Cuánto tiempo |
 |---|---|---|
 | Tus últimos mensajes con el asistente | Que la charla tenga sentido | 48 horas |
+| La charla completa (lo que escribiste y lo que te respondimos) | Que alguien del negocio la lea y te responda, y mejorar las respuestas | 30 días |
 | Tu nombre y un resumen de lo que buscabas | No volver a preguntarte lo mismo | 90 días desde tu último mensaje |
 | Tu número de WhatsApp o tu usuario de Instagram | Responderte y encontrar tu pedido | Mientras haya un pedido o una consulta tuya |
 | Tus pedidos (productos, total, nombre, dirección y zona de envío) | Preparar y entregar tu pedido | Nombre y dirección: 180 días después de cerrado. Productos y total: para nuestras cuentas, sin tus datos |
@@ -36,7 +37,7 @@ No guardamos audios ni fotos: el asistente no los escucha ni los mira. No vendem
 más.
 
 **Tus derechos:** podés pedirnos ver, corregir o borrar tus datos escribiendo a [CORREO DEL NEGOCIO]. En el chat,
-escribiendo **BORRAR** se borra al instante lo que el asistente recuerda de vos, y el nombre y la dirección de tus
+escribiendo **BORRAR** (dos veces, para confirmar) se borra al instante lo que el asistente recuerda de vos, la charla, y el nombre y la dirección de tus
 pedidos y consultas ya cerrados. Lo que esté en curso (un pedido sin entregar) lo necesitamos hasta terminarlo.
 
 **Ley aplicable:** [Argentina: Ley 25.326 de Protección de los Datos Personales. La Agencia de Acceso a la Información
