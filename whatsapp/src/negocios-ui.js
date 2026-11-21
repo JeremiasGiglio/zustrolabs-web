@@ -824,8 +824,28 @@ function app() {
       if (r.aviso && r.aviso.pendiente) estado.avisosManuales[p.numero] = r.aviso;
       else delete estado.avisosManuales[p.numero];
       aviso('Pedido N.º ' + p.numero + ': ' + ESTADO_PEDIDO[nuevo].toLowerCase() + (r.aviso === true ? '. Le avisamos al comprador.' : r.aviso && r.aviso.pendiente ? '. Falta avisarle: mandale el mensaje desde la tarjeta.' : '.'));
+      // ZL-163: la lista sigue al pedido (antes desaparecía a otra pestaña y había que ir a buscarlo).
+      if (['aceptado', 'pagado'].includes(nuevo)) { estado.filtroPedidos = nuevo; pintarVista(); return; }
       await recargar();
     });
+    // ZL-163: corregir los datos del comprador (escribió mal el nombre, o cambió de envío a retiro).
+    const c0 = p.comprador || {};
+    const cNombre = h('input', { type: 'text', maxlength: 80, value: c0.nombre || '', id: 'cn-' + p.numero });
+    const cEntrega = h('select', { id: 'ce-' + p.numero }, h('option', { value: 'retiro', selected: c0.entrega !== 'envio' }, 'Retira en el local'), h('option', { value: 'envio', selected: c0.entrega === 'envio' }, 'Envío'));
+    const cDir = h('input', { type: 'text', maxlength: 200, value: c0.direccion || '', id: 'cd-' + p.numero });
+    const corregir = h('form', { class: 'formulario', hidden: true, onsubmit: conError(async (e) => {
+      e.preventDefault();
+      await api(base() + '/pedidos/' + p.numero + '/comprador', { metodo: 'PUT', cuerpo: { nombre: cNombre.value, entrega: cEntrega.value, direccion: cDir.value } });
+      aviso('Pedido N.º ' + p.numero + ': datos corregidos.');
+      await recargar();
+    }) },
+      h('label', { for: 'cn-' + p.numero }, 'A nombre de'), cNombre,
+      h('label', { for: 'ce-' + p.numero }, 'Entrega'), cEntrega,
+      h('label', { for: 'cd-' + p.numero }, 'Dirección (si es envío)'), cDir,
+      h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Guardar los datos')));
+    const abrirCorregir = ['pendiente', 'aceptado', 'pagado'].includes(p.estado) && !c0.olvidado
+      ? h('button', { type: 'button', class: 'btn', 'aria-expanded': 'false', onclick: (e) => { corregir.hidden = !corregir.hidden; e.target.setAttribute('aria-expanded', String(!corregir.hidden)); if (!corregir.hidden) cNombre.focus(); } }, 'Corregir datos')
+      : null;
     const botones = [];
     if (p.estado === 'pendiente') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('aceptado') }, 'Aceptar'), ...dosPasos('Rechazar', 'Confirmar rechazo', (m) => accion('rechazado', { motivo: m })(), true));
     if (p.estado === 'aceptado') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: accion('entregado') }, 'Entregado'), h('button', { type: 'button', class: 'btn', onclick: accion('pagado') }, 'Ya pagó'), ...dosPasos('Cancelar', 'Confirmar cancelación', (m) => accion('cancelado', { motivo: m })(), true));
@@ -844,7 +864,8 @@ function app() {
       h('p', {}, h('strong', {}, p.sinPrecio ? 'Total: a confirmar (hay productos sin precio)' : 'Total: ' + plata(p.total))),
       vence ? h('p', { class: 'ayuda' }, vence) : null,
       cajaAvisoManual(p, recargar),
-      h('div', { class: 'acciones' }, botonResponder(p.charla, p.canal, p.contacto), botones));
+      h('div', { class: 'acciones' }, botonResponder(p.charla, p.canal, p.contacto), botones, abrirCorregir),
+      corregir);
   }
 
   /**

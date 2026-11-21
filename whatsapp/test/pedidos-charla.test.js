@@ -81,14 +81,24 @@ test('un pedido completo por WhatsApp: arma, cambia, confirma con retiro, y el s
   r = await ana('sí');
   assert.equal(r.metrica, 'pedido_entrega');
   assert.match(r.texto, /1\. Retiro\n2\. Envío/);
+  // ZL-163: algo que no es retiro ni envío lo responde la IA y se repite el paso, con sus opciones.
   r = await ana('3');
-  assert.match(r.texto, /Respondé 1 para retirar o 2 para envío/);
+  assert.match(r.texto, /Respondé 1 para retirar o 2 para envío/, 'un número no dispara el menú');
+  r = await ana('¿cuánto sale el envío?');
+  assert.match(r.texto, /Abrimos de 8 a 20\.\n\n¿Lo retirás o te lo enviamos\?\n1\. Retiro\n2\. Envío/);
+  assert.deepEqual(r.opciones.map((o) => o.id), ['1', '2']);
   r = await ana('1');
   assert.match(r.texto, /¿A nombre de quién/);
+  // ZL-163: una pregunta no es un nombre: la responde y vuelve a preguntar.
+  r = await ana('hacen factura A?');
+  assert.match(r.texto, /Abrimos de 8 a 20\.\n\n¿A nombre de quién lo dejo\?/);
   r = await ana('Ana');
+  assert.equal(r.metrica, 'pedido_revisar', 'antes de cerrar, una revisión con todo');
+  assert.match(r.texto, /Revisá tu pedido:\n• 3 × Pan francés — \$ 7\.500\n• 1 × Torta de chocolate — \$ 18\.000\nTotal: \$ 25\.500\nEntrega: retirás en el local\nA nombre de: Ana\n\n¿Está todo bien\?/);
+  r = await ana('sí');
   assert.equal(r.metrica, 'pedido_nuevo');
   assert.equal(r.pedido, 1);
-  assert.match(r.texto, /¡Listo! Tu pedido N\.º 1 quedó registrado\. Panadería La Espiga lo revisa y te confirma por acá\./);
+  assert.match(r.texto, /¡Listo, Ana! Tu pedido N\.º 1 quedó registrado \(retiro en el local\)\. Panadería La Espiga lo revisa y te confirma por acá\./);
   assert.match(r.texto, /• 3 × Pan francés — \$ 7\.500\n• 1 × Torta de chocolate — \$ 18\.000\nTotal: \$ 25\.500/);
   assert.equal(mem.get(ANA).pedido, null);
   const p = c.pedido(1);
@@ -115,13 +125,15 @@ test('envío pide la dirección; lo que no hay o no existe no entra y se explica
   let r = await beto('y la torta también');
   assert.match(r.texto, /• 2 × Pan francés/);
   assert.match(r.texto, /No pude sumar: Torta de chocolate \(no queda\)\./);
+  // ZL-163: si quedan menos de los que pide, se suma lo que hay y se lo dice (antes lo sacaba entero).
   r = await beto('50 de pan');
-  assert.match(r.texto, /No pude sumar: Pan francés \(quedan 8\)\./, 'contando lo suyo: 10 de stock − 2 de Ana');
-  assert.match(r.texto, /• 2 × Pan francés/, 'y le quedan los 2 que ya tenía');
+  assert.match(r.texto, /• 8 × Pan francés/, 'contando lo suyo: 10 de stock − 2 de Ana');
+  assert.match(r.texto, /De Pan francés quedan 8: te sumé 8\./);
+  assert.doesNotMatch(r.texto, /No pude sumar/);
   r = await beto('producto inventado');
   assert.match(r.texto, /un producto que no encontré en el catálogo/);
   assert.doesNotMatch(r.texto, /Te lo agrego/, 'si nada entró, no dice que lo agrega');
-  assert.match(r.texto, /• 2 × Pan francés/, 'tampoco se le borra el carrito');
+  assert.match(r.texto, /• 8 × Pan francés/, 'tampoco se le borra el carrito');
   await beto('cancelar');
   assert.equal(c.carritoDe(BETO), null);
   // Ana: envío → dirección.
@@ -132,6 +144,9 @@ test('envío pide la dirección; lo que no hay o no existe no entra y se explica
   r = await ana('x');
   assert.match(r.texto, /¿A qué dirección/, 'una dirección de 1 letra no sirve');
   r = await ana('Calle Ficticia 123, Centro');
+  assert.equal(r.metrica, 'pedido_revisar');
+  assert.match(r.texto, /Entrega: envío a Calle Ficticia 123, Centro\nA nombre de: Ana Pérez/);
+  r = await ana('sí');
   assert.equal(r.metrica, 'pedido_nuevo');
   assert.deepEqual(c.pedido(r.pedido).comprador, { nombre: 'Ana Pérez', entrega: 'envio', direccion: 'Calle Ficticia 123, Centro', notas: '' });
   // Beto arma y cancela: se libera.
@@ -161,7 +176,8 @@ test('tiempos: el carrito se guarda 20 minutos; confirmado, espera al negocio si
   await ana('quiero 2 kilos de pan');
   await ana('dale');
   await ana('1');
-  r = await ana('Ana');
+  await ana('Ana');
+  r = await ana('sí');
   const n = r.pedido;
   reloj.t += 3 * 24 * 60 * MIN;
   assert.equal(c.pedido(n).estado, 'pendiente', 'a los 3 días sigue esperando al negocio');
@@ -171,7 +187,8 @@ test('tiempos: el carrito se guarda 20 minutos; confirmado, espera al negocio si
   // Aceptado con 24 h: a las 23 h sigue; a las 25 h sin pagar, vence; pagado no vence nunca.
   // ZL-146: ya sabemos que se llama Ana: con retiro, el pedido se cierra sin volver a preguntar el nombre.
   await ana('quiero 2 kilos de pan'); await ana('sí');
-  const conocida = await ana('1');
+  assert.equal((await ana('1')).metrica, 'pedido_revisar', 'el nombre ya lo sabe: directo a la revisión');
+  const conocida = await ana('sí');
   assert.equal(conocida.metrica, 'pedido_nuevo');
   const m = conocida.pedido;
   c.cambiarEstado(m, 'aceptado', 'duena@example.com', { horas: 24 });
@@ -179,8 +196,8 @@ test('tiempos: el carrito se guarda 20 minutos; confirmado, espera al negocio si
   assert.equal(c.pedido(m).estado, 'aceptado');
   reloj.t += 2 * 60 * MIN;
   assert.equal(c.pedido(m).estado, 'vencido');
-  await ana('quiero 2 kilos de pan'); await ana('sí');
-  const k = (await ana('1')).pedido;
+  await ana('quiero 2 kilos de pan'); await ana('sí'); await ana('1');
+  const k = (await ana('sí')).pedido;
   c.cambiarEstado(k, 'aceptado', 'duena@example.com', { horas: 1 });
   c.cambiarEstado(k, 'pagado', 'duena@example.com');
   reloj.t += 30 * 24 * 60 * MIN;
@@ -207,6 +224,8 @@ test('«Cómo vendés» (ZL-149): con solo retiro no se pregunta la entrega; con
   r = await ana('sí');
   assert.equal(r.metrica, 'pedido_nombre', 'salta «retiro o envío»: solo hace retiro');
   r = await ana('Ana');
+  assert.match(r.texto, /Entrega: retirás en el local \(Calle Ficticia 123, de 8 a 20\)/);
+  r = await ana('sí');
   assert.equal(r.metrica, 'pedido_nuevo');
   assert.equal(solo.c.pedido(r.pedido).comprador.entrega, 'retiro');
   const dos = armar({ ajustes: { entrega: 'ambos', retiro: 'Calle Ficticia 123', envio: 'centro $ 1.500' } });
@@ -272,7 +291,8 @@ test('BORRAR (ZL-159): borra la memoria y también el nombre de sus pedidos ya c
   await ana('quiero 2 kilos de pan');
   await ana('sí');
   await ana('1');
-  const n = (await ana('Ana')).pedido;
+  await ana('Ana');
+  const n = (await ana('sí')).pedido;
   c.cambiarEstado(n, 'aceptado', 'duena@example.com'); c.cambiarEstado(n, 'entregado', 'duena@example.com');
   assert.equal(c.pedido(n).comprador.nombre, 'Ana');
   await ana('borrar');
@@ -280,4 +300,42 @@ test('BORRAR (ZL-159): borra la memoria y también el nombre de sus pedidos ya c
   await ana('borrar');
   assert.equal(c.pedido(n).comprador.nombre, '');
   assert.equal(c.pedido(n).comprador.olvidado, true);
+});
+
+test('ZL-163, el pedido en vivo de la auditoría: «y …» no confirma, «cancelá X» no anula todo, «no, mejor retiro» cambia la entrega, la reserva se renueva y hay revisión final', async () => {
+  const { c, pan, charlar, stock, reloj, mem } = armar();
+  const ana = charlar(ANA);
+  await ana('hola');
+  let r = await ana('quiero 2 kilos de pan');
+  assert.equal(mem.get(ANA).pedido.paso, 'confirmar');
+  // «y la torta también» 8 s después: NO es un «sí» (antes «y» valía como «yes» y confirmaba sin la torta).
+  reloj.t += 8000;
+  r = await ana('y la torta también');
+  assert.equal(r.metrica, 'ia_pedido');
+  assert.match(r.texto, /• 1 × Torta de chocolate/);
+  assert.equal(mem.get(ANA).pedido.paso, 'confirmar', 'sigue esperando el sí');
+  // «cancelá la torta» saca la torta (lo hace la IA); no anula todo el pedido.
+  r = await ana('cancela la torta');
+  assert.notEqual(r.metrica, 'pedido_cancelado');
+  assert.ok(c.carritoDe(ANA), 'el carrito sigue');
+  // Los datos llevan su tiempo: la reserva se renueva en cada paso (antes vencía a los 20 minutos del carrito).
+  reloj.t += 15 * MIN; r = await ana('sí'); assert.equal(r.metrica, 'pedido_entrega');
+  reloj.t += 15 * MIN; r = await ana('envío'); assert.equal(r.metrica, 'pedido_nombre');
+  reloj.t += 15 * MIN; r = await ana('Ana'); assert.equal(r.metrica, 'pedido_direccion');
+  assert.ok(stock(pan).reservado > 0, 'a los 45 minutos sigue reservado');
+  // «no, mejor retiro» en el paso de la dirección: cambia a retiro (antes quedaba como dirección).
+  r = await ana('no, mejor retiro');
+  assert.equal(r.metrica, 'pedido_revisar');
+  assert.match(r.texto, /^Perfecto, lo retirás en el local\.\n\nRevisá tu pedido:/);
+  assert.match(r.texto, /Entrega: retirás en el local\nA nombre de: Ana/);
+  // «hacen factura A?» en la revisión: lo responde la IA y vuelve a pedir la confirmación (no se guarda en ningún lado).
+  r = await ana('hacen factura A?');
+  assert.match(r.texto, /\n\n¿Está todo bien\? Respondé SÍ para confirmar o decime qué cambiar\.$/);
+  r = await ana('dale, confirmo');
+  assert.equal(r.metrica, 'pedido_nuevo');
+  assert.deepEqual(c.pedido(r.pedido).comprador, { nombre: 'Ana', entrega: 'retiro', direccion: '', notas: '' });
+  // El dueño puede corregir los datos de un pedido abierto.
+  const corregido = c.corregirComprador(r.pedido, { entrega: 'envio', direccion: 'Calle Ficticia 123' }, 'duena@example.com');
+  assert.deepEqual(corregido.comprador, { nombre: 'Ana', entrega: 'envio', direccion: 'Calle Ficticia 123', notas: '' });
+  assert.throws(() => c.corregirComprador(r.pedido, { nombre: '' }, 'duena@example.com'), /falta el nombre/);
 });

@@ -40,27 +40,49 @@ const resp = (cuerpo, status, tipo, extra = {}) => new Response(cuerpo, { status
 const json = (data, status = 200) => resp(JSON.stringify(data), status, 'application/json; charset=utf-8');
 const error = (mensaje, status = 400, campo) => json({ error: mensaje, ...(campo && { campo }) }, status);
 
-/** Lo que se le manda al comprador cuando el negocio cambia el estado de su pedido (texto fijo, sin IA). */
-export function textoEstado(p, estado, motivo, negocio, ajustes = null) {
-  const n = `N.º ${p.numero}`;
+/**
+ * Lo que se le manda al comprador cuando el negocio cambia el estado de su pedido (texto fijo, sin IA). ZL-163: en el
+ * idioma de su charla y con el nombre del negocio igual que en la charla (el de la ficha).
+ */
+const ESTADO_TEXTOS = {
+  es: { aceptado: (neg, n) => `¡Listo! ${neg} aceptó tu pedido ${n}.`, pago: 'Cómo pagar', envio: 'Envío', retiro: 'Retiro', dudas: 'Cualquier duda, escribinos por acá.', coordinar: 'En un rato te escriben por acá para coordinar el pago y la entrega.',
+    rechazado: (neg, n, p) => `Lo siento: ${neg} no puede tomar tu pedido ${n}${p}.`, pagado: (neg, n) => `${neg} recibió el pago de tu pedido ${n}. ¡Gracias!`,
+    entregado: (neg, n) => `¡Tu pedido ${n} ya está entregado! Gracias por comprarle a ${neg} 😊`, cancelado: (neg, n, p) => `Tu pedido ${n} fue cancelado${p}.`,
+    vencido: (neg, n) => `Tu pedido ${n} se canceló porque no se registró el pago a tiempo. Si ya pagaste o lo querés igual, escribinos por acá y lo vemos.`, num: (x) => `N.º ${x}` },
+  en: { aceptado: (neg, n) => `Done! ${neg} accepted your order ${n}.`, pago: 'How to pay', envio: 'Delivery', retiro: 'Pick-up', dudas: 'Any questions, write to us here.', coordinar: 'They’ll write to you here shortly to arrange payment and delivery.',
+    rechazado: (neg, n, p) => `Sorry: ${neg} can’t take your order ${n}${p}.`, pagado: (neg, n) => `${neg} received the payment for your order ${n}. Thank you!`,
+    entregado: (neg, n) => `Your order ${n} has been delivered! Thanks for buying from ${neg} 😊`, cancelado: (neg, n, p) => `Your order ${n} was cancelled${p}.`,
+    vencido: (neg, n) => `Your order ${n} was cancelled because the payment wasn’t registered in time. If you already paid or still want it, write to us here.`, num: (x) => `no. ${x}` },
+  hr: { aceptado: (neg, n) => `Gotovo! ${neg} je prihvatio vašu narudžbu ${n}.`, pago: 'Plaćanje', envio: 'Dostava', retiro: 'Preuzimanje', dudas: 'Za sva pitanja pišite nam ovdje.', coordinar: 'Uskoro će vam se javiti ovdje radi plaćanja i preuzimanja.',
+    rechazado: (neg, n, p) => `Žao nam je: ${neg} ne može prihvatiti vašu narudžbu ${n}${p}.`, pagado: (neg, n) => `${neg} je primio uplatu za narudžbu ${n}. Hvala!`,
+    entregado: (neg, n) => `Vaša narudžba ${n} je isporučena! Hvala što kupujete kod ${neg} 😊`, cancelado: (neg, n, p) => `Vaša narudžba ${n} je otkazana${p}.`,
+    vencido: (neg, n) => `Vaša narudžba ${n} je otkazana jer uplata nije zabilježena na vrijeme. Ako ste već platili ili je i dalje želite, pišite nam ovdje.`, num: (x) => `br. ${x}` },
+};
+export function textoEstado(p, estado, motivo, negocio, ajustes = null, idioma = 'es') {
+  const T = ESTADO_TEXTOS[idioma] ?? ESTADO_TEXTOS.es;
+  const n = T.num(p.numero);
   const porque = motivo ? ` (${motivo})` : '';
   if (estado === 'aceptado') {
     // ZL-148: con los ajustes de venta, el comprador recibe en el mismo mensaje cómo pagar y cómo se entrega: el negocio
     // no tiene que escribir nada a mano.
     const aj = ajustes ?? {};
     const envio = p.comprador?.entrega === 'envio';
-    const partes = [`¡Listo! ${negocio} aceptó tu pedido ${n}.`];
-    if (aj.pago) partes.push(`Cómo pagar: ${aj.pago}`);
-    if (envio && aj.envio) partes.push(`Envío: ${aj.envio}`);
-    if (!envio && aj.retiro) partes.push(`Retiro: ${aj.retiro}`);
-    partes.push(aj.pago || (envio ? aj.envio : aj.retiro) ? 'Cualquier duda, escribinos por acá.' : 'En un rato te escriben por acá para coordinar el pago y la entrega.');
+    const partes = [T.aceptado(negocio, n)];
+    if (aj.pago) partes.push(`${T.pago}: ${aj.pago}`);
+    if (envio && aj.envio) partes.push(`${T.envio}: ${aj.envio}`);
+    if (!envio && aj.retiro) partes.push(`${T.retiro}: ${aj.retiro}`);
+    partes.push(aj.pago || (envio ? aj.envio : aj.retiro) ? T.dudas : T.coordinar);
     return partes.join('\n');
   }
-  if (estado === 'rechazado') return `Lo siento: ${negocio} no puede tomar tu pedido ${n}${porque}.`;
-  if (estado === 'pagado') return `${negocio} recibió el pago de tu pedido ${n}. ¡Gracias!`;
-  if (estado === 'entregado') return `Tu pedido ${n} figura como entregado. ¡Gracias por tu compra!`;
-  if (estado === 'cancelado') return `Tu pedido ${n} fue cancelado${porque}.`;
+  if (['rechazado', 'pagado', 'entregado', 'cancelado', 'vencido'].includes(estado)) return T[estado](negocio, n, porque);
   return null;
+}
+
+/** ZL-163: el nombre del negocio como lo dice el asistente (el de la ficha); si no hay ficha, el de la app. */
+async function nombreDeFicha(deps, negocio) {
+  const f = await deps.negocios.ficha(negocio.id).catch(() => null);
+  const pf = f?.texto ? parsearFicha(f.texto) : null;
+  return pf?.ok ? pf.ficha.nombre : negocio.nombre;
 }
 
 const leerCanales = (c) => ({ ...(typeof c?.instagram === 'boolean' && { instagram: c.instagram }), ...(typeof c?.whatsapp === 'boolean' && { whatsapp: c.whatsapp }) });
@@ -296,6 +318,14 @@ export async function appNegocios(request, env, deps) {
     await conAvisoPendiente(r.valor.pedidos, deps);
     return json({ ...r.valor, encendidos: negocio.pedidos === true });
   }
+  // ZL-163: corregir a nombre de quién, la entrega o la dirección de un pedido abierto.
+  const mcp = /^\/pedidos\/(\d{1,9})\/comprador$/.exec(sub);
+  if (mcp && request.method === 'PUT') {
+    const b = await leerJson(request);
+    if (!b) return error('pedido inválido');
+    const r = await ejecutar('corregirComprador', [Number(mcp[1]), { nombre: b.nombre, entrega: b.entrega, direccion: b.direccion }, email]);
+    return r.resp ?? json(r.valor);
+  }
   const mo = /^\/pedidos\/(\d{1,9})$/.exec(sub);
   if (mo && request.method === 'GET') {
     const r = await ejecutar('pedido', [Number(mo[1])]);
@@ -321,7 +351,9 @@ export async function appNegocios(request, env, deps) {
     const r = await ejecutar('cambiarEstado', [Number(mo[1]), b.estado, email, { motivo, horas: b.horas ?? aj.reservaHoras }]);
     if (r.resp) return r.resp;
     // Se le avisa al comprador por el mismo canal (dentro de las 24 h de Meta). Si falla, el estado igual quedó.
-    const texto = textoEstado(r.valor, b.estado, motivo, negocio.nombre, aj);
+    // ZL-163: en el idioma de su charla y con el nombre del negocio de la ficha (el mismo que usa el asistente).
+    const idioma = await deps.charlasNegocio?.idioma?.(r.valor.charla).catch(() => null);
+    const texto = textoEstado(r.valor, b.estado, motivo, await nombreDeFicha(deps, negocio), aj, idioma ?? 'es');
     let aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
     // ZL-157: el comprador SIEMPRE se entera. Si no salió solo (pasaron las 24 h de Meta, o falló el envío), queda
     // guardado para cuando vuelva a escribir, y el dueño tiene el mensaje listo para mandarlo él con un toque.

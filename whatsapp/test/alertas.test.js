@@ -84,3 +84,26 @@ test('revisión diaria: con todo bien no manda nada; y corre en el cron diario, 
   await worker.scheduled({ cron: '0 6 * * *' }, {}, {}, { ...d2, cuentas });
   assert.equal(c2.length, 1, 'el diario sí');
 });
+
+test('ZL-163: un aceptado sin pagar avisa al dueño antes de vencer y, si vence, al comprador (una vez cada uno)', async () => {
+  const { d, base, avanzar } = await armar();
+  const pan = base.crear({ nombre: 'Pan francés', precio: 2500, stock: 10 }, 'duena@example.com');
+  const CH = 'yc:5493410000001:5493410000009';
+  await d.memoria.put(CH, { idioma: 'en', humanoHasta: 0 });
+  base.carrito(CH, [{ id: pan.id, cantidad: 1 }]);
+  const { numero } = base.confirmar(CH, { nombre: 'Ana', entrega: 'retiro' });
+  base.cambiarEstado(numero, 'aceptado', 'duena@example.com', { horas: 3 });
+  // A las 2 h: vence en 1 h → aviso al dueño (una sola vez).
+  avanzar(2 * 3600_000);
+  let r = await recordarPedidos({}, d, T0 + 2 * 3600_000);
+  assert.ok(r.some((x) => x.que === 'por_vencer'));
+  r = await recordarPedidos({}, d, T0 + 2 * 3600_000 + 600_000);
+  assert.ok(!r.some((x) => x.que === 'por_vencer'), 'no se repite');
+  // A las 3 h y algo vence: el comprador se entera (en su idioma). Sin canal para mandarlo, queda guardado para cuando escriba.
+  avanzar(3600_000 + 60_000);
+  r = await recordarPedidos({}, d, T0 + 3 * 3600_000 + 60_000);
+  assert.deepEqual(r.filter((x) => x.que === 'vencido_avisado'), [{ que: 'vencido_avisado', llego: false }]);
+  assert.match((await d.memoria.get(CH)).avisos.at(-1), /^Your order no\. \d+ was cancelled because the payment wasn’t registered in time/);
+  r = await recordarPedidos({}, d, T0 + 3 * 3600_000 + 700_000);
+  assert.ok(!r.some((x) => x.que === 'vencido_avisado'), 'una sola vez');
+});

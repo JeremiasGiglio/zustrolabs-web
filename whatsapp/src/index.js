@@ -10,7 +10,7 @@ import { appDe, armarFrom, conectarCuenta, enviarIg, esInstagram, leerComentario
 import { configComentarios, esRuido, MAX_EDAD_COMENTARIO_MS, preguntadorComentario, TOPE_COMENTARIOS_DIA } from './comentarios.js';
 import { conAjustes, conAvisoDia, conPreguntas, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
 import { ajustesDeVenta, HISTORIAL_MAX, HISTORIAL_MS, limiteDiaDe } from './atencion.js';
-import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
+import { administrar, appCompartida, appNegocios, canalesDe, textoEstado, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, avisarEquipo, panel } from './panel.js';
 import { CANAL_INSTAGRAM, CANAL_WHATSAPP, textos } from './textos.js';
 import { atender, enviar, firmaValida, leerWebhook, msgTexto, preguntador, verificarSuscripcion } from './whatsapp.js';
@@ -189,6 +189,11 @@ function pausasDeCharla(a, now) {
       await a.memoria.put(clave(charla), { ...e, humanoHasta: hasta, pase: null });
       return hasta;
     },
+    /** ZL-163: el idioma de esa charla (para avisarle al comprador en su idioma). */
+    async idioma(charla) {
+      const e = await a.memoria.get(clave(charla));
+      return ['es', 'en', 'hr'].includes(e?.idioma) ? e.idioma : null;
+    },
     /** ZL-153: el usuario de Instagram de esa charla, si se guardó (para mostrarlo en la app). */
     async usuario(charla) {
       const e = await a.memoria.get(clave(charla));
@@ -318,6 +323,24 @@ export async function recordarPedidos(env, deps, now) {
         ]).catch(() => false);
       }
       out.push({ que: 'recordatorio', tipo: p.tipo });
+    }
+    // ZL-163: aceptados sin pagar que vencen pronto → aviso al dueño; los que vencieron → aviso al comprador (y al dueño).
+    const v = cat ? await cat.ejecutar('avisosVencimiento', [now]).catch(() => null) : null;
+    const zona = ajustesDeVenta(negocio.ajustes).zona;
+    const hora = (t) => new Intl.DateTimeFormat('es-AR', { timeZone: zona, weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t));
+    for (const p of v?.ok ? v.valor.pronto : []) {
+      await avisarNegocio(a, negocio.id, { titulo: `Pedido N.º ${p.numero} vence el ${hora(p.vence)}`, cuerpo: 'Si ya pagó, marcalo «Ya pagó» para que no se cancele solo.' }, fetchImpl, now);
+      out.push({ que: 'por_vencer' });
+    }
+    for (const p of v?.ok ? v.valor.vencidos : []) {
+      const f = await a.negocios.ficha?.(negocio.id).catch(() => null);
+      const pf = f?.texto ? parsearFicha(f.texto) : null;
+      const mem = a.memoria ? await a.memoria.get(claveMemoria(p.charla)).catch(() => null) : null;
+      const texto = textoEstado(p, 'vencido', '', pf?.ok ? pf.ficha.nombre : negocio.nombre, null, mem?.idioma ?? 'es');
+      const ok = await avisarComprador(env, a, negocio, p.charla, texto, fetchImpl, now);
+      if (ok !== true) await pausasDeCharla(a, now)?.guardarAviso?.(p.charla, texto).catch(() => {});
+      await avisarNegocio(a, negocio.id, { titulo: `Pedido N.º ${p.numero} se canceló`, cuerpo: 'No se marcó el pago a tiempo. Ya le avisamos al comprador.' }, fetchImpl, now);
+      out.push({ que: 'vencido_avisado', llego: ok === true });
     }
   }
   if (out.length) console.log(JSON.stringify({ canal: 'pedidos', que: 'recordatorios', n: out.length }));
@@ -883,6 +906,63 @@ async function fichaDelEstudio(a, cuenta) {
  * `estado`: lo que devolvió la prueba anterior ({idioma, humanoHasta}), para seguir la misma charla en la app (ZL-126).
  * Devuelve {charla, estado}.
  */
+/**
+ * ZL-163: la charla de prueba también ensaya el pedido y la consulta, sin tocar nada de verdad: un catálogo simulado que
+ * LEE los productos reales (nombre, precio, stock) y guarda el carrito, el pedido y la consulta solo en memoria. No
+ * reserva stock ni aparece nada en «Pedidos y consultas».
+ */
+export function catalogoDePrueba(real, inicial = null) {
+  // Lo que vuelve de la app entre mensajes (se valida: solo campos conocidos y cortos).
+  const limpio = (c) => (c && Array.isArray(c.items) ? {
+    numero: null, estado: 'borrador', comprador: {}, sinPrecio: c.sinPrecio === true, total: Number(c.total) || 0,
+    items: c.items.slice(0, 30).map((i) => ({ id: String(i?.id ?? '').slice(0, 60), nombre: String(i?.nombre ?? '').slice(0, 120), cantidad: Math.max(1, Math.min(999, Math.floor(Number(i?.cantidad) || 1))), precio: Number.isFinite(i?.precio) ? i.precio : null, unidad: String(i?.unidad ?? '').slice(0, 30), subtotal: Number.isFinite(i?.subtotal) ? i.subtotal : null })),
+  } : null);
+  let carrito = limpio(inicial?.carrito);
+  let numero = Math.max(0, Math.min(999, Math.floor(Number(inicial?.numero) || 0)));
+  let consulta = null;
+  const ok = (valor) => ({ ok: true, valor });
+  const redondo = (x) => Math.round(x * 100) / 100;
+  return {
+    estado: () => ({ carrito, numero }),
+    async ejecutar(op, args = []) {
+      if (['paraAsistente', 'obtener', 'resumen', 'foto'].includes(op)) return real.ejecutar(op, args);
+      if (op === 'carritoDe') return ok(carrito);
+      if (op === 'comprasDe') return ok([]);
+      if (op === 'consultaAbierta') return ok(consulta);
+      if (['renovar', 'olvidarCompradores', 'olvidarConsultas'].includes(op)) return ok(true);
+      if (op === 'carrito') {
+        const sumados = new Map();
+        for (const it of Array.isArray(args[1]) ? args[1] : []) sumados.set(String(it?.id ?? ''), (sumados.get(String(it?.id ?? '')) ?? 0) + Number(it?.cantidad));
+        const faltantes = [];
+        const items = [];
+        for (const [id, cantidad] of sumados) {
+          const r = id ? await real.ejecutar('obtener', [id]).catch(() => null) : null;
+          const p = r?.ok ? r.valor : null;
+          if (!p) { faltantes.push({ id, motivo: 'no_existe' }); continue; }
+          if (!p.activo) { faltantes.push({ id, nombre: p.nombre, motivo: 'pausado' }); continue; }
+          if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 999) { faltantes.push({ id, nombre: p.nombre, motivo: 'cantidad' }); continue; }
+          const disponible = p.stock === null || p.stock === undefined ? Infinity : p.stock - (p.reservado ?? 0);
+          if (cantidad > disponible) { faltantes.push({ id, nombre: p.nombre, motivo: 'sin_stock', disponible: Math.max(0, disponible) }); continue; }
+          items.push({ id, nombre: p.nombre, cantidad, precio: p.precio ?? null, unidad: p.unidad ?? '', subtotal: p.precio === null || p.precio === undefined ? null : redondo(p.precio * cantidad) });
+        }
+        carrito = items.length ? { numero: null, estado: 'borrador', items, total: redondo(items.reduce((a, i) => a + (i.subtotal ?? 0), 0)), sinPrecio: items.some((i) => i.subtotal === null), comprador: {} } : null;
+        return ok({ pedido: carrito, faltantes });
+      }
+      if (op === 'confirmar') {
+        if (!carrito) return { ok: false, error: 'no hay un carrito para confirmar' };
+        const p = { ...carrito, numero: ++numero, estado: 'pendiente', comprador: args[1] ?? {} };
+        carrito = null;
+        return ok(p);
+      }
+      if (op === 'crearConsulta') {
+        consulta = { numero: ++numero, ...(args[1] ?? {}), estado: 'nueva' };
+        return ok({ consulta, nueva: true });
+      }
+      return { ok: false, error: 'en la charla de prueba no se cambia nada' };
+    },
+  };
+}
+
 async function probarFicha(env, fichaSola, mensajes, deps, negocioId = null, estado = null) {
   // ZL-162: con lo que carga el negocio (Cómo vendés, aviso del día, preguntas frecuentes), igual que en la charla real.
   const dueño = negocioId ? await almacen(env, deps).negocios?.get(negocioId).catch(() => null) : null;
@@ -897,18 +977,25 @@ async function probarFicha(env, fichaSola, mensajes, deps, negocioId = null, est
   // ZL-161: en la charla de prueba también se ven las fotos que mandaría.
   const preguntar = async (...x) => conLinksDeFotos(almacen(env, deps), deps, negocioId, await ia(...x));
   const now = deps.now ?? Date.now();
+  // ZL-163: con pedidos y consultas simulados (no reservan ni aparecen en la app). La charla de prueba no guarda nada
+  // entre llamadas salvo el estado que vuelve la app, así que el carrito simulado vive lo que dura este pedido.
+  const real = negocioId ? catalogoDe(env, deps)(negocioId) : null;
+  const sim = real ? catalogoDePrueba(real, estado?.sim ?? null) : null;
+  const pruebaPedidos = sim && dueño?.pedidos ? pedidosDeCharla({ cat: sim, charla: DE, canal: 'ig', negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDeVenta(dueño.ajustes) }) : null;
+  const pruebaConsultas = sim ? consultasDeCharla({ cat: sim, charla: DE, canal: 'ig' }) : null;
   const charla = [];
   for (const [i, texto] of mensajes.entries()) {
     const ev = { id: `prueba-${i}`, from: DE, ts: now / 1000, kind: 'text', text: texto };
     try {
-      const r = await atender(ev, { memoria, charlas: null, preguntar, now: now + i, perfil });
+      const r = await atender(ev, { memoria, charlas: null, preguntar, now: now + i, perfil, pedidos: pruebaPedidos, consultas: pruebaConsultas });
       const fotos = r.send.filter((m) => m.type === 'image').map((m) => ({ foto: (/\/(f[a-z0-9]{4,40})\?/.exec(m.image.link) ?? [])[1] ?? '', nombre: m.image.caption ?? '' }));
       charla.push({ mensaje: texto, respuestas: r.send.filter((m) => m.type !== 'image').map((m) => m.text?.body ?? ''), ...(fotos.length && { fotos }), que: r.metrica, notas: r.notas ?? [] });
     } catch (e) {
       charla.push({ mensaje: texto, respuestas: [perfil.textos((await memoria.get(DE))?.idioma).falla], que: 'error', notas: [String(e?.message ?? 'error').slice(0, 40)] });
     }
   }
-  return { charla, estado: estadoDePrueba(await memoria.get(DE)) };
+  const final = estadoDePrueba(await memoria.get(DE));
+  return { charla, estado: sim ? { ...(final ?? {}), sim: sim.estado() } : final };
 }
 
 /** Lo que se guarda entre mensajes de la charla de prueba: el idioma, la pausa y la memoria corta (ZL-146). */
@@ -918,8 +1005,9 @@ function estadoDePrueba(e) {
   const humanoHasta = Number.isFinite(e.humanoHasta) ? e.humanoHasta : 0;
   // ZL-146: también la memoria corta, para que la charla de prueba se comporte como la real (la memoria la vuelve a
   // filtrar al guardarla: solo campos conocidos y cortos).
-  const { hist, histT, nombre, resumen, interes, ultimo, consulta } = e;
-  return { ...(idioma && { idioma }), humanoHasta, ...(Array.isArray(hist) && { hist: hist.slice(-8), histT }), ...(nombre && { nombre }), ...(resumen && { resumen }), ...(interes && { interes }), ...(ultimo && { ultimo }), ...(consulta && { consulta }) };
+  const { hist, histT, nombre, resumen, interes, ultimo, consulta, pedido, oferta } = e;
+  // ZL-163: también el paso del pedido y el ofrecimiento al equipo, para ensayar el pedido y el pase completos.
+  return { ...(idioma && { idioma }), humanoHasta, ...(Array.isArray(hist) && { hist: hist.slice(-8), histT }), ...(nombre && { nombre }), ...(resumen && { resumen }), ...(interes && { interes }), ...(ultimo && { ultimo }), ...(consulta && { consulta }), ...(pedido && { pedido }), ...(oferta && { oferta }) };
 }
 
 const leerFicha = async (request) => {

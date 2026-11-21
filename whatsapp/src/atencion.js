@@ -119,7 +119,8 @@ export function crearAtencion(storage) {
       const { idioma, humanoHasta = 0 } = datos ?? {};
       // El paso del pedido en curso (ZL-139), solo con los campos conocidos y cortos.
       const p = datos?.pedido;
-      const pedido = p && ['confirmar', 'entrega', 'nombre', 'direccion'].includes(p.paso)
+      // ZL-163: también la revisión final.
+      const pedido = p && ['confirmar', 'entrega', 'nombre', 'direccion', 'revisar'].includes(p.paso)
         ? { paso: p.paso, ...(['retiro', 'envio'].includes(p.entrega) && { entrega: p.entrega }), ...(p.nombre && { nombre: String(p.nombre).slice(0, 80) }), ...(p.direccion && { direccion: String(p.direccion).slice(0, 200) }) }
         : null;
       // La memoria corta de un negocio (ZL-146), solo con campos conocidos y cortos: los últimos mensajes (48 h), el
