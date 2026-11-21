@@ -242,6 +242,36 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## Comentarios de Instagram (ZL-160)
+
+El asistente también responde los comentarios de las publicaciones, con la misma ficha y el mismo catálogo (precios si
+la ficha lo permite, dónde está, horarios, stock). Lo enciende el **dueño** en Conexiones → Instagram («Responder
+comentarios», `PUT /api/n/<id>/instagram/comentarios {activo, modo}`); arranca apagado.
+
+| Modo | En público | Por privado |
+|---|---|---|
+| `publico_privado` (recomendado) | Una frase corta que responde y dice que le escribimos por privado | El detalle, de 1 a 3 oraciones, con una pregunta para seguir |
+| `privado` | Nada | Igual |
+
+- **Qué se contesta:** comentarios nuevos (menos de 24 h) y de primer nivel; las respuestas dentro de un hilo (donde
+  caen también las nuestras) y los de la propia cuenta, no. Sin IA: solo emojis, menos de tres letras o una mención a
+  un amigo (`esRuido`).
+- **Qué hace la IA** (`src/comentarios.js`): clasifica (consulta, elogio, reclamo, otro) y escribe las dos respuestas.
+  Pasan por `controlarNegocio` (links, teléfonos, correos y montos que no están en la ficha o el catálogo) y se les
+  sacan las @menciones. Elogio: gracias en público, nada por privado. Reclamo, o una consulta que no está en la ficha:
+  nada en ningún lado y aviso al celular del dueño. Lee el texto de la publicación como dato.
+- **El privado** va por `comment_id` (Meta: uno por comentario, dentro de 7 días). Queda en la memoria corta de esa
+  persona (`ig:<cuenta>.<quien>`): si contesta, la charla sigue sabiendo qué comentó y qué le dijimos.
+- **Frenos:** una respuesta por comentario (`visto('cm:<id>')`), el límite por persona (`LIMITE`, clave `igc:`),
+  200 comentarios con IA por negocio y por día (`TOPE_COMENTARIOS_DIA`, métrica `comentariosIa`), el cupo de IA del
+  negocio, la pausa del asistente y el canal de Instagram del negocio.
+- **Permiso:** `instagram_business_manage_comments` y el campo `comments` del webhook. Al conectar se guarda si lo dio
+  (`permisoComentarios` en la cuenta); la suscripción pide `messages,comments` solo con el permiso y, si Meta rechaza
+  `comments`, deja `messages` (nunca se pierden los mensajes). Si Meta responde sin permiso, la cuenta queda marcada,
+  la app pide «Conectar Instagram» de nuevo y el semáforo lo avisa.
+- **Números:** métrica `comentarios` (los que respondió) → «Comentarios respondidos» en Reportes, por día y en el Excel.
+- **Registro:** `"que":"comentario"` con `r` y el tipo; nunca el texto ni el usuario.
+
 ## Lo que falta (próximas etapas)
 
 - **Fotos por chat** y **planilla de Google en vivo**.
@@ -262,5 +292,5 @@ contesta desde su celular. Detalle en [`WHATSAPP_CLIENTES.md`](WHATSAPP_CLIENTES
 
 `src/catalogo.js` (base de un negocio) · `src/negocios.js` (API y permisos) · `src/negocios-ui.js` (la página) ·
 `src/lector.js` (Excel y CSV) · `src/objeto.js` (Durable Objects) · tests en `test/catalogo.test.js`,
-`test/negocios.test.js`, `test/lector.test.js`, `test/alertas.test.js` (ZL-159) y, en un navegador,
+`test/negocios.test.js`, `test/lector.test.js`, `test/alertas.test.js` (ZL-159), `test/comentarios.test.js` (ZL-160) y, en un navegador,
 `tests/negocios.spec.ts`.

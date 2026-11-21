@@ -62,6 +62,12 @@ export function verificarNegocio(d) {
       else if (cu.venceEnDias !== null && cu.venceEnDias < 15) c.push(aviso('instagram', `El permiso de ${nombre} vence en ${cu.venceEnDias} días y no se renovó solo`, 'Conectarla de nuevo desde la pestaña Instagram'));
       else c.push(ok('instagram', `${nombre} conectada`));
     }
+    // ZL-160: con «Responder comentarios» encendido, cada cuenta tiene que haber dado ese permiso.
+    if (n.comentarios?.activo) {
+      for (const cu of cuentas.filter((x) => x.conectada && x.permisoComentarios !== true)) {
+        c.push(aviso('comentarios', `${cu.username ? `@${cu.username}` : `La cuenta ${cu.id}`} ${cu.permisoComentarios === false ? 'no dio' : 'todavía no confirmó'} el permiso para responder comentarios`, 'Conexiones → Instagram → «Conectar Instagram» de nuevo y aceptar todos los permisos'));
+      }
+    }
   } else if (cuentas.length) c.push(aviso('instagram', 'Tiene cuentas de Instagram pero el canal está apagado: no responde ahí', 'Admin → marcar Instagram'));
 
   const numeros = d.numeros ?? [];

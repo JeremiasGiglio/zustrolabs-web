@@ -19,7 +19,9 @@ export const MAX_TROZO = 1000;
 /** Los tokens largos de Instagram duran 60 días; se renuevan cuando les quedan menos de 15. */
 export const DURACION_TOKEN_MS = 60 * 24 * 3600_000;
 export const RENOVAR_ANTES_MS = 15 * 24 * 3600_000;
-export const PERMISOS = ['instagram_business_basic', 'instagram_business_manage_messages'];
+export const PERMISOS = ['instagram_business_basic', 'instagram_business_manage_messages', 'instagram_business_manage_comments'];
+/** ZL-160: el permiso para leer y responder comentarios. Las cuentas conectadas antes lo dan al volver a conectarse. */
+export const PERMISO_COMENTARIOS = 'instagram_business_manage_comments';
 const ID_RE = /^\d{6,20}$/;
 const api = (env) => `${GRAPH_IG}/${env.IG_GRAPH_VERSION || VERSION_IG}`;
 
@@ -67,6 +69,30 @@ export function leerWebhookIg(payload) {
       if (msg.is_unsupported || adjuntos.some((x) => ['story_mention', 'like_heart'].includes(x?.type) || x?.payload?.sticker_id)) continue;
       if (adjuntos.some((x) => ['share', 'ig_reel', 'reel', 'ig_post', 'post'].includes(x?.type))) { out.push({ ...base, kind: 'compartido' }); continue; }
       out.push({ ...base, kind: 'otro', ...(audio && { audio: true }) });
+    }
+  }
+  return out;
+}
+
+/**
+ * ZL-160: los comentarios nuevos en las publicaciones de una cuenta (entry[].changes[] con field «comments»):
+ * → [{id, cuenta, quien, usuario, texto, media}]. Solo los de primer nivel (no las respuestas dentro de un hilo, que es
+ * donde caen también nuestras respuestas públicas) y nunca los de la propia cuenta.
+ */
+export function leerComentariosIg(payload) {
+  if (payload?.object !== 'instagram') return [];
+  const out = [];
+  for (const entry of payload.entry ?? []) {
+    const cuenta = String(entry.id ?? '');
+    for (const c of entry.changes ?? []) {
+      if (c?.field !== 'comments') continue;
+      const v = c.value ?? {};
+      const id = String(v.id ?? '');
+      const quien = String(v.from?.id ?? '');
+      const usuario = /^[\w.]{1,30}$/.test(String(v.from?.username ?? '')) ? String(v.from.username) : '';
+      const texto = typeof v.text === 'string' ? v.text.trim() : '';
+      if (!/^\d{6,30}$/.test(id) || !ID_RE.test(cuenta) || !ID_RE.test(quien) || quien === cuenta || v.parent_id || !texto) continue;
+      out.push({ id, cuenta, quien, usuario, texto: texto.slice(0, 1000), media: String(v.media?.id ?? '').replace(/\D/g, '').slice(0, 30), ts: Number(entry.time ?? 0) });
     }
   }
   return out;
@@ -142,6 +168,47 @@ export async function enviarIg(env, mensaje, fetchImpl = fetch, cuentas = null) 
     const data = await res.json().catch(() => ({}));
     // Solo estado y código: el texto del error de Meta podría traer datos.
     throw Object.assign(new Error(`Instagram ${res.status} ${data?.error?.code ?? ''}`.trim()), { code: data?.error?.code });
+  }
+}
+
+/** Un error de Meta que dice que falta el permiso (la cuenta se conectó antes de pedirlo). */
+const sinPermiso = (status, data) => [10, 200, 3].includes(Number(data?.error?.code)) || (status === 403);
+
+/** ZL-160: respuesta pública debajo de un comentario. → {ok, id?, sinPermiso?, error?} (sin el texto de Meta). */
+export async function responderComentario(env, token, comentario, texto, fetchImpl = fetch) {
+  const res = await fetchImpl(`${api(env)}/${comentario}/replies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Bearer ${token}` },
+    body: new URLSearchParams({ message: String(texto).slice(0, 2000) }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data?.id) return { ok: true, id: String(data.id) };
+  return { ok: false, sinPermiso: sinPermiso(res.status, data), error: `${res.status} ${data?.error?.code ?? ''}`.trim() };
+}
+
+/** ZL-160: respuesta privada a quien comentó (Meta: una sola por comentario, dentro de los 7 días). */
+export async function responderEnPrivado(env, token, comentario, texto, fetchImpl = fetch) {
+  const res = await fetchImpl(`${api(env)}/me/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ recipient: { comment_id: comentario }, message: { text: trozar(texto)[0] ?? '' } }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true };
+  return { ok: false, sinPermiso: sinPermiso(res.status, data), error: `${res.status} ${data?.error?.code ?? ''}`.trim() };
+}
+
+/** ZL-160: el texto de la publicación comentada (para que «¿precio?» se entienda). Nunca corta el flujo si falla. */
+export async function textoDePublicacion(env, token, media, fetchImpl = fetch) {
+  if (!/^\d{6,30}$/.test(String(media ?? ''))) return '';
+  try {
+    const res = await fetchImpl(`${api(env)}/${media}?fields=caption`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return '';
+    return String((await res.json())?.caption ?? '').slice(0, 600);
+  } catch {
+    return '';
   }
 }
 
@@ -238,8 +305,13 @@ export async function conectarCuenta(env, { code, origen, now = Date.now(), app 
     body: new URLSearchParams({ client_id: app.id, client_secret: app.secreto, grant_type: 'authorization_code', redirect_uri: urlVuelta(origen), code }),
     signal: AbortSignal.timeout(10_000),
   });
-  const c = await corto.json().catch(() => ({}));
+  const c0 = await corto.json().catch(() => ({}));
+  // Meta lo da plano o adentro de data[0] según la versión.
+  const c = c0?.access_token ? c0 : c0?.data?.[0] ?? {};
   if (!corto.ok || !c.access_token) throw new Error(`oauth ${corto.status}`);
+  // ZL-160: si dio el permiso de comentarios (la persona puede destildarlo al conectar). Sin el dato, no se sabe.
+  const permisos = Array.isArray(c.permissions) ? c.permissions.map(String) : typeof c.permissions === 'string' ? c.permissions.split(',').map((x) => x.trim()) : null;
+  const permisoComentarios = permisos ? permisos.includes(PERMISO_COMENTARIOS) : undefined;
   const largo = await fetchImpl(`${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(app.secreto)}&access_token=${encodeURIComponent(c.access_token)}`, { signal: AbortSignal.timeout(10_000) });
   const l = await largo.json().catch(() => ({}));
   if (!largo.ok || !l.access_token) throw new Error(`token_largo ${largo.status}`);
@@ -250,20 +322,32 @@ export async function conectarCuenta(env, { code, origen, now = Date.now(), app 
   const id = String(y.user_id ?? y.id ?? '');
   if (!yo.ok || !ID_RE.test(id)) throw new Error(`cuenta ${yo.status}`);
   const username = /^[\w.]{1,30}$/.test(String(y.username ?? '')) ? String(y.username) : '';
-  const s = await suscribir(env, token, fetchImpl);
-  return { id, username, token, vence, app: app.id, suscripta: s.suscripta };
+  const s = await suscribir(env, token, fetchImpl, { comentarios: permisoComentarios === true });
+  return { id, username, token, vence, app: app.id, suscripta: s.suscripta, ...(permisoComentarios !== undefined && { permisoComentarios: permisoComentarios && s.comentarios !== false }) };
 }
 
-/** Suscribe la cuenta (su token) a los avisos de mensajes. Devuelve {suscripta, arreglada}. */
-export async function suscribir(env, token, fetchImpl = fetch) {
+/**
+ * Suscribe la cuenta (su token) a los avisos de mensajes y, con el permiso dado (ZL-160), de comentarios.
+ * Devuelve {suscripta, arreglada, comentarios?}. Si Meta rechaza los comentarios, igual quedan los mensajes: nunca se
+ * pierde lo que ya andaba.
+ */
+export async function suscribir(env, token, fetchImpl = fetch, { comentarios = false } = {}) {
   const base = `${api(env)}/me/subscribed_apps`;
   const cab = { authorization: `Bearer ${token}` };
   const res = await fetchImpl(`${base}?fields=subscribed_fields`, { headers: cab, signal: AbortSignal.timeout(10_000) });
   const data = res.ok ? ((await res.json().catch(() => ({})))?.data ?? []) : [];
-  if (data.some((a) => (a.subscribed_fields ?? []).includes('messages'))) return { suscripta: true, arreglada: false };
-  const post = await fetchImpl(`${base}?subscribed_fields=messages`, { method: 'POST', headers: cab, signal: AbortSignal.timeout(10_000) });
-  const ok = post.ok && Boolean((await post.json().catch(() => ({})))?.success);
-  return { suscripta: ok, arreglada: ok, error: ok ? undefined : `alta ${post.status}` };
+  const tiene = (campo) => data.some((a) => (a.subscribed_fields ?? []).includes(campo));
+  if (tiene('messages') && (!comentarios || tiene('comments'))) return { suscripta: true, arreglada: false, ...(comentarios && { comentarios: true }) };
+  const alta = async (campos) => {
+    const post = await fetchImpl(`${base}?subscribed_fields=${campos}`, { method: 'POST', headers: cab, signal: AbortSignal.timeout(10_000) });
+    return { ok: post.ok && Boolean((await post.json().catch(() => ({})))?.success), status: post.status };
+  };
+  if (comentarios) {
+    const r = await alta('messages,comments');
+    if (r.ok) return { suscripta: true, arreglada: true, comentarios: true };
+  }
+  const r = await alta('messages');
+  return { suscripta: r.ok, arreglada: r.ok, ...(comentarios && { comentarios: false }), error: r.ok ? undefined : `alta ${r.status}` };
 }
 
 /** Renueva un token largo (Meta da otro de 60 días). Devuelve {token, vence} o null si Meta lo rechaza. */
@@ -291,8 +375,9 @@ export async function mantenerCuentas(env, cuentas, fetchImpl = fetch, now = Dat
           linea.renovado = true;
         } else linea.error = 'renovar';
       }
-      const s = await suscribir(env, c.token, fetchImpl);
+      const s = await suscribir(env, c.token, fetchImpl, { comentarios: c.permisoComentarios === true });
       linea.suscripta = s.suscripta;
+      if (s.comentarios !== undefined) linea.comentarios = s.comentarios;
       if (s.error) linea.error = s.error;
     } catch (e) {
       linea.error = String(e?.name ?? 'Error').slice(0, 40);

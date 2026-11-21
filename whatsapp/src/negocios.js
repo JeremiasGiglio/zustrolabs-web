@@ -10,7 +10,7 @@ import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { appDelEstudio, urlAutorizar } from './instagram.js';
 import { agregarAAcceso } from './acceso.js';
-import { ajustesDeVenta, esDueño, limiteDiaDe } from './atencion.js';
+import { ajustesDeVenta, configComentarios, esDueño, limiteDiaDe } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
@@ -199,6 +199,8 @@ export async function appNegocios(request, env, deps) {
         id: negocio.id, nombre: negocio.nombre, cuentas, canales: canalesDe(negocio), pedidos: negocio.pedidos === true, ajustes: ajustesDeVenta(negocio.ajustes),
         // ZL-159: el rol de quien entra, la pausa del asistente y el aviso del día (vencidos, como si no estuvieran).
         rol: dueño ? 'dueño' : 'empleado',
+        // ZL-160: si el asistente responde comentarios de Instagram, y cómo.
+        comentarios: configComentarios(negocio),
         pausa: negocio.pausa && negocio.pausa.hasta > now ? negocio.pausa : null,
         avisoDia: negocio.avisoDia && negocio.avisoDia.hasta > now ? negocio.avisoDia : null,
         ...(admin && { emails: negocio.emails, empleados: negocio.empleados ?? [], limiteDia: limiteDiaDe(negocio) }),
@@ -217,9 +219,19 @@ export async function appNegocios(request, env, deps) {
       const cuentas = [];
       for (const id of negocio.cuentas) {
         const c = await deps.cuentas.get(id);
-        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null });
+        // ZL-160: true si dio el permiso de comentarios; false si falta; null si se conectó antes y no se sabe.
+        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: typeof c?.permisoComentarios === 'boolean' ? c.permisoComentarios : null });
       }
-      return json({ cuentas, disponible: Boolean(app && env.IG_APP_SECRET), invitacion: negocio.invitacionIg ?? null, canal: canalesDe(negocio).instagram });
+      return json({ cuentas, disponible: Boolean(app && env.IG_APP_SECRET), invitacion: negocio.invitacionIg ?? null, canal: canalesDe(negocio).instagram, comentarios: configComentarios(negocio) });
+    }
+    // ZL-160: encender o apagar las respuestas a comentarios, y el modo. Solo el dueño (como todo lo de /instagram).
+    if (request.method === 'PUT' && sub === '/instagram/comentarios') {
+      const b = await request.json().catch(() => null);
+      if (!b || (b.activo !== undefined && typeof b.activo !== 'boolean') || (b.modo !== undefined && !['publico_privado', 'privado'].includes(b.modo))) return error('activo (sí o no) y modo (publico_privado o privado)', 400);
+      const r = await deps.negocios.guardar(negocio.id, { comentarios: { activo: b.activo, modo: b.modo } });
+      if (r?.error) return error(r.error, 400);
+      console.log(JSON.stringify({ canal: 'ig', que: 'comentarios_config', activo: r.negocio.comentarios.activo, modo: r.negocio.comentarios.modo }));
+      return json({ ok: true, comentarios: r.negocio.comentarios });
     }
     if (request.method === 'POST' && sub === '/instagram/invitacion') {
       const b = await request.json().catch(() => null);

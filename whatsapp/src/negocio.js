@@ -362,6 +362,19 @@ export const cumpleNegocio = (r) =>
 const NOMBRE_IDIOMA = { es: 'castellano', en: 'inglés', hr: 'croata' };
 const TRATO = { vos: 'de «vos», en castellano rioplatense', tu: 'de «tú»', usted: 'de «usted»' };
 
+/** Lo que el asistente sabe del negocio (la ficha), entre <informacion> y </informacion>. Lo usan la charla y los comentarios (ZL-160). */
+export function bloqueInformacion(ficha) {
+  return `<informacion>
+# ${ficha.nombre}
+${ficha.saludo}
+
+${ficha.conocimiento}
+${ficha.faq ? `\n## Preguntas frecuentes\n${ficha.faq}` : ''}${ficha.vender ? `\n## Cómo vende el negocio (seguí estas pautas)\n${ficha.vender}` : ''}
+## Opciones del menú (el sistema las responde solo)
+${ficha.menu.map((o) => `${o.n}. ${o.titulo}: ${o.texto}`).join('\n')}
+</informacion>`;
+}
+
 /** catalogo: {texto} de Catalogo.paraAsistente (los productos del negocio en este momento), o null si no tiene. */
 export function promptNegocio(ficha, canal = 'Instagram', catalogo = null, elegido = null, delMensaje = null, carrito = null, { objetivo = null, cliente = null, saludado = false, compras = null } = {}) {
   const meta = objetivo === 'pedidos'
@@ -387,15 +400,7 @@ Reglas, en este orden:
 13. Productos: lo que está entre <catalogo> y </catalogo> es el catálogo del negocio en este momento (lo carga el negocio y manda sobre la información de arriba). Solo ofrecé productos que estén ahí, sin inventar otros; nombralos de forma natural en la frase. «AGOTADO» quiere decir que no hay: decilo y ofrecé otro del catálogo. «quedan N»: podés decir cuántos quedan. Nunca reserves ni apartes productos vos.` : ''}${carrito !== null && catalogo ? `
 14. Pedidos: la persona puede pedir productos del catálogo por acá. Si su mensaje agrega, cambia o saca productos, completá «pedido» con cambia = true y en items el carrito COMPLETO como tiene que quedar (lo que ya tiene entre <carrito> y </carrito>, más o menos lo nuevo), con la ref exacta de cada producto del catálogo y la cantidad. Si no está claro qué producto o cuántos, preguntá y poné cambia = false. Si el mensaje no cambia el carrito, cambia = false e items vacío. En «respuesta» poné solo una frase corta y amable (por ejemplo «¡Dale! Te lo agrego.»): el sistema le muestra el resumen con los precios y el total, reserva el stock y le pide los datos. Nunca digas totales, nunca confirmes ni des por hecho el pedido, nunca pidas el nombre ni la dirección vos.` : ''}
 
-<informacion>
-# ${ficha.nombre}
-${ficha.saludo}
-
-${ficha.conocimiento}
-${ficha.faq ? `\n## Preguntas frecuentes\n${ficha.faq}` : ''}${ficha.vender ? `\n## Cómo vende el negocio (seguí estas pautas)\n${ficha.vender}` : ''}
-## Opciones del menú (el sistema las responde solo)
-${ficha.menu.map((o) => `${o.n}. ${o.titulo}: ${o.texto}`).join('\n')}
-</informacion>
+${bloqueInformacion(ficha)}
 
 <cliente>
 ${cliente ? [cliente.nombre && `Nombre: ${cliente.nombre}`, cliente.resumen && `Lo que sabemos: ${cliente.resumen}`, cliente.dias !== null && cliente.dias !== undefined && `Última charla: hace ${cliente.dias} día(s)`].filter(Boolean).join('\n') || '(primera vez)' : '(primera vez)'}

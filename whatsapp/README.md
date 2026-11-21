@@ -129,7 +129,8 @@ Todo en la app de Meta **Zustro Labs** (`4678708989064685`) → Use cases → Cu
 
 1. **Claves de la app de Instagram.** En esa pestaña, paso «Generate access tokens» / «Set up Instagram business login», aparecen el **Instagram app ID** y el **Instagram app secret** (son otros que los de la app de Facebook). El id va en `wrangler.toml` como `IG_APP_ID` (PR); el secret, en Cloudflare como `IG_APP_SECRET` (reemplaza al de Facebook si estaba cargado).
 2. **Vuelta del login.** En «Business login settings» → OAuth redirect URIs, agregá `https://zustrolabs.com/api/instagram/conectar/vuelta`.
-3. **Webhooks**, en la misma pestaña (no en el producto Webhooks general): Callback URL `https://zustrolabs.com/api/instagram`, Verify token = el secreto `IG_VERIFY_TOKEN`, y suscribí el campo **messages**.
+3. **Webhooks**, en la misma pestaña (no en el producto Webhooks general): Callback URL `https://zustrolabs.com/api/instagram`, Verify token = el secreto `IG_VERIFY_TOKEN`, y suscribí los campos **messages** y **comments** (este último para responder comentarios, ZL-160).
+   - **Permisos (ZL-160):** en «Permissions», que esté `instagram_business_manage_comments` además de los de siempre. Con acceso estándar alcanza para las cuentas que son testers.
 4. **Secretos** en Cloudflare (Workers & Pages → `zustrolabs-whatsapp` → Settings → Variables and Secrets): `IG_APP_SECRET`, `IG_VERIFY_TOKEN`, `IG_CONECTAR_CLAVE` (una frase larga inventada: es la clave del link de conexión), `IG_ADMIN_CLAVE` (otra frase: la usa el script de clientes) y, si no estaban, `ANTHROPIC_API_KEY` y `AVISO_PARA`.
 5. **Privacidad y Live:** `https://zustrolabs.com/privacidad/` como Privacy Policy URL y la app en **Live** (ya está).
 
@@ -139,7 +140,7 @@ Guía completa y script paso a paso para Windows: [`INSTAGRAM_CLIENTES.md`](INST
 ### Conectar una cuenta (la del estudio o la de un cliente)
 1. La persona entra a Instagram en el navegador con la cuenta profesional que quiere conectar y, en esa cuenta, tiene activado Configuración → Mensajes → Herramientas conectadas → **Permitir acceso a los mensajes**.
 2. Abre `https://zustrolabs.com/api/instagram/conectar?clave=<IG_CONECTAR_CLAVE>` (el link se lo mandamos nosotros; sin la clave no hace nada).
-3. Instagram le pide confirmar los permisos (`instagram_business_basic`, `instagram_business_manage_messages`) → acepta → ve «Listo: la cuenta @… quedó conectada y suscripta».
+3. Instagram le pide confirmar los permisos (`instagram_business_basic`, `instagram_business_manage_messages`, `instagram_business_manage_comments`) → acepta → ve «Listo: la cuenta @… quedó conectada y suscripta». Si destilda el de comentarios, todo lo demás anda igual y la app le avisa que falta para responder comentarios.
 4. Desde ese momento el asistente responde en esa cuenta. Para desconectarla: la persona quita la app desde Instagram (Configuración → Apps y sitios web) o nosotros borramos la cuenta del Durable Object.
 
 ### Cosas que conviene saber
@@ -148,6 +149,7 @@ Guía completa y script paso a paso para Windows: [`INSTAGRAM_CLIENTES.md`](INST
 - Los tokens duran 60 días; el cron diario (`[triggers]`) los renueva cuando quedan menos de 15 y comprueba la suscripción de cada cuenta. En Observability se ve como `"que":"mantenimiento"`.
 - Cada aviso de Meta deja un registro `"que":"aviso"` (forma y cantidad, sin ids ni texto); una firma inválida, `"que":"firma"`; un mensaje para una cuenta no conectada, `"que":"cuenta_desconocida"`.
 - Instagram no manda botones, así que el saludo y los comandos van en texto. No se bajan las fotos ni los audios: solo se lee texto.
+- **Comentarios (ZL-160):** cada comentario deja un registro `"que":"comentario"` con `r` (`ok`, `apagado`, `ruido`, `repetido`, `tope`, `cupo`, `pausa`, `sin_permiso`, `sin_ficha`…), el tipo y si salió en público y por privado, nunca el texto. Detalle en `NEGOCIOS.md`.
 - Las personas se guardan como `ig:<cuenta>.<quien>`: la misma persona escribiendo a dos cuentas son dos charlas distintas.
 
 ## Costos

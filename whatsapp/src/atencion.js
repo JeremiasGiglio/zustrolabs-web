@@ -20,6 +20,24 @@
 import { clavesVapid } from './push.js';
 import { ZONA_POR_DEFECTO, ZONAS } from './reporte.js';
 
+/** ZL-160: cómo responde los comentarios de Instagram (src/comentarios.js). */
+export const MODOS_COMENTARIOS = ['publico_privado', 'privado'];
+/** ZL-160: lo que eligió el negocio (apagado si nunca lo tocó). */
+export function configComentarios(negocio) {
+  const c = negocio?.comentarios ?? {};
+  return { activo: c.activo === true, modo: MODOS_COMENTARIOS.includes(c.modo) ? c.modo : 'publico_privado' };
+}
+
+/** Lo que llega de la app → lo que se guarda (solo los dos campos, con valores válidos). */
+export function normalizarComentarios(datos, antes = null) {
+  const a = configComentarios({ comentarios: antes });
+  return {
+    activo: typeof datos?.activo === 'boolean' ? datos.activo : a.activo,
+    modo: MODOS_COMENTARIOS.includes(datos?.modo) ? datos.modo : a.modo,
+  };
+}
+
+
 export const DIA_MS = 24 * 3600_000;
 /** Índice de seguimientos: `seg:<hora con 15 dígitos>:<num>`, así se ordenan por hora. */
 const claveSeguimiento = (cuando, num) => `seg:${String(Math.max(0, Math.floor(cuando))).padStart(15, '0')}:${num}`;
@@ -200,7 +218,8 @@ export function crearAtencion(storage) {
     /** Números del negocio por día (ZL-151): charlas, audios, seguimientos, pases. 120 días. */
     async sumarMetrica(id, clave, now, dia = null) {
       // ZL-158: «enviadosWa», lo que manda el sistema por WhatsApp (Meta cobra pasando los 1.000 por número por mes).
-      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas'].includes(clave)) return 0;
+      // ZL-160: «comentarios», los que respondió la IA; «comentariosIa», cuántos le pasaron (el tope diario).
+      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas', 'comentarios', 'comentariosIa'].includes(clave)) return 0;
       const k = `negmet:${id}:${/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : diaDe(now)}`;
       const x = (await s.get(k)) ?? {};
       x[clave] = (x[clave] ?? 0) + 1;
@@ -234,7 +253,7 @@ export function crearAtencion(storage) {
     },
     async metricas(id, dias, now) {
       const desde = diaDe(now - (dias - 1) * DIA_MS);
-      const tot = { charlas: 0, audios: 0, seguimientos: 0, pases: 0, enviadosWa: 0 };
+      const tot = { charlas: 0, audios: 0, seguimientos: 0, pases: 0, enviadosWa: 0, comentarios: 0 };
       for (const [k, v] of await s.list({ prefix: `negmet:${id}:` })) {
         if (k.split(':').pop() < desde || !vigente(v, now)) continue;
         for (const c of Object.keys(tot)) tot[c] += v[c] ?? 0;
@@ -291,10 +310,11 @@ export function crearAtencion(storage) {
       return (await s.get(`igc:${id}`)) ?? null;
     },
     async guardarCuentaIg(id, datos) {
-      const { username = '', token, tokenVence = 0, app = '', cliente = false } = datos ?? {};
+      const { username = '', token, tokenVence = 0, app = '', cliente = false, permisoComentarios } = datos ?? {};
       // `cliente`: una cuenta de cliente conectada con la app del estudio (ZL-140); sin esto se la confundiría con la
       // cuenta del estudio (que responde con lo de la landing).
-      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app), ...(cliente === true && { cliente: true }) });
+      // ZL-160: si la cuenta dio el permiso de comentarios (true / false; sin el dato, no se guarda).
+      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app), ...(cliente === true && { cliente: true }), ...(typeof permisoComentarios === 'boolean' && { permisoComentarios }) });
     },
     async borrarCuentaIg(id) {
       await s.delete(`igc:${id}`);
@@ -391,7 +411,9 @@ export function crearAtencion(storage) {
       const pausa = datos?.pausa !== undefined ? pausaDe(datos.pausa, now) : antes?.pausa ?? null;
       // ZL-159: el aviso del día que el asistente tiene en cuenta («hoy no hay medialunas»), con vencimiento.
       const avisoDia = datos?.avisoDia !== undefined ? avisoDiaDe(datos.avisoDia, now) : antes?.avisoDia ?? null;
-      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, creado: antes?.creado ?? now, actualizado: now };
+      // ZL-160: responder comentarios de Instagram (lo enciende el dueño) y de qué forma.
+      const comentarios = normalizarComentarios(datos?.comentarios, antes?.comentarios);
+      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, comentarios, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);
@@ -496,11 +518,11 @@ export function adaptadores(a, reloj = () => Date.now()) {
   const cuentas = {
     get: async (id) => {
       const c = await a.cuentaIg(id);
-      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true } : null;
+      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true, ...(typeof c.permisoComentarios === 'boolean' && { permisoComentarios: c.permisoComentarios }) } : null;
     },
-    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app, cliente: d.cliente }),
+    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app, cliente: d.cliente, permisoComentarios: d.permisoComentarios }),
     delete: (id) => a.borrarCuentaIg(id),
-    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '' })),
+    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true, ...(typeof c.permisoComentarios === 'boolean' && { permisoComentarios: c.permisoComentarios }) })),
   };
   // Apps de Instagram de clientes: {id, secreto, nombre, creado}.
   const apps = {

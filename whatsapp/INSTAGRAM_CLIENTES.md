@@ -20,7 +20,7 @@ app; con más, se registra otra y se usa la más nueva).
 
 | Quién | Qué |
 |---|---|
-| El equipo, **una sola vez** | `scripts\instagram-app-clientes.ps1`: crear la app en el Facebook de Zustro Labs, registrarla en el Worker como compartida (`POST /apps {…, compartida: true}`), Redirect URL `https://zustrolabs.com/api/instagram/conectar/vuelta`, webhook `https://zustrolabs.com/api/instagram` con `IG_VERIFY_TOKEN` y «messages», Live. |
+| El equipo, **una sola vez** | `scripts\instagram-app-clientes.ps1`: crear la app en el Facebook de Zustro Labs, registrarla en el Worker como compartida (`POST /apps {…, compartida: true}`), Redirect URL `https://zustrolabs.com/api/instagram/conectar/vuelta`, webhook `https://zustrolabs.com/api/instagram` con `IG_VERIFY_TOKEN` y «messages» y «comments» (ZL-160), permiso `instagram_business_manage_comments`, Live. |
 | El equipo, por cliente | Dar de alta el negocio y sus correos (Administración y la política de Access). |
 | El cliente | `negocios.zustrolabs.com` → pestaña **Instagram**: cuenta profesional, «Permitir acceso a los mensajes», **Pedir invitación** con su usuario. |
 | El equipo | `scripts\instagram-app-clientes.ps1 -Invitaciones` (o el aviso en Administración): App roles → Roles → Add People → **Instagram Tester** → el usuario. |
@@ -71,7 +71,7 @@ Con el cliente al lado o por pantalla compartida, entrado en Facebook con **su**
 
 ### 3. Tres cosas más en esa pestaña
 - **Paso 4 «Set up Instagram business login»** → Set up → Redirect URL: `https://zustrolabs.com/api/instagram/conectar/vuelta` → Save.
-- **Paso 3 «Configure webhooks»** → Callback URL `https://zustrolabs.com/api/instagram` + Verify token = la frase de `IG_VERIFY_TOKEN` (la misma para todos los clientes) → **Verify and save** → en la lista, **messages** en Subscribed. El script comprueba antes que la frase sea la correcta contra el Worker, así Meta no da «verificación fallida».
+- **Paso 3 «Configure webhooks»** → Callback URL `https://zustrolabs.com/api/instagram` + Verify token = la frase de `IG_VERIFY_TOKEN` (la misma para todos los clientes) → **Verify and save** → en la lista, **messages** y **comments** (ZL-160: responder comentarios) en Subscribed. El script comprueba antes que la frase sea la correcta contra el Worker, así Meta no da «verificación fallida».
 - **App settings → Basic:** Privacy Policy URL `https://zustrolabs.com/privacidad/` (o la del cliente), Category «Business and pages», Save. **Publish → Live.** Sin Live, Meta no manda mensajes reales (solo los de prueba del panel).
 
 ### 4. Conectar la cuenta

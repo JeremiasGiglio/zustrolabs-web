@@ -209,6 +209,41 @@ test.describe('app de negocios (ZL-121)', () => {
     expect(new URL(destino).searchParams.get('redirect_uri')).toBe('https://zustrolabs.com/api/instagram/conectar/vuelta');
   });
 
+  test('comentarios (ZL-160): la dueña enciende «Responder comentarios», elige el modo, ve si falta el permiso y el reporte los cuenta; accesible', async ({ page }) => {
+    const CUENTA = '17841400000000002';
+    await montar(page, 'duena@example.com', async (n, neg) => {
+      await n.cuentas.put(CUENTA, { username: 'la.espiga', token: 'tok', vence: Date.now() + 9e9, app: '1000000000000001', cliente: true });
+      await n.negocios.guardar(neg.id, { cuentas: [CUENTA] });
+      // Dos comentarios respondidos hoy (para el reporte).
+      const { diaLocal } = await import('../whatsapp/src/reporte.js');
+      const dia = diaLocal(Date.now(), 'America/Argentina/Buenos_Aires');
+      await n.negocios.sumarMetrica(neg.id, 'comentarios', dia);
+      await n.negocios.sumarMetrica(neg.id, 'comentarios', dia);
+    });
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'Instagram', exact: true }).click();
+    const activo = page.getByLabel('Responder comentarios');
+    await expect(activo).not.toBeChecked();
+    await expect(page.getByLabel('Cómo responde')).toBeDisabled();
+    await activo.check();
+    await expect(page.getByRole('status').filter({ hasText: 'el asistente responde los comentarios nuevos' }).first()).toBeVisible();
+    await expect(page.getByLabel('Cómo responde')).toBeEnabled();
+    // La cuenta se conectó antes de este permiso: la app pide conectarla de nuevo.
+    await expect(page.getByText(/@la\.espiga tiene que dar un permiso más/)).toBeVisible();
+    await page.getByLabel('Cómo responde').selectOption('privado');
+    await expect(page.getByLabel('Cómo responde')).toHaveValue('privado');
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
+    await page.reload();
+    await page.getByRole('tab', { name: 'Conexiones' }).click();
+    await page.getByRole('button', { name: 'Instagram', exact: true }).click();
+    await expect(page.getByLabel('Responder comentarios')).toBeChecked();
+    await expect(page.getByLabel('Cómo responde')).toHaveValue('privado');
+    await page.getByRole('tab', { name: 'Reportes' }).click();
+    await expect(page.locator('.resumen').getByText('comentarios respondidos')).toBeVisible();
+    await expect(page.locator('.resumen div').filter({ hasText: 'comentarios respondidos' }).locator('strong')).toHaveText('2');
+  });
+
   test('pedidos (ZL-139): el negocio ve el pedido nuevo, lo acepta, lo marca pagado y entregado, y el stock baja; la pestaña es accesible', async ({ page }) => {
     const CHARLA = 'yc:5493410000001:5493410000009';
     let panId = '';

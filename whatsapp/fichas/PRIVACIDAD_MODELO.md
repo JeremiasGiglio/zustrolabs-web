@@ -30,6 +30,7 @@ Para eso usamos estos servicios, que procesan los datos solo para eso:
 | Tu número de WhatsApp o tu usuario de Instagram | Responderte y encontrar tu pedido | Mientras haya un pedido o una consulta tuya |
 | Tus pedidos (productos, total, nombre, dirección de envío) | Preparar y entregar tu pedido | Nombre y dirección: 180 días después de cerrado. Productos y total: para nuestras cuentas, sin tus datos |
 | Tus consultas (nombre, resumen) | Que alguien del negocio te responda | Nombre y resumen: 180 días después de cerrada |
+| Un comentario tuyo en Instagram que el asistente respondió por privado | Que si contestás, sepa de qué viene la charla | 48 horas, junto con la charla |
 
 No guardamos audios ni fotos: el asistente no los escucha ni los mira. No vendemos ni compartimos tus datos con nadie
 más.

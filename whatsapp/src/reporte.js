@@ -70,18 +70,20 @@ export function armarReporte({ negocio, periodo, fecha, zona, now = Date.now(), 
   const r = rango(periodo, fecha, zona, now);
   const z = zonaValida(zona);
   const enRango = (dia) => dia >= r.dias[0] && dia <= r.dias.at(-1);
-  const porDia = Object.fromEntries(r.dias.map((d) => [d, { dia: d, mensajes: 0, charlas: 0, respuestas: 0, consultas: 0, pedidos: 0, vendido: 0 }]));
+  const porDia = Object.fromEntries(r.dias.map((d) => [d, { dia: d, mensajes: 0, charlas: 0, respuestas: 0, consultas: 0, pedidos: 0, vendido: 0, comentarios: 0 }]));
   const porHora = Array(24).fill(0);
   const porSemana = Array(7).fill(0);
   const canales = { whatsapp: 0, instagram: 0 };
-  const tot = { charlas: 0, mensajes: 0, respuestas: 0, pases: 0, seguimientos: 0, audios: 0, enviadosWa: 0 };
+  const tot = { charlas: 0, mensajes: 0, respuestas: 0, pases: 0, seguimientos: 0, audios: 0, enviadosWa: 0, comentarios: 0 };
 
   for (const m of metricas) {
     if (!enRango(m.dia)) continue;
     const d = porDia[m.dia];
     d.mensajes += m.mensajes ?? 0;
     d.charlas += m.charlas ?? 0;
-    for (const k of ['charlas', 'mensajes', 'pases', 'seguimientos', 'audios', 'enviadosWa']) tot[k] += m[k] ?? 0;
+    d.comentarios += m.comentarios ?? 0;
+    // ZL-160: «comentarios», los comentarios de Instagram que respondió el asistente.
+    for (const k of ['charlas', 'mensajes', 'pases', 'seguimientos', 'audios', 'enviadosWa', 'comentarios']) tot[k] += m[k] ?? 0;
     (m.horas ?? []).forEach((n, h) => { if (h < 24) porHora[h] += n ?? 0; });
     porSemana[diaSemana(m.dia)] += m.mensajes ?? 0;
     canales.whatsapp += m.canales?.wa ?? 0;
@@ -219,11 +221,12 @@ export function xlsx(r) {
       ['Ticket promedio', s.ticketPromedio],
       ['Recordatorios enviados', s.seguimientos],
       ['Mensajes enviados por WhatsApp', s.enviadosWa],
+      ['Comentarios de Instagram respondidos', s.comentarios],
       ['Audios recibidos', s.audios],
       ['Horas con más mensajes', r.horasPico.map((h) => `${h}:00`).join(', ') || '-'],
       ['Días con más mensajes', r.diasPico.join(', ') || '-'],
     ], [34, 30])],
-    ['Por día', hoja([['Día', 'Mensajes', 'Charlas', 'Respuestas', 'Consultas', 'Pedidos', 'Vendido'], ...r.porDia.map((d) => [f(d.dia), d.mensajes, d.charlas, d.respuestas, d.consultas, d.pedidos, d.vendido])], [12, 10, 10, 11, 10, 9, 12])],
+    ['Por día', hoja([['Día', 'Mensajes', 'Charlas', 'Respuestas', 'Consultas', 'Pedidos', 'Vendido', 'Comentarios'], ...r.porDia.map((d) => [f(d.dia), d.mensajes, d.charlas, d.respuestas, d.consultas, d.pedidos, d.vendido, d.comentarios])], [12, 10, 10, 11, 10, 9, 12, 12])],
     ['Por hora', hoja([['Hora', 'Mensajes'], ...r.porHora.map((n, h) => [`${String(h).padStart(2, '0')}:00`, n])], [10, 10])],
     ['Por día de la semana', hoja([['Día', 'Mensajes'], ...r.porDiaSemana.map((n, i) => [DIAS_SEMANA[i], n])], [12, 10])],
     ['Productos', hoja([['Producto', 'Unidades', 'Monto'], ...r.productos.map((p) => [p.nombre, p.unidades, p.monto])], [36, 10, 12])],

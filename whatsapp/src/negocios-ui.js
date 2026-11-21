@@ -300,7 +300,9 @@ function app() {
         h('div', { class: 'resumen' },
           tarjeta(s.charlas, 'charlas atendidas'), tarjeta(s.mensajes, 'mensajes recibidos'), tarjeta(s.respuestas, 'respuestas del asistente'),
           tarjeta(s.consultas, 'consultas'), tarjeta(s.ganadas, 'consultas ganadas'), tarjeta(s.pedidos, 'pedidos'),
-          tarjeta(s.entregados, 'pedidos entregados'), tarjeta(plata(s.vendido), 'vendido'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null),
+          tarjeta(s.entregados, 'pedidos entregados'), tarjeta(plata(s.vendido), 'vendido'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null,
+          // ZL-160: los comentarios de Instagram que respondió el asistente (si los tiene encendidos o ya respondió alguno).
+          s.comentarios || (estado.datos.negocio.comentarios || {}).activo ? tarjeta(s.comentarios || 0, 'comentarios respondidos') : null),
         h('p', { class: 'ayuda' }, 'Por WhatsApp: ' + s.canales.whatsapp + ' mensajes · por Instagram: ' + s.canales.instagram + '. Pases al equipo: ' + s.pasesAlEquipo + '. Recordatorios enviados: ' + s.seguimientos + '.' + (s.enviadosWa ? ' Mensajes que mandó el asistente por WhatsApp: ' + s.enviadosWa + '.' : '')),
         h('div', { class: 'caja' }, h('h3', {}, 'A qué hora te escriben'),
           h('p', { class: 'ayuda' }, s.mensajes ? 'Las horas con más mensajes: ' + r.horasPico.map(hs).join(', ') + '.' : 'Todavía no hay mensajes en este período.'),
@@ -312,7 +314,7 @@ function app() {
           tablaNumeros(['Día', 'Mensajes'], r.porDiaSemana.map((n, i) => [NOMBRE_DIA[i], n]))) : null,
         r.porDia.length > 1 ? h('div', { class: 'caja' }, h('h3', {}, 'Mensajes día por día'),
           columnas(r.porDia.map((d) => d.mensajes), r.porDia.map((d) => d.dia.slice(8) + '/' + d.dia.slice(5, 7)), () => 'Mensajes por día del período', r.porDia.length > 10 ? 5 : 1),
-          tablaNumeros(['Día', 'Mensajes', 'Charlas', 'Consultas', 'Pedidos', 'Vendido'], r.porDia.map((d) => [d.dia.split('-').reverse().join('/'), d.mensajes, d.charlas, d.consultas, d.pedidos, plata(d.vendido)]))) : null,
+          tablaNumeros(['Día', 'Mensajes', 'Charlas', 'Consultas', 'Pedidos', 'Vendido', 'Comentarios'], r.porDia.map((d) => [d.dia.split('-').reverse().join('/'), d.mensajes, d.charlas, d.consultas, d.pedidos, plata(d.vendido), d.comentarios || 0]))) : null,
         h('div', { class: 'caja' }, h('h3', {}, 'Lo que más compran'),
           r.productos.length
             ? h('div', { class: 'scroll' }, h('table', { class: 'tabla' }, h('thead', {}, h('tr', {}, h('th', {}, 'Producto'), h('th', {}, 'Unidades'), h('th', {}, 'Monto'))),
@@ -940,11 +942,40 @@ function app() {
     const enlace = (texto, url) => h('a', { href: url, target: '_blank', rel: 'noopener' }, texto);
     const lista = h('div', { 'aria-live': 'polite' });
     const pasos = h('div', {});
+    const comentarios = h('div', {});
     const caja = h('section', {},
       h('h2', {}, 'Instagram'),
       h('p', { class: 'ayuda' }, 'Conectá el Instagram de tu negocio para que el asistente conteste los mensajes directos con tu ficha y tus productos. No hace falta Facebook ni crear nada en Meta.'),
       estado.datos.asistente.activo ? null : h('p', { class: 'chip alerta' }, 'Tu asistente todavía no está activo: lo activa el equipo de Zustro Labs. Podés conectar la cuenta igual.'),
-      lista, pasos);
+      lista, comentarios, pasos);
+    /**
+     * ZL-160: responder comentarios de las publicaciones. Apagado hasta que el dueño lo enciende; dos modos. Si una
+     * cuenta se conectó antes de este permiso (o lo destildó), se le pide conectarla de nuevo.
+     */
+    const pintarComentarios = (r) => {
+      if (!r.cuentas.length) { poner(comentarios); return; }
+      const c = r.comentarios || { activo: false, modo: 'publico_privado' };
+      const activo = h('input', { type: 'checkbox', id: 'cm-activo', checked: c.activo });
+      const modo = h('select', { id: 'cm-modo', disabled: !c.activo },
+        h('option', { value: 'publico_privado', selected: c.modo === 'publico_privado' }, 'Una frase corta en público y el detalle por privado (recomendado)'),
+        h('option', { value: 'privado', selected: c.modo === 'privado' }, 'Solo por mensaje privado'));
+      const guardar = conError(async () => {
+        const x = await api(base() + '/instagram/comentarios', { metodo: 'PUT', cuerpo: { activo: activo.checked, modo: modo.value } });
+        estado.datos.negocio.comentarios = x.comentarios;
+        aviso(x.comentarios.activo ? 'Listo: el asistente responde los comentarios nuevos de tus publicaciones.' : 'Listo: el asistente ya no responde comentarios.');
+        cargar();
+      });
+      activo.onchange = guardar;
+      modo.onchange = guardar;
+      const faltan = r.cuentas.filter((x) => x.conectada && x.permisoComentarios !== true);
+      poner(comentarios,
+        h('h3', {}, 'Comentarios de tus publicaciones'),
+        h('p', { class: 'ayuda' }, 'El asistente también puede responder los comentarios con tu información: precios (si los mostrás), dónde están, horarios y productos. Los reclamos y lo que no sabe no los contesta en público: te llega un aviso para que respondas vos.'),
+        h('div', { class: 'formulario' },
+          h('label', { class: 'check', for: 'cm-activo' }, activo, 'Responder comentarios'),
+          h('label', { for: 'cm-modo' }, 'Cómo responde'), modo),
+        c.activo && faltan.length ? h('p', { class: 'chip alerta', role: 'status' }, 'Para responder comentarios, ' + faltan.map((x) => x.username ? '@' + x.username : 'la cuenta ' + x.id).join(', ') + ' tiene que dar un permiso más: tocá «Conectar Instagram» de nuevo, entrá con la cuenta del negocio y aceptá todos los permisos.') : null);
+    };
     const pintarPasos = (r) => {
       const usuario = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'mi.negocio', value: r.invitacion ? r.invitacion.usuario : '' });
       const errores = h('p', { class: 'errores', role: 'alert' });
@@ -988,6 +1019,7 @@ function app() {
           aviso('Desconectada. Tu cuenta de Instagram sigue igual; el asistente deja de responder.');
           cargar();
         }) }, 'Desconectar')))) : [h('p', { class: 'vacio' }, 'Todavía no hay una cuenta de Instagram conectada.')]));
+      pintarComentarios(r);
       pintarPasos(r);
     });
     cargar();
