@@ -91,7 +91,7 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (x) { d = { cuerpo: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.titulo || 'Negocios', { body: d.cuerpo || '', icon: '/icono.svg', badge: '/icono.svg', data: { url: d.url || '/' }, tag: 'zl-aviso', renotify: true }));
+  e.waitUntil(self.registration.showNotification(d.titulo || 'Negocios', { body: d.cuerpo || '', icon: '/icono.svg', badge: '/icono.svg', data: { url: d.url || '/' }, tag: d.tag || ('zl-' + Date.now()), renotify: true }));
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();

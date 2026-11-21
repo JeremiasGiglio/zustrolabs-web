@@ -120,7 +120,8 @@ Columna «Auto»: ✅ ya lo hace el script · 🔧 se puede automatizar (ver sec
 | Nombre del negocio distinto al de los papeles | Problemas al verificar en YCloud | Exactamente como en los papeles | ✋ |
 | La clave de API incompleta o de otra cuenta | El Worker dice «YCloud no aceptó la clave» | Copiarla entera de la cuenta del cliente | ✅ |
 | La cuenta no acepta el aviso de respuestas del dueño | El asistente no se calla cuando contesta el dueño | El script avisa; mientras, PERSONA | ✅ (avisa) |
-| El cliente no abre la app en 14 días | Meta corta la conexión: deja de llegar todo | Recordárselo; revisar `-SoloEstado` (último mensaje) | 🔧 |
+| El cliente no abre la app en 14 días | Meta corta la conexión: deja de llegar todo | ZL-166: el semáforo avisa desde el día 10 sin mensajes del dueño desde la app (rojo al 14) y le llega un aviso al celular una vez | ✅ |
+| La clave de API se borra o se cambia en YCloud | El asistente deja de responder por ese número | ZL-166: el semáforo la detecta (401/403) y la pone en rojo: Desconectar y Conectar con la clave nueva | ✅ |
 | Usa WhatsApp para Windows | Esos mensajes no los ve el asistente | web.whatsapp.com | ✋ |
 | Se recrea el webhook a mano en YCloud | Registro `firma` | `-Desconectar` y volver a conectar | ✅ |
 
@@ -133,6 +134,8 @@ Columna «Auto»: ✅ ya lo hace el script · 🔧 se puede automatizar (ver sec
 | La app no está en Live | Conecta, pero no llegan los mensajes | Publish → Live en la app compartida | ✋ |
 | Se llenó (unas 50 cuentas) | Meta no deja agregar más evaluadores | Registrar otra app con el script: se usa la más nueva | ✅ |
 | El link de conectar venció (1 hora) | «el link venció o no es válido» al volver | Apretar «Conectar Instagram» de nuevo | ✅ |
+| El dueño saca el permiso desde Instagram (o vence antes) | Meta responde 190 y el asistente no puede contestar | ZL-166: la cuenta queda marcada, el semáforo en rojo, la pestaña Instagram lo dice y le llega un aviso al celular | ✅ |
+| El dueño contesta desde su Instagram y el asistente también | Dos respuestas que se pisan | ZL-166: los ecos de Instagram; lo que mandamos queda marcado una hora, y un eco sin marca pausa esa charla | ✅ |
 
 ## 3. Qué dice cada registro
 

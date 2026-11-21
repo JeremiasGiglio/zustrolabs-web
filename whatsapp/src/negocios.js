@@ -115,7 +115,7 @@ const delCatalogo = (r) => (r?.ok ? { valor: r.valor } : { resp: error(r?.error 
  *        probar(ficha, idNegocio, mensajes) → charla simulada, fetch, now}
  */
 // ── WhatsApp por YCloud (ZL-135, ZL-136): lo usan la app (el negocio, con su correo) y el admin del equipo ──
-const sinSecretos = (r) => ({ clave: r.clave, negocio: r.negocio, numero: r.numero, ecos: r.ecos, creado: r.creado, ultimo: r.ultimo || null });
+const sinSecretos = (r) => ({ clave: r.clave, negocio: r.negocio, numero: r.numero, ecos: r.ecos, creado: r.creado, ultimo: r.ultimo || null, ultimoEco: r.ultimoEco || null });
 
 /** Los números de WhatsApp de un negocio (sin la clave de API ni el secreto). */
 export const numerosDe = async (ycloud, negocioId) => (await ycloud.list()).filter((r) => r.negocio === negocioId).map(sinSecretos);
@@ -253,7 +253,8 @@ export async function appNegocios(request, env, deps) {
       for (const id of negocio.cuentas) {
         const c = await deps.cuentas.get(id);
         // ZL-160: true si dio el permiso de comentarios; false si falta; null si se conectó antes y no se sabe.
-        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: typeof c?.permisoComentarios === 'boolean' ? c.permisoComentarios : null });
+        // ZL-166: si Instagram rechazó el permiso al responder, la cuenta figura desconectada (aunque haya token).
+        cuentas.push({ id, username: c?.username ?? null, conectada: Boolean(c) && !c.tokenInvalido, ...(c?.tokenInvalido && { revocada: true }), venceEnDias: c ? Math.floor((c.vence - now) / 86_400_000) : null, permisoComentarios: typeof c?.permisoComentarios === 'boolean' ? c.permisoComentarios : null });
       }
       return json({ cuentas, disponible: Boolean(app && env.IG_APP_SECRET), invitacion: negocio.invitacionIg ?? null, canal: canalesDe(negocio).instagram, comentarios: configComentarios(negocio) });
     }
@@ -680,7 +681,7 @@ export async function appNegocios(request, env, deps) {
     if (request.method !== 'POST') return error('no existe', 404);
     const b = (await leerJson(request)) ?? {};
     if (mch[2] === '/responder') {
-      const texto = String(b.texto ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim().slice(0, 1000);
+      const texto = String(b.texto ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim().slice(0, 3000);
       if (!texto) return error('escribí la respuesta');
       const enviado = deps.avisarComprador ? await deps.avisarComprador(negocio, charla, texto) : 'sin canal';
       if (enviado !== true) {

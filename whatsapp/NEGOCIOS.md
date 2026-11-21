@@ -242,6 +242,25 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## Canales y avisos (ZL-166)
+
+- **Instagram se calla cuando contesta el dueño**: los ecos (lo que sale de la cuenta) llegan como eventos; antes de
+  mandar algo, cada texto queda marcado una hora (`claveEco`), así un eco sin marca es del dueño y pausa esa charla las
+  horas de la ficha (y queda en «Charlas»). Los ecos sin texto (una foto) no pausan.
+- **Permiso de Instagram revocado** (Meta responde 190): la cuenta queda `tokenInvalido`, figura desconectada en la app,
+  el semáforo da rojo y el dueño recibe un aviso al celular (una vez). Al volver a conectar se limpia.
+- **Coexistencia de WhatsApp**: se anota la última vez que el dueño mandó algo desde la app de WhatsApp Business
+  (`ultimoEco`). El semáforo avisa desde el día 10 y da rojo al 14; el cron diario le manda un aviso al celular al día
+  10 (una vez hasta que vuelva a usarla).
+- **Clave de YCloud revocada**: el semáforo la detecta (401/403) y la pone en rojo con qué hacer.
+- **Mensajes largos**: lo que manda el negocio desde la app (y los avisos de pedido) sale en partes por oración, nunca
+  cortado; la memoria corta guarda hasta 1.200 caracteres por mensaje.
+- **Foto con texto al pie** (WhatsApp): el texto vale como mensaje. Con un pedido abierto, una foto o un archivo (con
+  texto o sin) va al dueño y el comprador recibe «¡Recibido! Se lo paso a … junto con tu pedido N.º …».
+- **Access**: al sacar un correo de un negocio (Admin o Equipo) también sale de la política, salvo que sea del equipo o
+  siga en otro negocio, y nunca se deja la política vacía (`quitarDeAcceso`).
+- **Avisos al celular**: cada uno con su etiqueta, así dos pedidos seguidos no se pisan.
+
 ## La app, profesional y fácil (ZL-165)
 
 - **Cinco secciones con ícono**: Inicio · Charlas · Productos (o Servicios) · Mi negocio · Más (Reportes, Conexiones,

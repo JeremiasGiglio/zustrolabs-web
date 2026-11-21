@@ -363,11 +363,11 @@ export function crearAtencion(storage) {
       return (await s.get(`igc:${id}`)) ?? null;
     },
     async guardarCuentaIg(id, datos) {
-      const { username = '', token, tokenVence = 0, app = '', cliente = false, permisoComentarios } = datos ?? {};
+      const { username = '', token, tokenVence = 0, app = '', cliente = false, permisoComentarios, tokenInvalido } = datos ?? {};
       // `cliente`: una cuenta de cliente conectada con la app del estudio (ZL-140); sin esto se la confundiría con la
       // cuenta del estudio (que responde con lo de la landing).
       // ZL-160: si la cuenta dio el permiso de comentarios (true / false; sin el dato, no se guarda).
-      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app), ...(cliente === true && { cliente: true }), ...(typeof permisoComentarios === 'boolean' && { permisoComentarios }) });
+      await s.put(`igc:${id}`, { id: String(id), username, token, tokenVence, app: String(app), ...(cliente === true && { cliente: true }), ...(typeof permisoComentarios === 'boolean' && { permisoComentarios }), ...(Number(tokenInvalido) > 0 && { tokenInvalido: Number(tokenInvalido) }) });
     },
     async borrarCuentaIg(id) {
       await s.delete(`igc:${id}`);
@@ -400,8 +400,9 @@ export function crearAtencion(storage) {
       const antes = await s.get(`ycl:${clave}`);
       // Un aviso que llega justo cuando se desconectaba el número no lo revive (solo se anota «ultimo» si existe).
       if (!antes && !datos?.secreto) return;
-      const { negocio, numero, apiKey, secreto, endpointId, ecos, ultimo } = { ...antes, ...datos };
-      await s.put(`ycl:${clave}`, { clave: String(clave), negocio: String(negocio), numero: String(numero), apiKey, secreto, endpointId: String(endpointId ?? ''), ecos: Boolean(ecos), ultimo: ultimo ?? 0, creado: antes?.creado ?? now });
+      const { negocio, numero, apiKey, secreto, endpointId, ecos, ultimo, ultimoEco, avisoCoex } = { ...antes, ...datos };
+      // ZL-166: «ultimoEco», la última vez que el dueño usó la app de WhatsApp Business; «avisoCoex», el aviso de los 14 días.
+      await s.put(`ycl:${clave}`, { clave: String(clave), negocio: String(negocio), numero: String(numero), apiKey, secreto, endpointId: String(endpointId ?? ''), ecos: Boolean(ecos), ultimo: ultimo ?? 0, ...(ultimoEco && { ultimoEco: Number(ultimoEco) }), ...(avisoCoex && { avisoCoex: Number(avisoCoex) }), creado: antes?.creado ?? now });
     },
     async borrarNumeroYc(clave) {
       await s.delete(`ycl:${clave}`);
@@ -583,11 +584,11 @@ export function adaptadores(a, reloj = () => Date.now()) {
   const cuentas = {
     get: async (id) => {
       const c = await a.cuentaIg(id);
-      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true, ...(typeof c.permisoComentarios === 'boolean' && { permisoComentarios: c.permisoComentarios }) } : null;
+      return c ? { id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true, ...(typeof c.permisoComentarios === 'boolean' && { permisoComentarios: c.permisoComentarios }), ...(c.tokenInvalido && { tokenInvalido: c.tokenInvalido }) } : null;
     },
-    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app, cliente: d.cliente, permisoComentarios: d.permisoComentarios }),
+    put: (id, d) => a.guardarCuentaIg(id, { username: d.username, token: d.token, tokenVence: d.vence, app: d.app, cliente: d.cliente, permisoComentarios: d.permisoComentarios, tokenInvalido: d.tokenInvalido }),
     delete: (id) => a.borrarCuentaIg(id),
-    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true, ...(typeof c.permisoComentarios === 'boolean' && { permisoComentarios: c.permisoComentarios }) })),
+    list: async () => (await a.listaCuentasIg()).map((c) => ({ id: c.id, username: c.username, token: c.token, vence: c.tokenVence, app: c.app ?? '', cliente: c.cliente === true, ...(typeof c.permisoComentarios === 'boolean' && { permisoComentarios: c.permisoComentarios }), ...(c.tokenInvalido && { tokenInvalido: c.tokenInvalido }) })),
   };
   // Apps de Instagram de clientes: {id, secreto, nombre, creado}.
   const apps = {

@@ -1141,7 +1141,7 @@ function app() {
     const caja = h('section', {});
     const mensajes = h('div', { class: 'conversa', 'aria-live': 'polite' });
     const estadoLinea = h('div', {});
-    const texto = h('textarea', { rows: 2, maxlength: 1000, placeholder: 'Escribí tu respuesta' });
+    const texto = h('textarea', { rows: 2, maxlength: 3000, placeholder: 'Escribí tu respuesta (si es largo, sale en partes)' });
     const enviar = h('button', { type: 'submit', class: 'btn prim' }, 'Enviar');
     const titulo = h('h2', {}, 'Charla');
     let ultimoId = 0;
@@ -1581,7 +1581,7 @@ function app() {
       poner(lista, ...(r.cuentas.length ? r.cuentas.map((c) => h('div', { class: 'wa-num' },
         h('strong', {}, c.username ? '@' + c.username : 'Cuenta ' + c.id),
         h('div', { class: 'chips' },
-          h('span', { class: 'chip ' + (c.conectada ? 'ok' : 'mal') }, c.conectada ? 'Conectada' : 'Desconectada: conectala de nuevo'),
+          h('span', { class: 'chip ' + (c.conectada ? (c.venceEnDias !== null && c.venceEnDias < 15 ? 'alerta' : 'ok') : 'mal') }, c.conectada ? (c.venceEnDias !== null && c.venceEnDias < 15 ? 'Conectada: el permiso vence en ' + Math.max(0, c.venceEnDias) + ' días, conectala de nuevo' : 'Conectada') : c.revocada ? 'Instagram la desconectó: tocá «Conectar Instagram» de nuevo' : 'Desconectada: conectala de nuevo'),
           r.canal ? null : h('span', { class: 'chip alerta' }, 'Instagram está apagado en tu negocio')),
         h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn peligro', onclick: conError(async (e) => {
           if (e.target.dataset.seguro !== '1') { e.target.dataset.seguro = '1'; e.target.textContent = '¿Seguro? Tocá de nuevo para desconectar'; return; }

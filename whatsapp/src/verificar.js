@@ -58,6 +58,8 @@ export function verificarNegocio(d) {
     for (const cu of cuentas) {
       const nombre = cu.username ? `@${cu.username}` : `la cuenta ${cu.id}`;
       if (!cu.conectada) c.push(mal('instagram', `${nombre} está desconectada`, 'Conectarla de nuevo desde la pestaña Instagram'));
+      // ZL-166: Instagram rechazó el permiso al responder (lo sacaron desde Instagram o venció antes de tiempo).
+      else if (cu.tokenInvalido) c.push(mal('instagram', `Instagram desconectó ${nombre}: el asistente no puede responder ahí`, 'Más → Conexiones → Instagram → «Conectar Instagram» de nuevo'));
       else if (cu.venceEnDias !== null && cu.venceEnDias <= 0) c.push(mal('instagram', `El permiso de ${nombre} venció`, 'Conectarla de nuevo desde la pestaña Instagram'));
       else if (cu.venceEnDias !== null && cu.venceEnDias < 15) c.push(aviso('instagram', `El permiso de ${nombre} vence en ${cu.venceEnDias} días y no se renovó solo`, 'Conectarla de nuevo desde la pestaña Instagram'));
       else c.push(ok('instagram', `${nombre} conectada`));
@@ -77,11 +79,19 @@ export function verificarNegocio(d) {
       const w = nu.webhook ?? {};
       let host = null;
       try { host = w.url ? new URL(w.url).host : null; } catch { host = null; }
-      if (w.error) c.push(aviso('whatsapp', `No pude revisar el webhook de ${nu.numero} en YCloud: ${w.error}`, 'Si la clave de API cambió: Desconectar y Conectar de nuevo'));
+      // ZL-166: la clave de YCloud borrada o cambiada: no responde por ese número.
+      if (w.clave === false) c.push(mal('whatsapp', `${nu.numero}: la clave de YCloud ya no sirve (la borraron o la cambiaron) y el asistente no puede responder`, 'Conexiones → WhatsApp → Desconectar y Conectar de nuevo con la clave nueva de YCloud'));
+      else if (w.error) c.push(aviso('whatsapp', `No pude revisar el webhook de ${nu.numero} en YCloud: ${w.error}`, 'Si la clave de API cambió: Desconectar y Conectar de nuevo'));
       else if (host !== WEBHOOK_HOST) c.push(mal('whatsapp', `El webhook de ${nu.numero} apunta a ${host ?? 'ningún lado'}: los mensajes no llegan`, `En YCloud → Developers → Webhooks, cambiar la URL a https://${WEBHOOK_HOST}/api/whatsapp/ycloud/${nu.clave} (o Desconectar y Conectar)`));
       else if (!nu.ultimo) c.push(aviso('whatsapp', `${nu.numero} conectado, pero todavía no llegó ningún mensaje`, 'Mandá un «hola» desde otro celular'));
       else if (d.now - nu.ultimo > 14 * DIA) c.push(aviso('whatsapp', `${nu.numero}: no llega nada hace ${Math.floor((d.now - nu.ultimo) / DIA)} días`, 'Que el dueño abra la app de WhatsApp Business (Meta corta la coexistencia a los 14 días sin abrirla)'));
       else c.push(ok('whatsapp', `${nu.numero} conectado y recibiendo`));
+      // ZL-166: coexistencia. Meta corta la conexión si la app de WhatsApp Business no se usa en 14 días: aviso desde el
+      // día 10 sin mensajes del dueño desde la app (los ecos), y rojo desde el 14.
+      const desde = nu.ecos !== false ? nu.ultimoEco ?? nu.creado ?? null : null;
+      const sinApp = desde ? Math.floor((d.now - desde) / DIA) : 0;
+      if (!w.error && sinApp >= 14) c.push(mal('coexistencia', `${nu.numero}: hace ${sinApp} días que no se usa la app de WhatsApp Business; Meta puede cortar la conexión`, 'Abrí WhatsApp Business en el celular del negocio y mandá un mensaje'));
+      else if (!w.error && sinApp >= 10) c.push(aviso('coexistencia', `${nu.numero}: hace ${sinApp} días que no se usa la app de WhatsApp Business (Meta corta a los 14)`, 'Abrí WhatsApp Business en el celular del negocio y mandá un mensaje'));
       if (!w.error && host === WEBHOOK_HOST && nu.ecos === false) c.push(aviso('whatsapp', `${nu.numero}: el asistente no sabe cuándo contesta el dueño (YCloud no manda los ecos)`, 'Pedirle a YCloud el evento whatsapp.smb.message.echoes'));
     }
   } else if (numeros.length) c.push(aviso('whatsapp', 'Tiene un número de WhatsApp pero el canal está apagado: no responde ahí', 'Admin → marcar WhatsApp'));

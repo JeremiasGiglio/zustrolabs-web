@@ -94,6 +94,9 @@ export function leerYCloud(payload) {
       : null;
     // Un audio no se escucha: el asistente avisa que solo lee mensajes escritos (no se baja ni se guarda nada).
     if (m.type === 'audio') return [{ ...base, kind: 'otro', audio: true }];
+    // ZL-166: una foto, un video o un archivo con texto al pie: el texto vale como mensaje (y se sabe que vino un archivo).
+    const pie = ['image', 'video', 'document'].includes(m.type) ? String(m[m.type]?.caption ?? '').trim() : '';
+    if (pie) return [{ ...base, kind: 'text', text: pie, archivo: true }];
     return [texto && String(texto).trim() ? { ...base, kind: 'text', text: String(texto) } : { ...base, kind: 'otro' }];
   }
   if (tipo === ECO) {
@@ -190,6 +193,8 @@ export async function webhookDeYCloud(apiKey, id, fetchImpl = fetch) {
   try {
     const r = await fetchImpl(`${YCLOUD_API}/webhookEndpoints/${encodeURIComponent(id)}`, { headers: { 'X-API-Key': apiKey } });
     if (r.status === 404) return { error: 'el webhook ya no existe en YCloud' };
+    // ZL-166: 401/403 es una clave borrada o cambiada en YCloud: el asistente ya no puede responder por ese número.
+    if (r.status === 401 || r.status === 403) return { error: 'la clave de YCloud ya no sirve', clave: false };
     if (!r.ok) return { error: motivo(r.status) };
     const d = await r.json().catch(() => ({}));
     return { url: String(d?.url ?? ''), activo: d?.status ? d.status === 'active' : true };
