@@ -9,7 +9,7 @@
 import { correosDe, emailDeAcceso } from './panel.js';
 import { borrarWebhook, claveNueva, crearWebhook, normalizar, numeroE164 } from './ycloud.js';
 import { appDelEstudio, urlAutorizar } from './instagram.js';
-import { agregarAAcceso } from './acceso.js';
+import { agregarAAcceso, quitarDeAcceso } from './acceso.js';
 import { ajustesDeVenta, configComentarios, esDueño, limiteDiaDe } from './atencion.js';
 import { parsearFicha, resumenFicha } from './negocio.js';
 import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
@@ -88,6 +88,13 @@ async function nombreDeFicha(deps, negocio) {
   const pf = f?.texto ? parsearFicha(f.texto) : null;
   return pf?.ok ? pf.ficha.nombre : negocio.nombre;
 }
+
+/** ZL-166: sacar correos de Access, protegiendo al equipo y a los que siguen en algún negocio. */
+const quitarAccesoDe = (env, deps) => async (emails) => {
+  const otros = (await deps.negocios.list()).flatMap((n) => n.emails ?? []);
+  const equipo = String(env.PANEL_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return quitarDeAcceso(env, deps.fetch ?? fetch, env.NEGOCIOS_HOST || NEGOCIOS_HOST, emails, [...otros, ...equipo]);
+};
 
 const leerCanales = (c) => ({ ...(typeof c?.instagram === 'boolean' && { instagram: c.instagram }), ...(typeof c?.whatsapp === 'boolean' && { whatsapp: c.whatsapp }) });
 
@@ -197,7 +204,7 @@ export async function appNegocios(request, env, deps) {
 
   if (ruta.startsWith('/admin/')) {
     if (!admin) return error('solo el equipo de Zustro Labs', 403);
-    return administrar(request, ruta.slice(6), { ...deps, acceso: (emails) => agregarAAcceso(env, deps.fetch ?? fetch, env.NEGOCIOS_HOST || NEGOCIOS_HOST, emails) }, now);
+    return administrar(request, ruta.slice(6), { ...deps, acceso: (emails) => agregarAAcceso(env, deps.fetch ?? fetch, env.NEGOCIOS_HOST || NEGOCIOS_HOST, emails), quitarAcceso: quitarAccesoDe(env, deps) }, now);
   }
 
   const m = /^\/n\/([a-z0-9]{4,40})(\/.*)?$/.exec(ruta);
@@ -627,6 +634,31 @@ export async function appNegocios(request, env, deps) {
     }
     return json({ ...r.valor, ...(pausaHasta && { pausaHasta }) });
   }
+  // ── Equipo (ZL-165): quién entra. El dueño suma o saca empleados; van solos a Access (y salen, ZL-166). ──
+  if (sub === '/equipo') {
+    const personas = (n) => (n.emails ?? []).map((e) => ({ email: e, rol: (n.empleados ?? []).includes(e) ? 'empleado' : 'dueño' }));
+    if (request.method === 'GET') return json({ personas: personas(negocio) });
+    if (!dueño) return soloDueño();
+    const b = await leerJson(request);
+    const correo = String(b?.email ?? '').trim().toLowerCase();
+    if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[a-z]{2,}$/i.test(correo)) return error('ese correo no parece válido', 400, 'email');
+    if (request.method === 'POST') {
+      if (negocio.emails.includes(correo)) return error('ya entra a la app');
+      const r = await deps.negocios.guardar(negocio.id, { emails: [...negocio.emails, correo], empleados: [...(negocio.empleados ?? []), correo], cambio: `sumó a ${correo} como empleado`, quien: email });
+      if (r?.error) return error(r.error);
+      const acceso = await agregarAAcceso(env, deps.fetch ?? fetch, env.NEGOCIOS_HOST || NEGOCIOS_HOST, [correo]);
+      return json({ personas: personas(r.negocio), acceso });
+    }
+    if (request.method === 'DELETE') {
+      if (!(negocio.empleados ?? []).includes(correo)) return error('solo se sacan empleados (a un dueño lo saca el equipo de Zustro Labs)', 403);
+      const r = await deps.negocios.guardar(negocio.id, { emails: negocio.emails.filter((e) => e !== correo), empleados: (negocio.empleados ?? []).filter((e) => e !== correo), cambio: `sacó a ${correo}`, quien: email });
+      if (r?.error) return error(r.error);
+      const quitados = await quitarAccesoDe(env, deps)([correo]);
+      return json({ personas: personas(r.negocio), quitados });
+    }
+    return error('no existe', 404);
+  }
+
   // ── Charlas (ZL-165): lo que habló cada persona con el asistente (30 días). La app las pide por su número, nunca por
   // el teléfono ni el id de Instagram. Desde acá el negocio responde (dentro de las 24 h de Meta) y el asistente se
   // calla en esa charla; «Que siga el asistente» lo devuelve; 👎 marca una respuesta mala.
@@ -635,7 +667,7 @@ export async function appNegocios(request, env, deps) {
     const r = await ejecutar('charlasApp', [{ q: p.get('q') ?? '', cuantos: Number(p.get('cuantos') ?? 50) }]);
     return r.resp ?? json(r.valor);
   }
-  const mch = /^\/charlas\/(\d{1,9})(\/responder|\/asistente|\/mensajes\/(\d{1,12})\/mal)?$/.exec(sub);
+  const mch = /^\/charlas\/(\d{1,9})(\/responder|\/asistente|\/resuelta|\/mensajes\/(\d{1,12})\/mal)?$/.exec(sub);
   if (mch) {
     const r = await ejecutar('charlaApp', [Number(mch[1]), { marcar: request.method === 'GET' }]);
     if (r.resp) return r.resp;
@@ -667,6 +699,13 @@ export async function appNegocios(request, env, deps) {
     if (mch[2] === '/asistente') {
       await deps.charlasNegocio?.devolver?.(charla, {}).catch(() => null);
       return json({ ...c, ...(await estadoCharla()) });
+    }
+    // «Ya lo resolví»: la consulta abierta de esa charla queda resuelta y sigue el asistente.
+    if (mch[2] === '/resuelta') {
+      const k = await ejecutar('consultaAbierta', [charla]);
+      if (k.valor) await ejecutar('cambiarConsulta', [k.valor.numero, 'resuelta', 'resuelta desde Charlas']);
+      await deps.charlasNegocio?.devolver?.(charla, {}).catch(() => null);
+      return json({ ...c, ...(await estadoCharla()), resuelta: Boolean(k.valor) });
     }
     const m = await ejecutar('marcarMal', [Number(mch[3]), b.mal !== false]);
     if (m.resp) return m.resp;
@@ -857,9 +896,13 @@ export async function administrar(request, ruta, deps, now) {
     if (typeof b.pedidos === 'boolean') cambios.pedidos = b.pedidos;
     // La invitación de Instagram ya se mandó (ZL-148): se borra del negocio.
     if (b.invitacionIg === null) cambios.invitacionIg = null;
+    const antes = cambios.emails ? await deps.negocios.get(m[1]) : null;
     const r = await deps.negocios.guardar(m[1], cambios);
     if (r.error) return error(r.error);
-    return json({ ...r.negocio, acceso: cambios.emails && deps.acceso ? await deps.acceso(r.negocio.emails) : null });
+    // ZL-166: los correos que se sacaron también salen de Access (si no entran a otro negocio ni son del equipo).
+    const sacados = antes ? antes.emails.filter((e) => !r.negocio.emails.includes(e)) : [];
+    const quitados = sacados.length && deps.quitarAcceso ? await deps.quitarAcceso(sacados) : null;
+    return json({ ...r.negocio, acceso: cambios.emails && deps.acceso ? await deps.acceso(r.negocio.emails) : null, ...(quitados && { quitados }) });
   }
   return error('no existe', 404);
 }

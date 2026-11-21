@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import worker from '../src/index.js';
 import { adaptadores, almacenPrueba, crearAtencion } from '../src/atencion.js';
-import { agregarAAcceso, correosEnAcceso } from '../src/acceso.js';
+import { agregarAAcceso, correosEnAcceso, quitarDeAcceso } from '../src/acceso.js';
 import { verificarNegocio } from '../src/verificar.js';
 import { firmarYCloud } from '../src/ycloud.js';
 
@@ -210,4 +210,15 @@ test('alta por el Worker: el link de «Conectar Instagram» para mandarle al cli
   assert.equal(u.searchParams.get('client_id'), '3000000000000003');
   assert.match(u.searchParams.get('state'), new RegExp(`\\.3000000000000003\\.${alta.datos.id}\\.`));
   assert.equal((await admin('POST', '/negocios/noexiste/instagram-link')).status, 404);
+});
+
+test('ZL-166: Access saca los correos que se borraron, nunca los protegidos (equipo, otros negocios) ni deja la política vacía', async () => {
+  const cf = cloudflare();
+  await agregarAAcceso(CF_ENV, cf.fetch, 'negocios.zustrolabs.com', ['duena@example.com', 'empleado@example.com']);
+  let r = await quitarDeAcceso(CF_ENV, cf.fetch, 'negocios.zustrolabs.com', ['Empleado@Example.com', 'duena@example.com', 'equipo@example.com'], ['duena@example.com', 'equipo@example.com']);
+  assert.deepEqual(r, { ok: true, quitados: ['empleado@example.com'] });
+  assert.deepEqual(cf.politica().include.map((x) => x.email.email), ['equipo@example.com', 'duena@example.com']);
+  r = await quitarDeAcceso(CF_ENV, cf.fetch, 'negocios.zustrolabs.com', ['equipo@example.com', 'duena@example.com']);
+  assert.deepEqual(r, { ok: false, error: 'la política quedaría vacía' });
+  assert.deepEqual(await quitarDeAcceso({}, cf.fetch, 'negocios.zustrolabs.com', ['x@example.com']), { ok: false, error: 'sin configurar (CF_API_TOKEN, CF_ACCOUNT_ID)' });
 });

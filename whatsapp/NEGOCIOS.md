@@ -263,6 +263,12 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
 - **Avisos**: la lista de dispositivos con avisos (con su nombre), «Probar» y «Sacar» cada uno (sin mostrar el endpoint).
 - **Asistente**: «Cómo trabaja» explica el objetivo de la ficha y si los pedidos por chat están encendidos.
 - **Admin**: el equipo borra un **pedido de prueba** (libera lo reservado; un entregado no se borra).
+- **Equipo** (en Más): quién entra y con qué rol; el dueño suma o saca empleados, que entran o salen solos de Access
+  (nunca se saca a un dueño, a alguien del equipo ni a quien sigue en otro negocio; ZL-166).
+- Arriba de **Hoy**: si el asistente está atendiendo o en pausa, el aviso del día y los agotados, con un toque para ir.
+- En una charla, **«Ya lo resolví»** cierra la consulta abierta y devuelve la charla al asistente.
+- Fechas en 24 h; el botón principal es oscuro (el rojo queda para la marca y lo que borra); en Conexiones, el dueño ve
+  «escribinos» en vez de los pasos técnicos.
 
 ## Mi negocio (ZL-164)
 

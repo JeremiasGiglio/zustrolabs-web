@@ -620,6 +620,12 @@ test.describe('app de negocios (ZL-121)', () => {
     await page.getByRole('tab', { name: 'Más' }).click();
     await page.getByRole('button', { name: 'Avisos', exact: true }).click();
     await expect(page.getByText('Ningún dispositivo tiene los avisos activados')).toBeVisible();
+    await page.getByRole('button', { name: 'Equipo', exact: true }).click();
+    await page.getByLabel('Sumar un empleado').fill('ayudante@example.com');
+    await page.getByRole('button', { name: 'Sumar', exact: true }).click();
+    await expect(page.getByText('ayudante@example.com')).toBeVisible();
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
   });
 
   test('Inicio (ZL-159): si ningún celular tiene los avisos, lo dice arriba', async ({ page }) => {

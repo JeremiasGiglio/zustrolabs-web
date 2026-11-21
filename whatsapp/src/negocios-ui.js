@@ -37,12 +37,13 @@ label{display:block;font-size:.9rem;font-weight:600;margin:.7rem 0 .25rem}
 label.check{display:flex;align-items:center;gap:.45rem;font-weight:400}
 .ayuda{font-size:.85rem;color:var(--gris);margin:.2rem 0}
 .btn{display:inline-flex;align-items:center;gap:.35rem;border:1px solid #C9CED6;background:#fff;border-radius:8px;padding:.5rem .85rem;cursor:pointer;text-decoration:none}
-.btn:hover{border-color:var(--tinta)}.btn.prim{background:var(--rojo);border-color:var(--rojo);color:#fff;font-weight:600}
+.btn:hover{border-color:var(--tinta)}.btn.prim{background:var(--tinta);border-color:var(--tinta);color:#fff;font-weight:600}.btn.prim:hover{background:#2C3547}
 .btn.peligro{color:var(--rojo);border-color:var(--rojo)}.btn[disabled]{opacity:.5;cursor:default}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .8rem}
 .chip{font-size:.8rem;padding:.15rem .55rem;border-radius:99px;background:#fff;border:1px solid var(--linea);color:var(--gris)}
 .chip.mal{background:#FDECEE;border-color:#F3C2C9;color:var(--rojo)}.chip.ok{background:#E8F5EE;border-color:#BFE3CF;color:var(--ok)}
 .chip.alerta{background:#FFF4E5;border-color:#F5D3A6;color:var(--alerta)}
+button.chip{cursor:pointer;font:inherit;font-size:.8rem}
 .lista{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
 .prod{display:grid;grid-template-columns:56px 1fr;gap:.7rem;background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.6rem}
 .prod.pausado{opacity:.6}
@@ -177,7 +178,8 @@ function app() {
     return h('label', { for: campo.id }, texto);
   }
   const pesos = (n) => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
-  const fecha = (t) => new Date(t).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+  // ZL-165: fecha y hora de 24 h («21/11 14:05»), sin «a. m.».
+  const fecha = (t) => new Date(t).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
   let avisoT;
   function aviso(texto, mal) {
     let a = document.getElementById('aviso');
@@ -308,8 +310,9 @@ function app() {
     const cuerpo = h('div', {});
     const id = estado.sub.mas || 'reportes';
     const asistente = () => (estado.yo.admin ? h('div', {}, vistaMiAsistente(), vistaAsistente()) : vistaMiAsistente());
-    poner(cuerpo, id === 'conexiones' ? vistaConexiones() : id === 'asistente' ? asistente() : id === 'avisos' ? vistaAvisos() : vistaReportes());
-    caja.append(segmento('mas', [['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente'], ['avisos', 'Avisos']]), cuerpo);
+    poner(cuerpo, id === 'conexiones' ? vistaConexiones() : id === 'asistente' ? asistente() : id === 'avisos' ? vistaAvisos() : id === 'equipo' ? vistaEquipo() : vistaReportes());
+    caja.append(segmento('mas', [['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente'], ['avisos', 'Avisos'], ['equipo', 'Equipo']]), cuerpo,
+      h('div', { class: 'acciones', estilo: { justifyContent: 'flex-start' } }, h('a', { class: 'btn', href: '/cdn-cgi/access/logout' }, 'Salir de la app')));
     return caja;
   }
 
@@ -328,6 +331,32 @@ function app() {
   }
 
   // ── Estado (ZL-150): el semáforo del negocio. Qué anda y, si algo falta, qué hacer. ──
+  // ZL-165: los pasos técnicos (YCloud, Access, Admin, la ficha) son para el equipo; el dueño ve qué hacer él o «escribinos».
+  const TECNICO = /YCloud|Access|Admin|webhook|ficha|IA|whatsapp\.smb|política|Meta/i;
+  const paraElDueño = (t) => (estado.yo.admin || !TECNICO.test(t) ? t : 'Esto lo resuelve el equipo de Zustro Labs: escribinos a contact@zustrolabs.com y lo vemos.');
+
+  // ── Equipo (ZL-165): quién entra a la app y con qué rol. El dueño suma o saca empleados (van solos a Access). ──
+  function vistaEquipo() {
+    const caja = h('section', {}, h('h2', {}, 'Equipo'), h('p', { class: 'ayuda' }, 'Cargando…'));
+    const pintarEquipo = (d) => {
+      const dueño = estado.datos.negocio.rol !== 'empleado';
+      const correo = h('input', { type: 'email', maxlength: 120, placeholder: 'correo@ejemplo.com' });
+      poner(caja, h('h2', {}, 'Equipo'),
+        h('p', { class: 'ayuda' }, 'Quién entra a la app. Un empleado ve pedidos, consultas, charlas y productos; no conecta canales, no pausa el asistente ni cambia Mi negocio.'),
+        h('ul', { class: 'lista' }, d.personas.map((x) => h('li', { class: 'tarjeta' },
+          h('strong', {}, x.email), ' ', h('span', { class: 'chip' }, x.rol === 'dueño' ? 'Dueño' : 'Empleado'),
+          dueño && x.rol === 'empleado' ? h('div', { class: 'acciones' }, ...dosPasos('Sacar', 'Confirmar: ya no entra', conError(async () => { pintarEquipo(await api(base() + '/equipo', { metodo: 'DELETE', cuerpo: { email: x.email } })); aviso('Listo: ya no entra a la app.'); }))) : null))),
+        dueño ? h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
+          e.preventDefault();
+          const r = await api(base() + '/equipo', { metodo: 'POST', cuerpo: { email: correo.value } });
+          pintarEquipo(r);
+          aviso(r.acceso && r.acceso.ok === false ? 'Agregado. Avisanos para habilitarle la entrada (no se pudo hacer solo).' : 'Agregado: ya puede entrar con su correo.');
+        }) }, etiqueta('Sumar un empleado', correo), correo, h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Sumar'))) : null);
+    };
+    api(base() + '/equipo').then(pintarEquipo).catch((e) => { if (e.message !== 'sesión') poner(caja, h('h2', {}, 'Equipo'), h('p', { class: 'errores' }, e.message)); });
+    return caja;
+  }
+
   function vistaEstado() {
     const lista = h('div', { 'aria-live': 'polite' }, h('p', { class: 'ayuda' }, 'Revisando…'));
     const ICONO = { ok: '✓', mal: '✗', aviso: '•' };
@@ -337,7 +366,7 @@ function app() {
         h('p', { class: 'chip ' + (r.verde ? 'ok' : 'mal') }, r.verde ? 'Todo funcionando' : 'Falta algo: mirá lo que está en rojo'),
         h('ul', { class: 'lista' }, r.controles.map((c) => h('li', { class: 'tarjeta' },
           h('strong', { class: c.estado === 'mal' ? 'errores' : '' }, ICONO[c.estado] + ' ' + c.texto),
-          c.arreglo && c.estado !== 'ok' ? h('p', { class: 'ayuda' }, c.arreglo) : null))));
+          c.arreglo && c.estado !== 'ok' ? h('p', { class: 'ayuda' }, paraElDueño(c.arreglo)) : null))));
     })();
     return h('section', {}, h('h2', {}, 'Estado'), h('p', { class: 'ayuda' }, 'Si algo está en rojo, el asistente no puede responder por ahí. Abajo dice qué hacer.'), lista);
   }
@@ -1149,7 +1178,8 @@ function app() {
       const pausa = c.pausaHasta && c.pausaHasta > Date.now();
       poner(estadoLinea,
         pausa ? h('p', { class: 'pausa' }, 'La atendés vos: el asistente no responde en esta charla hasta las ' + new Date(c.pausaHasta).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '.',
-          ' ', h('button', { type: 'button', class: 'btn chico', onclick: conError(async () => { await api(base() + '/charlas/' + id + '/asistente', { metodo: 'POST', cuerpo: {} }); aviso('El asistente sigue con esta charla.'); cargar(); }) }, 'Que siga el asistente'))
+          ' ', h('button', { type: 'button', class: 'btn chico', onclick: conError(async () => { await api(base() + '/charlas/' + id + '/asistente', { metodo: 'POST', cuerpo: {} }); aviso('El asistente sigue con esta charla.'); cargar(); }) }, 'Que siga el asistente'),
+          ' ', h('button', { type: 'button', class: 'btn chico', onclick: conError(async () => { await api(base() + '/charlas/' + id + '/resuelta', { metodo: 'POST', cuerpo: {} }); aviso('Listo: quedó resuelta y el asistente sigue con esta charla.'); cargar(); }) }, 'Ya lo resolví'))
           : h('p', { class: 'ayuda' }, 'El asistente está atendiendo. Si respondés desde acá, se calla en esta charla para no pisarse con vos.'),
         c.ventanaHasta ? null : h('p', { class: 'chip alerta' }, 'Pasaron más de 24 horas desde su último mensaje: WhatsApp e Instagram no dejan escribirle desde acá. Respondele desde tu app de ' + (c.canal === 'wa' ? 'WhatsApp' : 'Instagram') + '.'));
       texto.disabled = !c.ventanaHasta; enviar.disabled = !c.ventanaHasta;
@@ -1350,6 +1380,18 @@ function app() {
       h('div', { class: 'acciones' }, mandar, a.canal === 'whatsapp' ? null : copiar, listo));
   }
 
+  /** ZL-165: arriba de Hoy, cómo está el asistente, el aviso del día y los agotados, con un toque para cambiarlos. */
+  function estadoHoy() {
+    const n = estado.datos.negocio;
+    const r = estado.datos.resumen || {};
+    const as = estado.datos.asistente || {};
+    return h('div', { class: 'chips' },
+      h('button', { type: 'button', class: 'chip ' + (n.pausa ? 'alerta' : as.activo ? 'ok' : 'alerta'), onclick: () => ir('mas', 'asistente') },
+        n.pausa ? 'Asistente en pausa' : as.activo ? 'Asistente atendiendo' : 'Asistente apagado'),
+      h('button', { type: 'button', class: 'chip', onclick: () => ir('mas', 'asistente') }, n.avisoDia ? 'Aviso de hoy: ' + n.avisoDia.texto.slice(0, 40) + (n.avisoDia.texto.length > 40 ? '…' : '') : '+ Aviso del día'),
+      r.agotados ? h('button', { type: 'button', class: 'chip mal', onclick: () => ir('productos', 'lista') }, r.agotados + (r.agotados === 1 ? ' agotado' : ' agotados')) : null);
+  }
+
   function vistaPedidos() {
     // ZL-165: los nuevos van arriba («Te necesitan ahora»); abajo, de entrada, los que están en curso (aceptados).
     const filtro = estado.filtroPedidos && estado.filtroPedidos !== 'pendiente' ? estado.filtroPedidos : 'aceptado';
@@ -1379,7 +1421,7 @@ function app() {
       h('h2', {}, 'Hola' + (estado.datos.negocio.nombre ? ', ' + estado.datos.negocio.nombre : '')),
       actualizado,
       sinAvisos, guia,
-      h('h3', {}, 'Hoy'), hoy,
+      h('h3', {}, 'Hoy'), estadoHoy(), hoy,
       h('h3', {}, 'Te necesitan ahora'), resumen,
       listaConsultas,
       conPedidos && !estado.datos.negocio.pedidos ? h('p', { class: 'chip alerta' }, 'Los pedidos por chat están apagados en este negocio: se encienden en Admin.') : null,

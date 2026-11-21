@@ -1112,3 +1112,24 @@ test('ZL-165: avisos por dispositivo (probar y sacar), guía de arranque, númer
   assert.equal((await pedir('equipo@example.com', 'DELETE', `/api/n/${a.id}/pedidos/99`)).status, 400);
   assert.ok(d);
 });
+
+test('ZL-165: Equipo (el dueño suma y saca empleados; un empleado no) y «Ya lo resolví» en una charla', async () => {
+  const { d, a, pedir } = await armar();
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['empleado@example.com'] })).status, 200);
+  assert.deepEqual((await pedir('empleado@example.com', 'GET', `/api/n/${a.id}/equipo`)).datos.personas, [{ email: 'duena@example.com', rol: 'dueño' }, { email: 'empleado@example.com', rol: 'empleado' }]);
+  assert.equal((await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/equipo`, { email: 'nuevo@example.com' })).status, 403);
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/equipo`, { email: 'no es correo' })).status, 400);
+  const r = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/equipo`, { email: 'Nuevo@Example.com' })).datos;
+  assert.deepEqual(r.personas.at(-1), { email: 'nuevo@example.com', rol: 'empleado' });
+  assert.equal((await pedir('nuevo@example.com', 'GET', `/api/n/${a.id}`)).datos.negocio.rol, 'empleado');
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/equipo`, { email: 'duena@example.com' })).status, 403, 'a un dueño no');
+  assert.equal((await pedir('duena@example.com', 'DELETE', `/api/n/${a.id}/equipo`, { email: 'nuevo@example.com' })).status, 200);
+  assert.equal((await pedir('nuevo@example.com', 'GET', `/api/n/${a.id}`)).status, 404);
+  // «Ya lo resolví»: la consulta abierta de esa charla queda resuelta.
+  const CH = 'yc:5493410000001:5493410000009';
+  await d.catalogo(a.id).ejecutar('crearConsulta', [CH, { tipo: 'persona', nombre: 'Ana', canal: 'wa' }]);
+  await d.catalogo(a.id).ejecutar('guardarMensajes', [CH, 'wa', [{ de: 'cliente', texto: 'Hola' }], 'Ana']);
+  const id = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/charlas`)).datos.charlas[0].id;
+  assert.equal((await pedir('duena@example.com', 'POST', `/api/n/${a.id}/charlas/${id}/resuelta`, {})).datos.resuelta, true);
+  assert.equal((await d.catalogo(a.id).ejecutar('consulta', [1])).valor.estado, 'resuelta');
+});
