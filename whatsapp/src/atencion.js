@@ -19,6 +19,7 @@
 
 import { clavesVapid } from './push.js';
 import { ZONA_POR_DEFECTO, ZONAS } from './reporte.js';
+import { normalizarMiNegocio } from './minegocio.js';
 
 /** ZL-160: cómo responde los comentarios de Instagram (src/comentarios.js). */
 export const MODOS_COMENTARIOS = ['publico_privado', 'privado'];
@@ -120,8 +121,8 @@ export function crearAtencion(storage) {
       // El paso del pedido en curso (ZL-139), solo con los campos conocidos y cortos.
       const p = datos?.pedido;
       // ZL-163: también la revisión final.
-      const pedido = p && ['confirmar', 'entrega', 'nombre', 'direccion', 'revisar'].includes(p.paso)
-        ? { paso: p.paso, ...(['retiro', 'envio'].includes(p.entrega) && { entrega: p.entrega }), ...(p.nombre && { nombre: String(p.nombre).slice(0, 80) }), ...(p.direccion && { direccion: String(p.direccion).slice(0, 200) }) }
+      const pedido = p && ['confirmar', 'entrega', 'nombre', 'zona', 'direccion', 'revisar'].includes(p.paso)
+        ? { paso: p.paso, ...(['retiro', 'envio'].includes(p.entrega) && { entrega: p.entrega }), ...(p.nombre && { nombre: String(p.nombre).slice(0, 80) }), ...(p.direccion && { direccion: String(p.direccion).slice(0, 200) }), ...(p.zona && { zona: String(p.zona).slice(0, 60) }) }
         : null;
       // La memoria corta de un negocio (ZL-146), solo con campos conocidos y cortos: los últimos mensajes (48 h), el
       // nombre, el resumen y el interés de la persona, la última charla y el paso de la consulta en curso.
@@ -219,6 +220,23 @@ export function crearAtencion(storage) {
       if (!v) { v = await clavesVapid(); await s.put('vapid', v); }
       return v;
     },
+    /**
+     * ZL-164: una pregunta que el asistente no supo responder (para «Lo que no supo responder»). La misma pregunta,
+     * escrita parecida, suma una vez más. Como mucho las 50 últimas.
+     */
+    async sumarNoSupo(id, pregunta, now) {
+      const n = await s.get(`neg:${id}`);
+      const p = limpio(pregunta).slice(0, 200);
+      if (!n || p.length < 4) return 0;
+      const clave = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9ñ ]/g, '').replace(/\s+/g, ' ').trim();
+      const lista = [...(n.noSupo ?? [])];
+      if ((n.preguntas ?? []).some((x) => clave(x.p) === clave(p))) return 0;
+      const i = lista.findIndex((x) => clave(x.p) === clave(p));
+      if (i >= 0) lista[i] = { ...lista[i], n: lista[i].n + 1, t: now };
+      else lista.push({ p, n: 1, t: now });
+      await s.put(`neg:${id}`, { ...n, noSupo: lista.slice(-50) });
+      return lista.length;
+    },
     /** ZL-161: la clave con la que se firman los links de las fotos que mandamos por la charla (se crea sola). */
     async claveFotos() {
       let k = await s.get('clave_fotos');
@@ -250,7 +268,7 @@ export function crearAtencion(storage) {
     async sumarMetrica(id, clave, now, dia = null) {
       // ZL-158: «enviadosWa», lo que manda el sistema por WhatsApp (Meta cobra pasando los 1.000 por número por mes).
       // ZL-160: «comentarios», los que respondió la IA; «comentariosIa», cuántos le pasaron (el tope diario).
-      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas', 'comentarios', 'comentariosIa'].includes(clave)) return 0;
+      if (!['charlas', 'audios', 'seguimientos', 'pases', 'enviadosWa', 'topes', 'pruebas', 'comentarios', 'comentariosIa', 'noSupo', 'fueraHorario'].includes(clave)) return 0;
       const k = `negmet:${id}:${/^\d{4}-\d{2}-\d{2}$/.test(dia ?? '') ? dia : diaDe(now)}`;
       const x = (await s.get(k)) ?? {};
       x[clave] = (x[clave] ?? 0) + 1;
@@ -446,9 +464,15 @@ export function crearAtencion(storage) {
       const preguntas = Array.isArray(datos?.preguntas)
         ? datos.preguntas.map((x) => ({ p: limpio(x?.p).slice(0, 200), r: limpio(x?.r).slice(0, 600), ...(Number.isFinite(x?.t) && { t: x.t }) })).filter((x) => x.p && x.r).slice(-100)
         : antes?.preguntas ?? [];
+      // ZL-164: «Mi negocio» (horarios, fechas especiales, dirección, envíos, pagos, contacto), lo que el asistente no
+      // supo responder (para que el dueño lo cargue) y el historial de cambios («Laura cambió el horario»).
+      const minegocio = datos?.minegocio !== undefined ? normalizarMiNegocio(datos.minegocio, antes?.minegocio) : antes?.minegocio ?? null;
+      const noSupo = Array.isArray(datos?.noSupo) ? datos.noSupo.filter((x) => x?.p).map((x) => ({ p: limpio(x.p).slice(0, 200), n: Math.max(1, Math.floor(Number(x.n) || 1)), t: Number(x.t) || now })).slice(-50) : antes?.noSupo ?? [];
+      const cambio = datos?.cambio ? { t: now, quien: limpio(datos.quien).slice(0, 120), que: limpio(datos.cambio).slice(0, 160) } : null;
+      const cambios = [...(antes?.cambios ?? []), ...(cambio ? [cambio] : [])].slice(-50);
       // ZL-160: responder comentarios de Instagram (lo enciende el dueño) y de qué forma.
       const comentarios = normalizarComentarios(datos?.comentarios, antes?.comentarios);
-      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, comentarios, preguntas, creado: antes?.creado ?? now, actualizado: now };
+      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, comentarios, preguntas, minegocio, noSupo, cambios, avisoFeriado: datos?.avisoFeriado !== undefined ? String(datos.avisoFeriado ?? '').slice(0, 10) : antes?.avisoFeriado ?? '', creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);
@@ -582,6 +606,7 @@ export function adaptadores(a, reloj = () => Date.now()) {
     uso: (id) => a.usoNegocio(id, reloj()),
     vapid: () => a.vapid(),
     claveFotos: () => a.claveFotos(),
+    sumarNoSupo: (id, p) => a.sumarNoSupo(id, p, reloj()),
     suscribirPush: (id, sub, email) => a.suscribirPush(id, sub, email, reloj()),
     suscripcionesPush: (id) => a.suscripcionesPush(id),
     borrarPush: (id, endpoints) => a.borrarPush(id, endpoints),

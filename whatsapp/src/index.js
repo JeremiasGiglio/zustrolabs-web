@@ -8,7 +8,7 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, armarFrom, conectarCuenta, enviarIg, esInstagram, leerComentariosIg, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, responderComentario, responderEnPrivado, secretosDe, textoDePublicacion, urlAutorizar } from './instagram.js';
 import { configComentarios, esRuido, MAX_EDAD_COMENTARIO_MS, preguntadorComentario, TOPE_COMENTARIOS_DIA } from './comentarios.js';
-import { conAjustes, conAvisoDia, conPreguntas, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { conAjustes, conAvisoDia, conInfo, conPreguntas, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
 import { ajustesDeVenta, HISTORIAL_MAX, HISTORIAL_MS, limiteDiaDe } from './atencion.js';
 import { administrar, appCompartida, appNegocios, canalesDe, textoEstado, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, avisarEquipo, panel } from './panel.js';
@@ -21,6 +21,7 @@ import { consultasDeCharla } from './consultas.js';
 import { avisarCelulares } from './push.js';
 import { leerLinkFoto, linkFoto, RUTA_FOTOS } from './fotos.js';
 import { armarReporte, diaLocal, horaLocal, xlsx } from './reporte.js';
+import { ajustesConMiNegocio, cuandoResponden, enZona, feriados, fueraDeHorarioAhora, paisDeZona, textoMiNegocioIa, tieneHorarios, turnosDe } from './minegocio.js';
 import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
 const MAX_CUERPO = 256_000;
@@ -92,8 +93,28 @@ const consultaCatalogo = (env, deps, negocioId, ficha) => {
  */
 export function fichaDelNegocio(fichaSola, dueño, now = Date.now()) {
   const conVenta = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
-  return conPreguntas(conAvisoDia(conVenta, dueño?.avisoDia, now), dueño?.preguntas);
+  return conPreguntas(conAvisoDia(conMiNegocio(conVenta, dueño, now), dueño?.avisoDia, now), dueño?.preguntas);
 }
+
+/**
+ * ZL-164: «Mi negocio». La IA recibe la fecha y la hora del negocio siempre, y con horarios cargados, si está abierto
+ * ahora y cuándo abre (calculado por el código, no por la IA); también la dirección con mapa, los envíos por zona, las
+ * formas de pago (sin el alias) y el contacto. Los textos fijos («te responden por acá …») dicen «hoy hasta las 20:30»
+ * o «mañana desde las 9:00» en vez del horario escrito a mano en la ficha.
+ */
+export function conMiNegocio(ficha, dueño, now = Date.now()) {
+  if (!ficha || !dueño) return ficha;
+  const mn = dueño.minegocio ?? null;
+  const zona = ajustesDeVenta(dueño.ajustes).zona;
+  const f = conInfo(ficha, 'Mi negocio: fecha, hora, horarios, dirección, envíos y pagos (lo carga el negocio y lo calcula el sistema; manda sobre lo de arriba)', textoMiNegocioIa(mn, zona, now));
+  if (!tieneHorarios(mn)) return f;
+  const idiomas = f.idiomas?.length ? f.idiomas : [f.idioma];
+  const horarios = Object.fromEntries(idiomas.map((i) => [i, cuandoResponden(mn, zona, now, i) || f.horarios?.[i] || '']));
+  return { ...f, horarios, horarioPersona: horarios[f.idioma] ?? f.horarioPersona };
+}
+
+/** «Cómo vendés» completado con «Mi negocio» (formas de pago marcadas, dirección, zonas de envío). */
+export const ajustesDelNegocio = (dueño, opciones) => ajustesConMiNegocio(ajustesDeVenta(dueño?.ajustes), dueño?.minegocio ?? null, opciones);
 
 function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
   const ficha = fichaDelNegocio(fichaSola, dueño, deps.now ?? Date.now());
@@ -136,7 +157,23 @@ export function cupoDeIa(env, negocioId, deps = {}, intentos = 3) {
 }
 
 /** ZL-159: la pausa que puso el dueño (con la zona horaria del negocio, para decir cuándo vuelven). */
-const conPausa = (perfil, dueño) => (dueño?.pausa ? { ...perfil, pausa: { ...dueño.pausa, zona: ajustesDeVenta(dueño.ajustes).zona } } : perfil);
+/**
+ * ZL-164: con «Fuera de horario: no atender», el negocio cerrado funciona como una pausa hasta que abre: a cada persona
+ * se le dice una vez cuándo abren y nada más (BORRAR sigue andando). La pausa del dueño manda sobre esta.
+ */
+const conPausa = (perfil, dueño, now = Date.now()) => {
+  const zona = ajustesDeVenta(dueño?.ajustes).zona;
+  if (dueño?.pausa?.hasta > now) return { ...perfil, pausa: { ...dueño.pausa, zona } };
+  const f = dueño?.minegocio ? fueraDeHorarioAhora(dueño.minegocio, zona, now) : null;
+  if (f?.modo === 'cerrado' && f.hasta) return { ...perfil, pausa: { desde: `cerrado:${f.hasta}`, hasta: f.hasta, zona, cerrado: f.cuando } };
+  return perfil;
+};
+
+/** ZL-164: con «Fuera de horario: responder sin tomar pedidos», cerrado no se arman pedidos por la charla. */
+const sinPedidosAhora = (dueño, now = Date.now()) => {
+  const f = dueño?.minegocio ? fueraDeHorarioAhora(dueño.minegocio, ajustesDeVenta(dueño.ajustes).zona, now) : null;
+  return f?.modo === 'responder';
+};
 
 /** ZL-157: Meta deja escribirle solo dentro de las 24 h de su último mensaje; con media hora de margen. */
 export const VENTANA_SEGURA_MS = 23.5 * 3600_000;
@@ -241,9 +278,9 @@ async function contarEnviadoWa(a, negocio, now, n = 1) {
 
 /** Pedidos por chat de un negocio (ZL-139), si los tiene encendidos y una base de productos. */
 function pedidosDe(env, deps, dueño, ficha, charla, canal) {
-  if (!dueño?.pedidos) return null;
+  if (!dueño?.pedidos || sinPedidosAhora(dueño, deps.now ?? Date.now())) return null;
   const cat = catalogoDe(env, deps)(dueño.id);
-  return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDeVenta(dueño.ajustes) }) : null;
+  return cat ? pedidosDeCharla({ cat, charla, canal, negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDelNegocio(dueño) }) : null;
 }
 
 /**
@@ -260,6 +297,10 @@ async function despuesDeAtender(env, a, deps, fetchImpl, dueño, antes, ev, r, n
     if (!['repetido', 'humano'].includes(r.metrica) && (!antes?.ultimo || diaLocal(antes.ultimo, zona) !== dia)) await a.negocios.sumarMetrica(dueño.id, 'charlas', dia);
     if (ev.audio) await a.negocios.sumarMetrica(dueño.id, 'audios', dia);
     if (r.handoff) await a.negocios.sumarMetrica(dueño.id, 'pases', dia);
+    // ZL-164: los mensajes que llegan con el negocio cerrado (para el reporte: «atendió N fuera de horario»).
+    if (r.metrica !== 'repetido' && dueño.minegocio && fueraDeHorarioAhora(dueño.minegocio, zona, now)) await a.negocios.sumarMetrica(dueño.id, 'fueraHorario', dia);
+    // ZL-164: lo que no supo responder queda para que el dueño lo cargue en «Mi negocio» (una vez por pregunta parecida).
+    if (r.noSabe && a.negocios.sumarNoSupo) { await a.negocios.sumarNoSupo(dueño.id, r.noSabe); await a.negocios.sumarMetrica(dueño.id, 'noSupo', dia); }
     const canal = /^yc:/.test(charla) ? 'WhatsApp' : 'Instagram';
     let aviso = null;
     if (r.metrica === 'pedido_nuevo' && r.pedido) aviso = { titulo: 'Pedido nuevo', cuerpo: `Pedido N.º ${r.pedido} por ${canal}. Abrí la app para aceptarlo.` };
@@ -378,6 +419,35 @@ export async function revisarNegocios(env, deps, now) {
 }
 
 /**
+ * ZL-164, en el cron diario: si en los próximos 7 días hay un feriado nacional que el negocio no cargó como fecha
+ * especial y ese día suele abrir, se le avisa una vez al celular para que diga si abre (si no, el asistente diría que
+ * está abierto). Solo los negocios con horarios cargados y una zona cuyo país sabemos calcular.
+ */
+export async function recordarFeriados(env, deps, now) {
+  const a = almacen(env, deps);
+  const fetchImpl = deps.fetch ?? fetch;
+  if (!a.negocios?.list) return [];
+  const out = [];
+  for (const n of await a.negocios.list()) {
+    const mn = n.minegocio;
+    const zona = ajustesDeVenta(n.ajustes).zona;
+    const pais = paisDeZona(zona);
+    if (!pais || !tieneHorarios(mn)) continue;
+    const hoy = enZona(now, zona).fecha;
+    const limite = new Date(Date.parse(`${hoy}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+    const anio = Number(hoy.slice(0, 4));
+    const proximo = [...feriados(pais, anio), ...feriados(pais, anio + 1)].find((f) => f.fecha >= hoy && f.fecha <= limite && turnosDe(mn, f.fecha).turnos.length && !turnosDe(mn, f.fecha).especial);
+    if (!proximo || (n.avisoFeriado ?? '') >= proximo.fecha) continue;
+    const dia = `${proximo.fecha.slice(8)}/${proximo.fecha.slice(5, 7)}`;
+    const enviados = await avisarNegocio(a, n.id, { titulo: `El ${dia} es feriado`, cuerpo: `${proximo.nombre}. ¿Abren? Cargalo en Mi negocio → Fechas especiales, así el asistente responde bien.` }, fetchImpl, now).catch(() => 0);
+    await a.negocios.guardar(n.id, { avisoFeriado: proximo.fecha });
+    out.push({ negocio: n.id, fecha: proximo.fecha, enviados });
+  }
+  if (out.length) console.log(JSON.stringify({ canal: 'negocio', que: 'feriados', avisos: out.length }));
+  return out;
+}
+
+/**
  * Seguimiento con permiso (ZL-151), cada 10 minutos: los recordatorios que ya tocan. Solo dentro de las 24 h del
  * último mensaje de la persona, sin BAJA, sin alguien del negocio atendiendo, y como mucho dos por charla.
  */
@@ -409,7 +479,7 @@ export async function seguimientos(env, deps, now) {
       const r = cat ? await cat.ejecutar('carritoDe', [charla]).catch(() => null) : null;
       if (!r?.ok || !r.valor) { await listo('sin_carrito'); continue; }
     }
-    const T = perfilNegocio(pf.ficha).textos(e.idioma);
+    const T = perfilNegocio(fichaDelNegocio(pf.ficha, negocio, now)).textos(e.idioma);
     const texto = e.seguir.tipo === 'carrito' ? T.seguirCarrito : T.seguirConsulta;
     const enviado = await avisarComprador(env, a, negocio, charla, texto, fetchImpl, now);
     await a.memoria.put(num, { ...e, seguir: null, seguidos: (e.seguidos ?? 0) + 1 });
@@ -688,7 +758,7 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       const pf = parsearFicha(f.texto);
       if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); continue; }
       const dueño = await a.negocios?.deCuenta(ev.cuenta);
-      perfil = conPausa(perfilNegocio(pf.ficha), dueño);
+      perfil = conPausa(perfilNegocio(fichaDelNegocio(pf.ficha, dueño, now)), dueño, now);
       dueñoEv = dueño;
       // El negocio eligió sus canales: con Instagram apagado, esta cuenta no responde.
       if (dueño && !canalesDe(dueño)[canal.clave === 'ig' ? 'instagram' : 'whatsapp']) { log({ ok: true, que: 'canal_apagado' }); continue; }
@@ -797,7 +867,7 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
   if (!f?.texto || !f.activa) { log({ ok: true, que: f?.texto ? 'ficha_inactiva' : 'sin_ficha' }); return; }
   const pf = parsearFicha(f.texto);
   if (!pf.ok) { log({ ok: false, que: 'ficha_invalida' }); return; }
-  const perfil = conPausa(perfilNegocio(pf.ficha), dueño);
+  const perfil = conPausa(perfilNegocio(fichaDelNegocio(pf.ficha, dueño, now)), dueño, now);
   const preguntar = iaDeNegocio(env, deps, a, dueño, pf.ficha, 'WhatsApp');
   // La memoria guarda cada charla con los números normalizados: así el eco del dueño pausa la misma charla aunque Meta
   // escriba el número de la persona distinto (con o sin el 9). Para responder se usa el número tal como vino.
@@ -971,7 +1041,7 @@ async function probarFicha(env, fichaSola, mensajes, deps, negocioId = null, est
   const DE = 'ig:0.0';
   const previo = estadoDePrueba(estado);
   if (previo) await memoria.put(DE, previo);
-  const perfil = perfilNegocio(ficha);
+  const perfil = conPausa(perfilNegocio(ficha), dueño, deps.now ?? Date.now());
   const catalogo = consultaCatalogo(env, deps, negocioId, ficha);
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo });
   // ZL-161: en la charla de prueba también se ven las fotos que mandaría.
@@ -981,7 +1051,7 @@ async function probarFicha(env, fichaSola, mensajes, deps, negocioId = null, est
   // entre llamadas salvo el estado que vuelve la app, así que el carrito simulado vive lo que dura este pedido.
   const real = negocioId ? catalogoDe(env, deps)(negocioId) : null;
   const sim = real ? catalogoDePrueba(real, estado?.sim ?? null) : null;
-  const pruebaPedidos = sim && dueño?.pedidos ? pedidosDeCharla({ cat: sim, charla: DE, canal: 'ig', negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDeVenta(dueño.ajustes) }) : null;
+  const pruebaPedidos = sim && dueño?.pedidos && !sinPedidosAhora(dueño, now) ? pedidosDeCharla({ cat: sim, charla: DE, canal: 'ig', negocio: ficha.nombre, precios: ficha.precios, ajustes: ajustesDelNegocio(dueño) }) : null;
   const pruebaConsultas = sim ? consultasDeCharla({ cat: sim, charla: DE, canal: 'ig' }) : null;
   const charla = [];
   for (const [i, texto] of mensajes.entries()) {
@@ -1263,6 +1333,7 @@ export default {
     console.log(JSON.stringify({ canal: 'ig', que: 'mantenimiento', cuentas: r }));
     // ZL-159: después del mantenimiento, el semáforo de todos los negocios; si algo está en rojo, correo al equipo.
     await revisarNegocios(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'revision_diaria', error: String(e?.message ?? 'error').slice(0, 60) })));
+    await recordarFeriados(env, deps, deps.now ?? Date.now()).catch((e) => console.log(JSON.stringify({ canal: 'negocio', que: 'feriados', error: String(e?.message ?? 'error').slice(0, 60) })));
     return r;
   },
 };

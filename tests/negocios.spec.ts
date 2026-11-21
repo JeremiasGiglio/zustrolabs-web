@@ -76,7 +76,7 @@ test.describe('app de negocios (ZL-121)', () => {
     await montar(page, 'duena@example.com');
     // ZL-148: arranca en Inicio; Productos es una de las tres secciones.
     // ZL-159: «Asistente» también para el negocio (pausa, aviso del día y charla de prueba).
-    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Reportes', 'Conexiones', 'Asistente']);
+    await expect(page.getByRole('tab')).toHaveText(['Inicio', 'Productos', 'Mi negocio', 'Reportes', 'Conexiones', 'Asistente']);
     await page.getByRole('tab', { name: 'Productos' }).click();
     await expect(page.getByRole('heading', { name: 'Productos' })).toBeVisible();
     await expect(page.getByText('Asistente activo')).toBeVisible();
@@ -398,7 +398,8 @@ test.describe('app de negocios (ZL-121)', () => {
 
   test('celular (ZL-148): la barra de secciones va abajo, sin scroll horizontal; «Cómo vendés» se guarda y es accesible', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    const { negocio, n } = await montar(page, 'duena@example.com');
+    // ZL-164: la reserva de pedidos aceptados solo se ve con pedidos por chat encendidos.
+    const { negocio, n } = await montar(page, 'duena@example.com', async (nn, neg) => { await nn.negocios.guardar(neg.id, { pedidos: true }); });
     const barra = await page.locator('nav.tabs').boundingBox();
     expect(barra && barra.y + barra.height).toBeGreaterThan(800);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
@@ -530,6 +531,46 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('button', { name: 'Cómo vendés' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Conectar Instagram' })).toHaveCount(0);
     // Y si igual lo intenta por fuera de la app, el servidor lo frena (lo prueba test/negocios.test.js).
+  });
+
+  test('Mi negocio (ZL-164): la dueña carga el horario con dos turnos, copia el lunes, suma feriados y una zona de envío; responde lo que no supo; accesible en el celular', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { negocio, n } = await montar(page, 'duena@example.com', async (nn, neg) => {
+      await nn.negocios.sumarNoSupo(neg.id, '¿Hacen tortas sin TACC?');
+    });
+    await page.getByRole('tab', { name: 'Mi negocio' }).click();
+    await expect(page.getByText('Sin horarios cargados')).toBeVisible();
+    await page.getByLabel('Lunes').check();
+    await page.getByRole('button', { name: '+ Otro turno' }).click();
+    await page.getByRole('button', { name: 'Copiar el lunes a todos los días' }).click();
+    await page.getByLabel('Domingo').uncheck();
+    await page.getByRole('button', { name: 'Cargar feriados' }).click();
+    await expect(page.getByRole('status')).toContainText('Sumé');
+    await page.getByLabel('Responder sin tomar pedidos').check();
+    await page.getByLabel('Dónde está el local').fill('Calle Ficticia 123, Rosario');
+    await page.getByRole('button', { name: '+ Agregar zona' }).click();
+    await page.getByLabel('Zona', { exact: true }).fill('Centro');
+    await page.getByLabel('Costo').fill('1500');
+    await page.getByLabel('Transferencia').check();
+    await page.getByLabel('Alias o CBU para transferir').fill('ALIAS.FICTICIO');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Guardado');
+    const mn = (await n.negocios.get(negocio.id)).minegocio;
+    expect(mn.horarios[3]).toEqual([{ abre: '09:00', cierra: '13:00' }, { abre: '16:00', cierra: '20:00' }]);
+    expect(mn.horarios[6]).toEqual([]);
+    expect(mn.especiales.length).toBeGreaterThan(3);
+    expect(mn.especiales.every((e: any) => e.tipo === 'cerrado' && e.nota)).toBe(true);
+    expect([mn.fueraDeHorario, mn.direccion, mn.envios.zonas[0].nombre, mn.envios.zonas[0].costo, mn.pagos.transferencia, mn.pagos.alias]).toEqual(['responder', 'Calle Ficticia 123, Rosario', 'Centro', 1500, true, 'ALIAS.FICTICIO']);
+    await expect(page.getByRole('link', { name: 'Ver en el mapa' })).toBeVisible();
+    await expect(page.getByText('Historial de cambios')).toBeVisible();
+    // Lo que no supo: se responde y pasa a las preguntas frecuentes.
+    await page.getByPlaceholder('Escribí la respuesta, así la próxima la sabe').fill('Sí, por encargo.');
+    await page.getByRole('button', { name: 'Responder y guardar' }).click();
+    await expect(page.getByRole('status')).toContainText('preguntas frecuentes');
+    expect((await n.negocios.get(negocio.id)).preguntas.map((x: any) => x.p)).toEqual(['¿Hacen tortas sin TACC?']);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(r.violations.map((v) => v.id)).toEqual([]);
   });
 
   test('Inicio (ZL-159): si ningún celular tiene los avisos, lo dice arriba', async ({ page }) => {

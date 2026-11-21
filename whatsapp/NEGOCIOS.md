@@ -242,6 +242,35 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## Mi negocio (ZL-164)
+
+Pestaña «Mi negocio» de la app (`src/minegocio.js`, API `GET/PUT /api/n/<id>/mi-negocio`). Lo carga el **dueño**, sin
+pasar por el equipo, y el asistente lo usa desde la próxima respuesta:
+
+- **Horarios** con hasta dos turnos por día («Copiar el lunes a todos los días»; un turno que se pisa con el anterior no se
+  guarda) y **fechas especiales** (cerrado u otro horario) que mandan sobre la semana. «Cargar feriados» suma los
+  nacionales de los próximos 12 meses (Argentina con los trasladables de la Ley 27.399, Croacia y España) como cerrado,
+  para que el dueño cambie los que abre. Las fechas que ya pasaron se borran al guardar.
+- **El código calcula los hechos**: la IA recibe siempre la fecha y la hora del negocio y, con horarios, si está abierto
+  ahora y cuándo abre («Estado ahora: CERRADO, abre mañana a las 9:00»). Los textos fijos («te responden por acá …»)
+  dicen «hoy hasta las 20:30» o «mañana desde las 9:00» en lugar del horario escrito en la ficha.
+- **Cuando está cerrado**: responder y tomar pedidos (de entrada: lo preparan cuando abran), responder sin tomar pedidos
+  (no se arman pedidos por la charla) o no atender (como una pausa hasta que abre: a cada persona se le dice una vez
+  cuándo abren; BORRAR sigue andando; la pausa del dueño manda sobre esto).
+- **Dirección** con link al mapa, **envíos por zona** (costo, pedido mínimo, gratis desde, cuánto tarda), **formas de pago**
+  (efectivo, transferencia, Mercado Pago, tarjeta) y **contacto**. Con zonas cargadas, el pedido por chat pregunta la zona
+  después del nombre, avisa si no llega al mínimo (y vuelve a la entrega), y la revisión y el cierre muestran el costo y
+  el total con envío; la zona y su costo quedan en el pedido. El **alias** va solo en el aviso de pedido aceptado: a la IA
+  no se le da. Las formas de pago marcadas mandan sobre el texto de «Cómo vendés».
+- **Lo que no supo responder**: cada pregunta que la IA no sabía (una vez por pregunta parecida, como mucho 50) con
+  «Responder y guardar» (pasa a las preguntas frecuentes) o «Descartar». Las **preguntas frecuentes** se editan ahí. Estas
+  dos cosas también las puede hacer un empleado.
+- **Zona horaria** (pasó de «Cómo vendés» a acá) e **historial de cambios** («duena@… cambió el horario, los envíos»).
+- En el cron diario, si en los próximos 7 días hay un feriado que el negocio no cargó y ese día abre, le llega un aviso al
+  celular (una vez por feriado).
+- El reporte suma «mensajes con el negocio cerrado» y «preguntas que no supo».
+- «Cómo vendés» muestra solo lo que aplica: sin pedidos por chat no hay reserva; con solo retiro no hay envío (y al revés).
+
 ## El pedido por chat, a prueba de errores (ZL-163)
 
 Lo que falló en vivo en la auditoría (sección 2.1 bis) y cómo quedó (`src/pedidos-charla.js`):

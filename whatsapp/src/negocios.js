@@ -15,7 +15,8 @@ import { parsearFicha, resumenFicha } from './negocio.js';
 import { armarDesdeWeb, camposDeFicha, CHARLAS_DE_PRUEBA, evaluarPrueba, fichaDeCampos, PLANTILLAS, revisarFicha } from './fichas-editor.js';
 import { APP_CSS, APP_HTML, appJs } from './negocios-ui.js';
 import { ICONO_SVG, MANIFIESTO, suscripcionValida, SW_JS } from './push.js';
-import { diaLocal } from './reporte.js';
+import { diaLocal, ZONAS } from './reporte.js';
+import { ajustesConMiNegocio, cuandoResponden, estadoAhora, feriados, mapaDe, normalizarMiNegocio, paisDeZona, pesos } from './minegocio.js';
 
 export const NEGOCIOS_HOST = 'negocios.zustrolabs.com';
 /** ZL-158: Meta da 1.000 mensajes de servicio gratis por número por mes (desde el 1/10/2026); la app avisa a los 800. */
@@ -48,15 +49,15 @@ const ESTADO_TEXTOS = {
   es: { aceptado: (neg, n) => `¡Listo! ${neg} aceptó tu pedido ${n}.`, pago: 'Cómo pagar', envio: 'Envío', retiro: 'Retiro', dudas: 'Cualquier duda, escribinos por acá.', coordinar: 'En un rato te escriben por acá para coordinar el pago y la entrega.',
     rechazado: (neg, n, p) => `Lo siento: ${neg} no puede tomar tu pedido ${n}${p}.`, pagado: (neg, n) => `${neg} recibió el pago de tu pedido ${n}. ¡Gracias!`,
     entregado: (neg, n) => `¡Tu pedido ${n} ya está entregado! Gracias por comprarle a ${neg} 😊`, cancelado: (neg, n, p) => `Tu pedido ${n} fue cancelado${p}.`,
-    vencido: (neg, n) => `Tu pedido ${n} se canceló porque no se registró el pago a tiempo. Si ya pagaste o lo querés igual, escribinos por acá y lo vemos.`, num: (x) => `N.º ${x}` },
+    vencido: (neg, n) => `Tu pedido ${n} se canceló porque no se registró el pago a tiempo. Si ya pagaste o lo querés igual, escribinos por acá y lo vemos.`, num: (x) => `N.º ${x}`, sinCargo: 'sin cargo', totalEnvio: 'total con envío' },
   en: { aceptado: (neg, n) => `Done! ${neg} accepted your order ${n}.`, pago: 'How to pay', envio: 'Delivery', retiro: 'Pick-up', dudas: 'Any questions, write to us here.', coordinar: 'They’ll write to you here shortly to arrange payment and delivery.',
     rechazado: (neg, n, p) => `Sorry: ${neg} can’t take your order ${n}${p}.`, pagado: (neg, n) => `${neg} received the payment for your order ${n}. Thank you!`,
     entregado: (neg, n) => `Your order ${n} has been delivered! Thanks for buying from ${neg} 😊`, cancelado: (neg, n, p) => `Your order ${n} was cancelled${p}.`,
-    vencido: (neg, n) => `Your order ${n} was cancelled because the payment wasn’t registered in time. If you already paid or still want it, write to us here.`, num: (x) => `no. ${x}` },
+    vencido: (neg, n) => `Your order ${n} was cancelled because the payment wasn’t registered in time. If you already paid or still want it, write to us here.`, num: (x) => `no. ${x}`, sinCargo: 'free', totalEnvio: 'total with delivery' },
   hr: { aceptado: (neg, n) => `Gotovo! ${neg} je prihvatio vašu narudžbu ${n}.`, pago: 'Plaćanje', envio: 'Dostava', retiro: 'Preuzimanje', dudas: 'Za sva pitanja pišite nam ovdje.', coordinar: 'Uskoro će vam se javiti ovdje radi plaćanja i preuzimanja.',
     rechazado: (neg, n, p) => `Žao nam je: ${neg} ne može prihvatiti vašu narudžbu ${n}${p}.`, pagado: (neg, n) => `${neg} je primio uplatu za narudžbu ${n}. Hvala!`,
     entregado: (neg, n) => `Vaša narudžba ${n} je isporučena! Hvala što kupujete kod ${neg} 😊`, cancelado: (neg, n, p) => `Vaša narudžba ${n} je otkazana${p}.`,
-    vencido: (neg, n) => `Vaša narudžba ${n} je otkazana jer uplata nije zabilježena na vrijeme. Ako ste već platili ili je i dalje želite, pišite nam ovdje.`, num: (x) => `br. ${x}` },
+    vencido: (neg, n) => `Vaša narudžba ${n} je otkazana jer uplata nije zabilježena na vrijeme. Ako ste već platili ili je i dalje želite, pišite nam ovdje.`, num: (x) => `br. ${x}`, sinCargo: 'besplatno', totalEnvio: 'ukupno s dostavom' },
 };
 export function textoEstado(p, estado, motivo, negocio, ajustes = null, idioma = 'es') {
   const T = ESTADO_TEXTOS[idioma] ?? ESTADO_TEXTOS.es;
@@ -68,10 +69,13 @@ export function textoEstado(p, estado, motivo, negocio, ajustes = null, idioma =
     const aj = ajustes ?? {};
     const envio = p.comprador?.entrega === 'envio';
     const partes = [T.aceptado(negocio, n)];
+    // ZL-164: con las formas de pago de «Mi negocio», acá sí va el alias (a la IA no se le da).
     if (aj.pago) partes.push(`${T.pago}: ${aj.pago}`);
-    if (envio && aj.envio) partes.push(`${T.envio}: ${aj.envio}`);
-    if (!envio && aj.retiro) partes.push(`${T.retiro}: ${aj.retiro}`);
-    partes.push(aj.pago || (envio ? aj.envio : aj.retiro) ? T.dudas : T.coordinar);
+    // La zona y el costo que calculó el código al cerrar el pedido; si no, el texto de «Cómo vendés».
+    if (envio && p.comprador?.zona) partes.push(`${T.envio}: ${p.comprador.zona} (${p.comprador.envio ? pesos(p.comprador.envio) : T.sinCargo})${p.total && p.comprador.envio ? ` · ${T.totalEnvio}: ${pesos(Math.round((p.total + p.comprador.envio) * 100) / 100)}` : ''}`);
+    else if (envio && aj.envio) partes.push(`${T.envio}: ${aj.envio}`);
+    if (!envio && aj.retiro) partes.push(`${T.retiro}: ${aj.retiro}${aj.mapa ? `\n${aj.mapa}` : ''}`);
+    partes.push(aj.pago || (envio ? aj.envio || p.comprador?.zona : aj.retiro) ? T.dudas : T.coordinar);
     return partes.join('\n');
   }
   if (['rechazado', 'pagado', 'entregado', 'cancelado', 'vencido'].includes(estado)) return T[estado](negocio, n, porque);
@@ -207,7 +211,7 @@ export async function appNegocios(request, env, deps) {
   // ZL-159: lo que solo hace un dueño (conectar canales, cómo se vende, pausar el asistente). Un empleado, no.
   const dueño = esDueño(negocio, email, admin);
   const soloDueño = () => error('eso lo cambia el dueño del negocio', 403);
-  const configura = request.method !== 'GET' && (/^\/(instagram|whatsapp)(\/|$)/.test(sub) || ['/ajustes', '/asistente'].includes(sub));
+  const configura = request.method !== 'GET' && (/^\/(instagram|whatsapp)(\/|$)/.test(sub) || ['/ajustes', '/asistente', '/mi-negocio'].includes(sub));
   if (configura && !dueño) return soloDueño();
 
   if (request.method === 'GET' && sub === '') {
@@ -348,12 +352,14 @@ export async function appNegocios(request, env, deps) {
     const motivo = String(b.motivo ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 200);
     // Aceptar con un toque (ZL-148): cuánto se guarda sin pagar sale de los ajustes del negocio, no de cada pedido.
     const aj = ajustesDeVenta(negocio.ajustes);
+    // ZL-164: el aviso al comprador con lo de «Mi negocio» (formas de pago con el alias, dirección con mapa).
+    const ajAviso = { ...ajustesConMiNegocio(aj, negocio.minegocio ?? null, { conAlias: true }), mapa: negocio.minegocio?.direccion && !aj.retiro ? mapaDe(negocio.minegocio.direccion) : '' };
     const r = await ejecutar('cambiarEstado', [Number(mo[1]), b.estado, email, { motivo, horas: b.horas ?? aj.reservaHoras }]);
     if (r.resp) return r.resp;
     // Se le avisa al comprador por el mismo canal (dentro de las 24 h de Meta). Si falla, el estado igual quedó.
     // ZL-163: en el idioma de su charla y con el nombre del negocio de la ficha (el mismo que usa el asistente).
     const idioma = await deps.charlasNegocio?.idioma?.(r.valor.charla).catch(() => null);
-    const texto = textoEstado(r.valor, b.estado, motivo, await nombreDeFicha(deps, negocio), aj, idioma ?? 'es');
+    const texto = textoEstado(r.valor, b.estado, motivo, await nombreDeFicha(deps, negocio), ajAviso, idioma ?? 'es');
     let aviso = texto && deps.avisarComprador ? await deps.avisarComprador(negocio, r.valor.charla, texto) : null;
     // ZL-157: el comprador SIEMPRE se entera. Si no salió solo (pasaron las 24 h de Meta, o falló el envío), queda
     // guardado para cuando vuelva a escribir, y el dueño tiene el mensaje listo para mandarlo él con un toque.
@@ -428,6 +434,72 @@ export async function appNegocios(request, env, deps) {
     const r = await deps.negocios.guardar(negocio.id, { ajustes: ajustesDeVenta({ ...negocio.ajustes, ...b }) });
     if (r?.error) return error(r.error);
     return json(r.negocio.ajustes);
+  }
+
+  // ZL-164: «Mi negocio». Lo carga el dueño sin pasar por el equipo (horarios, fechas especiales, fuera de horario,
+  // dirección, envíos, pagos, contacto y la zona horaria); las preguntas frecuentes y «lo que no supo responder» también
+  // los maneja un empleado. Cada cambio queda en el historial con quién lo hizo.
+  if (sub === '/mi-negocio' || sub.startsWith('/mi-negocio/')) {
+    const aj = ajustesDeVenta(negocio.ajustes);
+    const vista = (n) => {
+      const mn = normalizarMiNegocio(n.minegocio ?? null);
+      const e = estadoAhora(mn, ajustesDeVenta(n.ajustes).zona, now);
+      return {
+        minegocio: mn, zona: ajustesDeVenta(n.ajustes).zona, zonas: ZONAS.map(([z, nombre]) => ({ z, nombre })), pais: paisDeZona(ajustesDeVenta(n.ajustes).zona),
+        ahora: e ? { abierto: e.abierto, texto: cuandoResponden(mn, ajustesDeVenta(n.ajustes).zona, now) } : null,
+        preguntas: n.preguntas ?? [], noSupo: [...(n.noSupo ?? [])].sort((x, y) => y.n - x.n || y.t - x.t), cambios: [...(n.cambios ?? [])].reverse().slice(0, 20),
+        mapa: mn.direccion ? mapaDe(mn.direccion) : '', puede: dueño,
+      };
+    };
+    if (request.method === 'GET' && sub === '/mi-negocio') return json(vista(negocio));
+    if (request.method === 'GET' && sub === '/mi-negocio/feriados') {
+      const pais = paisDeZona(aj.zona);
+      const hoy = diaLocal(now, aj.zona);
+      const anio = Number(hoy.slice(0, 4));
+      const enUnAnio = `${anio + 1}${hoy.slice(4)}`;
+      return json({ pais, feriados: pais ? [...feriados(pais, anio), ...feriados(pais, anio + 1)].filter((f) => f.fecha >= hoy && f.fecha < enUnAnio) : [] });
+    }
+    const b = await leerJson(request);
+    if (!b) return error('pedido inválido');
+    if (request.method === 'PUT' && sub === '/mi-negocio') {
+      const antes = normalizarMiNegocio(negocio.minegocio ?? null);
+      const nuevo = normalizarMiNegocio(b.minegocio ?? {}, antes);
+      // Las fechas especiales que ya pasaron no se guardan (la lista queda corta).
+      const hoy = diaLocal(now, aj.zona);
+      nuevo.especiales = nuevo.especiales.filter((e) => e.hasta >= hoy);
+      antes.especiales = antes.especiales.filter((e) => e.hasta >= hoy);
+      const NOMBRES = { horarios: 'el horario', especiales: 'las fechas especiales', fueraDeHorario: 'qué hacer fuera de horario', direccion: 'la dirección', envios: 'los envíos', pagos: 'las formas de pago', contacto: 'el contacto' };
+      const que = Object.keys(NOMBRES).filter((k) => JSON.stringify(antes[k]) !== JSON.stringify(nuevo[k])).map((k) => NOMBRES[k]);
+      const zona = b.zona && ZONAS.some(([z]) => z === b.zona) ? b.zona : null;
+      if (zona && zona !== aj.zona) que.push('la zona horaria');
+      if (!que.length) return json(vista(negocio));
+      const r = await deps.negocios.guardar(negocio.id, { minegocio: nuevo, ...(zona && { ajustes: { ...aj, zona } }), cambio: `cambió ${que.join(', ')}`, quien: email });
+      if (r?.error) return error(r.error);
+      console.log(JSON.stringify({ canal: 'negocio', que: 'mi_negocio', cambios: que.length }));
+      return json(vista(r.negocio));
+    }
+    const limpio = (v, n) => String(v ?? '').replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').replace(/ ([?!.,;:])/g, '$1').trim().slice(0, n);
+    const clave = (t) => limpio(t, 200).toLowerCase();
+    if (request.method === 'PUT' && sub === '/mi-negocio/preguntas') {
+      if (!Array.isArray(b.preguntas)) return error('pedido inválido');
+      const preguntas = b.preguntas.map((x) => ({ p: limpio(x?.p, 200), r: limpio(x?.r, 600), t: Number(x?.t) || now })).filter((x) => x.p && x.r).slice(0, 100);
+      const claves = new Set(preguntas.map((x) => clave(x.p)));
+      const r = await deps.negocios.guardar(negocio.id, { preguntas, noSupo: (negocio.noSupo ?? []).filter((x) => !claves.has(clave(x.p))), cambio: 'cambió las preguntas frecuentes', quien: email });
+      if (r?.error) return error(r.error);
+      return json(vista(r.negocio));
+    }
+    if (request.method === 'POST' && sub === '/mi-negocio/no-supo') {
+      // «Responder y guardar»: la respuesta pasa a las preguntas frecuentes; «Descartar» (sin respuesta) la saca.
+      const pregunta = limpio(b.pregunta, 200);
+      const respuesta = limpio(b.respuesta, 600);
+      if (!pregunta) return error('falta la pregunta');
+      const noSupo = (negocio.noSupo ?? []).filter((x) => clave(x.p) !== clave(pregunta));
+      const preguntas = respuesta ? [...(negocio.preguntas ?? []).filter((x) => clave(x.p) !== clave(pregunta)), { p: pregunta, r: respuesta, t: now }].slice(-100) : negocio.preguntas ?? [];
+      const r = await deps.negocios.guardar(negocio.id, { noSupo, preguntas, ...(respuesta && { cambio: 'respondió una pregunta que el asistente no sabía', quien: email }) });
+      if (r?.error) return error(r.error);
+      return json(vista(r.negocio));
+    }
+    return error('no existe', 404);
   }
 
   // ZL-159: el dueño maneja su asistente sin pasar por el equipo: lo pausa (vacaciones, local cerrado) con un mensaje

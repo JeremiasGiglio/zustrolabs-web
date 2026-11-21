@@ -74,7 +74,7 @@ export function armarReporte({ negocio, periodo, fecha, zona, now = Date.now(), 
   const porHora = Array(24).fill(0);
   const porSemana = Array(7).fill(0);
   const canales = { whatsapp: 0, instagram: 0 };
-  const tot = { charlas: 0, mensajes: 0, respuestas: 0, pases: 0, seguimientos: 0, audios: 0, enviadosWa: 0, comentarios: 0 };
+  const tot = { charlas: 0, mensajes: 0, respuestas: 0, pases: 0, seguimientos: 0, audios: 0, enviadosWa: 0, comentarios: 0, fueraHorario: 0, noSupo: 0 };
 
   for (const m of metricas) {
     if (!enRango(m.dia)) continue;
@@ -83,7 +83,8 @@ export function armarReporte({ negocio, periodo, fecha, zona, now = Date.now(), 
     d.charlas += m.charlas ?? 0;
     d.comentarios += m.comentarios ?? 0;
     // ZL-160: «comentarios», los comentarios de Instagram que respondió el asistente.
-    for (const k of ['charlas', 'mensajes', 'pases', 'seguimientos', 'audios', 'enviadosWa', 'comentarios']) tot[k] += m[k] ?? 0;
+    // ZL-164: «fueraHorario» (mensajes con el negocio cerrado) y «noSupo» (preguntas que no supo responder).
+    for (const k of ['charlas', 'mensajes', 'pases', 'seguimientos', 'audios', 'enviadosWa', 'comentarios', 'fueraHorario', 'noSupo']) tot[k] += m[k] ?? 0;
     (m.horas ?? []).forEach((n, h) => { if (h < 24) porHora[h] += n ?? 0; });
     porSemana[diaSemana(m.dia)] += m.mensajes ?? 0;
     canales.whatsapp += m.canales?.wa ?? 0;
@@ -222,6 +223,8 @@ export function xlsx(r) {
       ['Recordatorios enviados', s.seguimientos],
       ['Mensajes enviados por WhatsApp', s.enviadosWa],
       ['Comentarios de Instagram respondidos', s.comentarios],
+      ['Mensajes con el negocio cerrado', s.fueraHorario],
+      ['Preguntas que no supo responder', s.noSupo],
       ['Audios recibidos', s.audios],
       ['Horas con más mensajes', r.horasPico.map((h) => `${h}:00`).join(', ') || '-'],
       ['Días con más mensajes', r.diasPico.join(', ') || '-'],

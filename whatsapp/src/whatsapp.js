@@ -292,6 +292,11 @@ async function atenderEnPausa(ev, { memoria, perfil, now }) {
   if (estado.ausencia === p.desde) return { send: [], metrica: 'pausa' };
   const idioma = estado.idioma ?? (ev.kind === 'text' ? esSaludo(ev.text) ?? idiomaDelTexto(ev.text) : null) ?? perfil.idiomas[0];
   const T = perfil.textos(perfil.idiomas.includes(idioma) ? idioma : perfil.idiomas[0]);
+  // ZL-164: cerrado fuera de horario («no atender»): cuándo abren, en su idioma.
+  if (p.cerrado) {
+    await memoria.put(ev.from, { ...estado, humanoHasta: estado.humanoHasta ?? 0, ausencia: p.desde });
+    return { send: [msgTexto(ev.from, T.cerrado(p.cerrado[perfil.idiomas.includes(idioma) ? idioma : perfil.idiomas[0]] || p.cerrado.es))], metrica: 'cerrado_aviso' };
+  }
   let fecha;
   try {
     fecha = new Intl.DateTimeFormat(idioma === 'en' ? 'en-GB' : idioma === 'hr' ? 'hr-HR' : 'es-AR', { timeZone: p.zona || 'America/Argentina/Buenos_Aires', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(p.hasta));

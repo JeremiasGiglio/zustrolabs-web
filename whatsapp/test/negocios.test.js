@@ -990,3 +990,36 @@ test('ZL-163: la charla de prueba del dueño ensaya un pedido completo sin reser
   assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos.find((p) => p.id === pan.id).reservado, 0);
   assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos?estado=pendiente`)).datos.pedidos.length, 0);
 });
+
+test('ZL-164: «Mi negocio» lo cambia el dueño (con historial); el empleado responde lo que no supo y edita las preguntas', async () => {
+  const { pedir, a } = await armar();
+  assert.equal((await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { empleados: ['empleado@example.com'] })).status, 200);
+  const vacio = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/mi-negocio`)).datos;
+  assert.equal(vacio.ahora, null, 'sin horarios');
+  assert.equal(vacio.minegocio.fueraDeHorario, 'pedidos');
+  assert.equal(vacio.puede, true);
+  const mn = { horarios: [[{ abre: '09:00', cierra: '20:00' }], [], [], [], [], [], []], direccion: 'San Martín 1234, Rosario', pagos: { efectivo: true }, envios: { zonas: [{ nombre: 'Centro', costo: 1500 }] } };
+  assert.equal((await pedir('empleado@example.com', 'PUT', `/api/n/${a.id}/mi-negocio`, { minegocio: mn })).status, 403, 'un empleado no cambia los datos del negocio');
+  const r = (await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/mi-negocio`, { minegocio: mn, zona: 'Europe/Zagreb' })).datos;
+  assert.equal(r.zona, 'Europe/Zagreb');
+  assert.equal(r.pais, 'HR');
+  assert.match(r.mapa, /^https:\/\/www\.google\.com\/maps\/search\//);
+  assert.equal(r.cambios[0].quien, 'duena@example.com');
+  assert.match(r.cambios[0].que, /^cambió el horario, la dirección, los envíos, las formas de pago, la zona horaria$/);
+  // La zona horaria también la usan los reportes.
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/ajustes`)).datos.zona, 'Europe/Zagreb');
+  // Sin cambios no se anota nada.
+  assert.equal((await pedir('duena@example.com', 'PUT', `/api/n/${a.id}/mi-negocio`, { minegocio: mn })).datos.cambios.length, 1);
+  const fer = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/mi-negocio/feriados`)).datos;
+  assert.equal(fer.pais, 'HR');
+  assert.ok(fer.feriados.length > 5 && fer.feriados.every((f) => /^\d{4}-\d{2}-\d{2}$/.test(f.fecha) && f.nombre));
+  // Lo que no supo: el empleado lo responde y pasa a las preguntas frecuentes.
+  const empleado = (await pedir('empleado@example.com', 'GET', `/api/n/${a.id}/mi-negocio`)).datos;
+  assert.equal(empleado.puede, false);
+  assert.equal((await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/mi-negocio/no-supo`, { pregunta: '' })).status, 400);
+  const pr = (await pedir('empleado@example.com', 'PUT', `/api/n/${a.id}/mi-negocio/preguntas`, { preguntas: [{ p: '¿Tienen <b>sin TACC</b>?', r: 'Sí, los viernes.' }, { p: 'sin respuesta', r: '' }] })).datos;
+  assert.deepEqual(pr.preguntas.map((x) => [x.p, x.r]), [['¿Tienen sin TACC?', 'Sí, los viernes.']]);
+  const ns = (await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/mi-negocio/no-supo`, { pregunta: '¿Hacen tortas?', respuesta: 'Sí, por encargo.' })).datos;
+  assert.deepEqual(ns.preguntas.map((x) => x.p), ['¿Tienen sin TACC?', '¿Hacen tortas?']);
+  assert.equal(ns.cambios[0].quien, 'empleado@example.com');
+});

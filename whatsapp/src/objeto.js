@@ -60,6 +60,7 @@ export class Atencion extends DurableObject {
   seguimientosVencidos(now, limite) { return this.a.seguimientosVencidos(now, limite); }
   vapid() { return this.a.vapid(); }
   claveFotos() { return this.a.claveFotos(); }
+  sumarNoSupo(id, p, now) { return this.a.sumarNoSupo(id, p, now); }
   async suscribirPush(id, sub, email, now) { await this.#alarma(); return this.a.suscribirPush(id, sub, email, now); }
   suscripcionesPush(id) { return this.a.suscripcionesPush(id); }
   borrarPush(id, endpoints) { return this.a.borrarPush(id, endpoints); }
