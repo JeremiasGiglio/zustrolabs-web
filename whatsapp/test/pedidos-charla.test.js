@@ -276,6 +276,8 @@ test('BORRAR (ZL-159): borra la memoria y también el nombre de sus pedidos ya c
   c.cambiarEstado(n, 'aceptado', 'duena@example.com'); c.cambiarEstado(n, 'entregado', 'duena@example.com');
   assert.equal(c.pedido(n).comprador.nombre, 'Ana');
   await ana('borrar');
+  assert.equal(c.pedido(n).comprador.nombre, 'Ana', 'ZL-162: primero pide confirmación');
+  await ana('borrar');
   assert.equal(c.pedido(n).comprador.nombre, '');
   assert.equal(c.pedido(n).comprador.olvidado, true);
 });

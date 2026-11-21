@@ -445,8 +445,24 @@ export async function appNegocios(request, env, deps) {
     const k = await ejecutar('consulta', [Number(mc[1])]);
     if (k.resp) return k.resp;
     if (!deps.charlasNegocio?.devolver) return error('sin memoria', 503);
-    await deps.charlasNegocio.devolver(k.valor.charla);
-    return json({ ok: true, pausaHasta: 0 });
+    // ZL-162: el dueño puede escribir qué responderle. Se le manda ya (dentro de las 24 h de Meta; si no, queda el
+    // mensaje listo para mandar a mano), queda como pregunta frecuente para la próxima y el asistente sigue con eso.
+    const b = (await leerJson(request)) ?? {};
+    const respuesta = String(b.respuesta ?? '').replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u0009\u000B-\u001F\u007F<>]/g, ' ').replace(/[ \t]+/g, ' ').trim().slice(0, 600);
+    const pregunta = String(k.valor.interes ?? '').trim();
+    await deps.charlasNegocio.devolver(k.valor.charla, { pregunta, respuesta });
+    let guardada = false;
+    if (respuesta && pregunta && b.guardar !== false) {
+      const r = await deps.negocios.guardar(negocio.id, { preguntas: [...(negocio.preguntas ?? []).filter((x) => x.p !== pregunta), { p: pregunta, r: respuesta, t: now }] });
+      guardada = !r?.error;
+    }
+    let aviso = null;
+    if (respuesta) {
+      const enviado = deps.avisarComprador ? await deps.avisarComprador(negocio, k.valor.charla, respuesta) : 'sin_envio';
+      if (enviado !== true) aviso = avisoManual(k.valor.charla, k.valor.canal, respuesta, enviado, await deps.charlasNegocio?.usuario?.(k.valor.charla).catch(() => null));
+    }
+    console.log(JSON.stringify({ canal: 'negocio', que: 'devolver', respondida: Boolean(respuesta), guardada, manual: Boolean(aviso) }));
+    return json({ ok: true, pausaHasta: 0, respondida: Boolean(respuesta), guardada, ...(aviso && { aviso }) });
   }
   if (mc && request.method === 'POST') {
     const b = await leerJson(request);

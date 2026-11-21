@@ -146,6 +146,12 @@ export function crearAtencion(storage) {
         ...(datos?.baja === true && { baja: true }),
         // ZL-153: el usuario de Instagram de la persona (para que el negocio la encuentre rápido en la app).
         ...(/^[\w.]{1,30}$/.test(String(datos?.usuario ?? '')) && { usuario: String(datos.usuario) }),
+        // ZL-162: el ofrecimiento de averiguarlo con el equipo (espera el sí), el acuse único de un pase, la confirmación
+        // de BORRAR y lo que quedó pendiente al devolver la charla al asistente.
+        ...(datos?.oferta && Number.isFinite(datos.oferta.t) && { oferta: { t: datos.oferta.t, pregunta: corto(datos.oferta.pregunta, 200) } }),
+        ...(Number.isFinite(datos?.acuse) && { acuse: datos.acuse }),
+        ...(Number.isFinite(datos?.borrarPend) && { borrarPend: datos.borrarPend }),
+        ...(datos?.devuelta && Number.isFinite(datos.devuelta.t) && { devuelta: { t: datos.devuelta.t, pregunta: corto(datos.devuelta.pregunta, 200) } }),
         // ZL-159: a quién ya se le dijo que el asistente está en pausa (la pausa se identifica por cuándo empezó).
         ...(Number.isFinite(datos?.ausencia) && { ausencia: datos.ausencia }),
         // ZL-157: avisos de pedido que no salieron solos (fuera de las 24 h): se dicen cuando vuelve a escribir.
@@ -177,7 +183,21 @@ export function crearAtencion(storage) {
       const r = vigente(await s.get(k), now);
       if (!r?.lista?.length || r.lista.at(-1).id !== String(id)) return null;
       await s.delete(k);
-      return r.lista.map((x) => x.t);
+      // ZL-162: si todavía se está respondiendo la ráfaga anterior, esta la absorbe (una sola respuesta para todo) y la
+      // anterior, al ver que ya no está en curso, no manda nada.
+      const c = vigente(await s.get(`cur:${num}`), now);
+      const textos = [...(c?.textos ?? []), ...r.lista.map((x) => x.t)].slice(-8);
+      await s.put(`cur:${num}`, { id: String(id), textos, vence: now + 90_000 });
+      return textos;
+    },
+    /** ZL-162: ¿sigue siendo esta la respuesta en curso de esa charla? (Si llegó otro mensaje, ya no.) */
+    async cursoVigente(num, id, now) {
+      const c = vigente(await s.get(`cur:${num}`), now);
+      return !c || c.id === String(id);
+    },
+    async terminarCurso(num, id, now) {
+      const c = vigente(await s.get(`cur:${num}`), now);
+      if (c?.id === String(id)) await s.delete(`cur:${num}`);
     },
     /** Los seguimientos que ya tocan (ZL-151): [{num, estado}], como mucho `limite`. */
     async seguimientosVencidos(now, limite = 50) {
@@ -421,9 +441,13 @@ export function crearAtencion(storage) {
       const pausa = datos?.pausa !== undefined ? pausaDe(datos.pausa, now) : antes?.pausa ?? null;
       // ZL-159: el aviso del día que el asistente tiene en cuenta («hoy no hay medialunas»), con vencimiento.
       const avisoDia = datos?.avisoDia !== undefined ? avisoDiaDe(datos.avisoDia, now) : antes?.avisoDia ?? null;
+      // ZL-162: preguntas frecuentes del negocio (las carga el dueño o salen de responder al devolver una charla).
+      const preguntas = Array.isArray(datos?.preguntas)
+        ? datos.preguntas.map((x) => ({ p: limpio(x?.p).slice(0, 200), r: limpio(x?.r).slice(0, 600), ...(Number.isFinite(x?.t) && { t: x.t }) })).filter((x) => x.p && x.r).slice(-100)
+        : antes?.preguntas ?? [];
       // ZL-160: responder comentarios de Instagram (lo enciende el dueño) y de qué forma.
       const comentarios = normalizarComentarios(datos?.comentarios, antes?.comentarios);
-      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, comentarios, creado: antes?.creado ?? now, actualizado: now };
+      const n = { id: nid, nombre, emails, empleados, cuentas, canales, limiteDia, invitacionIg, pedidos, ajustes, pausa, avisoDia, comentarios, preguntas, creado: antes?.creado ?? now, actualizado: now };
       await s.put(`neg:${nid}`, n);
       for (const e of antes?.emails ?? []) if (!emails.includes(e)) {
         const ids = ((await s.get(`negmail:${e}`))?.ids ?? []).filter((x) => x !== nid);
@@ -516,6 +540,8 @@ export function adaptadores(a, reloj = () => Date.now()) {
     sumarRafaga: (n, item) => a.sumarRafaga(n, item, reloj()),
     seguimientos: (limite, now) => a.seguimientosVencidos(now ?? reloj(), limite),
     tomarRafaga: (n, id) => a.tomarRafaga(n, id, reloj()),
+    cursoVigente: (n, id) => a.cursoVigente(n, id, reloj()),
+    terminarCurso: (n, id) => a.terminarCurso(n, id, reloj()),
     contar: (n) => a.contar(n, reloj()),
   };
   const charlas = {

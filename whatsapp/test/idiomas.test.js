@@ -184,7 +184,7 @@ test('PERSONA: el horario va en el idioma de la charla, y sin traducción no se 
   const { decir, ficha } = charla(texto);
   assert.equal(ficha.horarios.en, 'Monday to Saturday');
   await decir('hello');
-  assert.match((await decir('person')).textos[0], /someone will reply to you right here \(Monday to Saturday\)\./);
+  assert.match((await decir('person')).textos[0], /Someone will reply to you right here \(Monday to Saturday\)\./);
   const otra = charla(texto);
   await otra.decir('bok');
   const hr = (await otra.decir('osoba')).textos[0];
