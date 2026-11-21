@@ -242,6 +242,20 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## Fotos de productos en la charla (ZL-161)
+
+Si la persona pide ver un producto («¿tenés foto?», «mostrame la torta») o pregunta por uno puntual que tiene foto, el
+asistente se la manda después del texto, con el nombre del producto como pie (WhatsApp por YCloud o Meta, e Instagram).
+
+- La foto se carga en Productos (la misma de siempre). En el catálogo que ve la IA, los productos con foto y con stock
+  llevan su ref y «con foto»; la IA devuelve solo refs en `fotos` (hasta 3) y el código las valida contra ese catálogo:
+  nunca manda una que no existe ni la de un producto agotado.
+- WhatsApp e Instagram bajan la foto de un **link público firmado que vence a los 7 días**
+  (`https://zustrolabs.com/api/whatsapp/foto/<negocio>/<foto>?v=…&s=…`, `src/fotos.js`). La clave de la firma se crea
+  sola y vive en el Durable Object (`claveFotos`). Sin firma, con otra foto u otro negocio, o vencido: 404.
+- En la memoria corta queda «(Le mandé la foto de: …)», así no la repite. Si la charla pasa a una persona, no se manda.
+- La charla de prueba muestra las fotos que mandaría. Cada foto cuenta como un mensaje de WhatsApp para Meta.
+
 ## Comentarios de Instagram (ZL-160)
 
 El asistente también responde los comentarios de las publicaciones, con la misma ficha y el mismo catálogo (precios si

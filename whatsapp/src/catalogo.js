@@ -374,7 +374,11 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
         resto = activos - elegidos.length;
       }
       const montos = [];
+      // ZL-161: los productos con foto llevan su ref (aunque no haya pedidos): la IA solo puede pedir la foto de uno de estos.
+      const fotos = {};
       const lineas = elegidos.map((p) => {
+        const conFoto = Boolean(p.foto) && !(p.stock !== null && p.stock !== undefined && p.stock - (p.reservado ?? 0) <= 0);
+        if (conFoto) fotos[p.id] = { foto: p.foto, nombre: p.nombre };
         const disp = p.stock === null || p.stock === undefined ? null : p.stock - (p.reservado ?? 0);
         const stock = disp === null ? 'hay stock' : disp <= 0 ? 'AGOTADO: no ofrecer' : disp <= 5 ? `quedan ${disp}` : 'hay stock';
         let precio = '';
@@ -384,10 +388,10 @@ export function crearCatalogo(sql, transaccion = (fn) => fn(), reloj = () => Dat
         }
         const extra = [p.codigo ? `código ${p.codigo}` : '', p.descripcion].filter(Boolean).join('. ');
         // Con pedidos (ZL-139), cada producto lleva su ref: es lo único que la IA devuelve para armar el carrito.
-        return `- ${refs ? `[ref ${p.id}] ` : ''}${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${precio} · ${stock}${extra ? ` · ${extra}` : ''}`;
+        return `- ${refs || conFoto ? `[ref ${p.id}] ` : ''}${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${precio} · ${stock}${conFoto ? ' · con foto' : ''}${extra ? ` · ${extra}` : ''}`;
       });
       const nota = resto > 0 ? `\n(Hay ${resto} productos más que no se muestran: si no está lo que busca, pedí más detalles o ofrecé una persona.)` : '';
-      return { texto: lineas.length ? lineas.join('\n') + nota : '(El negocio todavía no cargó productos.)', montos: [...new Set(montos.filter(Boolean))], cuantos: elegidos.length, activos };
+      return { texto: lineas.length ? lineas.join('\n') + nota : '(El negocio todavía no cargó productos.)', montos: [...new Set(montos.filter(Boolean))], cuantos: elegidos.length, activos, fotos };
     },
   };
 }

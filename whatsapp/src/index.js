@@ -19,6 +19,7 @@ import { agregarAAcceso, correosEnAcceso } from './acceso.js';
 import { pedidosDeCharla } from './pedidos-charla.js';
 import { consultasDeCharla } from './consultas.js';
 import { avisarCelulares } from './push.js';
+import { leerLinkFoto, linkFoto, RUTA_FOTOS } from './fotos.js';
 import { armarReporte, diaLocal, horaLocal, xlsx } from './reporte.js';
 import { mensajesDePrueba, verificarNegocio } from './verificar.js';
 
@@ -94,8 +95,17 @@ function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
   return async (texto, idioma, opciones) => {
     if (dueño && a.negocios && (await a.negocios.contarUso(dueño.id)) > limiteDiaDe(dueño)) return { respuesta: '', vacia: true, tope: true, persona: true, fuera_de_tema: false, notas: ['tope_negocio'] };
-    return ia(texto, idioma, opciones);
+    return conLinksDeFotos(a, deps, dueño?.id, await ia(texto, idioma, opciones));
   };
+}
+
+/** ZL-161: las fotos que pidió la IA (ya controladas contra el catálogo), con un link público firmado que vence. */
+async function conLinksDeFotos(a, deps, negocioId, r) {
+  if (!r?.fotos?.length) return r;
+  const clave = negocioId && a.negocios?.claveFotos ? await a.negocios.claveFotos().catch(() => null) : null;
+  const now = deps.now ?? Date.now();
+  r.fotos = (await Promise.all(r.fotos.map(async (f) => ({ ...f, link: await linkFoto(clave, negocioId, f.foto, now) })))).filter((f) => f.link);
+  return r;
 }
 
 /**
@@ -505,6 +515,25 @@ async function webhook(request, env, ctx, deps, canal) {
 }
 
 /**
+ * ZL-161: la foto de un producto para WhatsApp o Instagram, por su link firmado (fotos.js). Sin firma válida o vencida,
+ * 404 (no se dice si existe). Solo esa foto de ese negocio; nunca un listado.
+ */
+async function servirFoto(request, env, deps) {
+  if (!['GET', 'HEAD'].includes(request.method)) return json({ error: 'no existe' }, 404);
+  const a = almacen(env, deps);
+  const clave = a.negocios?.claveFotos ? await a.negocios.claveFotos().catch(() => null) : null;
+  const p = await leerLinkFoto(clave, request.url, deps.now ?? Date.now());
+  const cat = p ? catalogoDe(env, deps)(p.negocio) : null;
+  const r = cat ? await cat.ejecutar('foto', [p.foto]).catch(() => null) : null;
+  const f = r?.ok ? r.valor : null;
+  if (!f) return json({ error: 'no existe' }, 404);
+  return new Response(request.method === 'HEAD' ? null : f.datos, {
+    status: 200,
+    headers: { 'content-type': f.tipo, 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" },
+  });
+}
+
+/**
  * ZL-160: los comentarios de las publicaciones de Instagram de un negocio con «Responder comentarios» encendido.
  * Con la ficha y el catálogo del negocio, una respuesta corta en público y el detalle por privado (o solo por privado,
  * según el modo). Un reclamo o algo que no está en la ficha: nada en público y un aviso al dueño. Uno por comentario,
@@ -844,14 +873,17 @@ async function probarFicha(env, ficha, mensajes, deps, negocioId = null, estado 
   if (previo) await memoria.put(DE, previo);
   const perfil = perfilNegocio(ficha);
   const catalogo = consultaCatalogo(env, deps, negocioId, ficha);
-  const preguntar = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo });
+  const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo });
+  // ZL-161: en la charla de prueba también se ven las fotos que mandaría.
+  const preguntar = async (...x) => conLinksDeFotos(almacen(env, deps), deps, negocioId, await ia(...x));
   const now = deps.now ?? Date.now();
   const charla = [];
   for (const [i, texto] of mensajes.entries()) {
     const ev = { id: `prueba-${i}`, from: DE, ts: now / 1000, kind: 'text', text: texto };
     try {
       const r = await atender(ev, { memoria, charlas: null, preguntar, now: now + i, perfil });
-      charla.push({ mensaje: texto, respuestas: r.send.map((m) => m.text?.body ?? ''), que: r.metrica, notas: r.notas ?? [] });
+      const fotos = r.send.filter((m) => m.type === 'image').map((m) => ({ foto: (/\/(f[a-z0-9]{4,40})\?/.exec(m.image.link) ?? [])[1] ?? '', nombre: m.image.caption ?? '' }));
+      charla.push({ mensaje: texto, respuestas: r.send.filter((m) => m.type !== 'image').map((m) => m.text?.body ?? ''), ...(fotos.length && { fotos }), que: r.metrica, notas: r.notas ?? [] });
     } catch (e) {
       charla.push({ mensaje: texto, respuestas: [perfil.textos((await memoria.get(DE))?.idioma).falla], que: 'error', notas: [String(e?.message ?? 'error').slice(0, 40)] });
     }
@@ -1098,6 +1130,7 @@ export default {
       return panel(request, env, { fetch: fetchImpl, now: deps.now, store: a.memoria, chats: a.charlas, send: (e, m) => mandarA(e, m, fetchImpl, a.cuentas) });
     }
     if (url.pathname === '/api/whatsapp') return webhook(request, env, ctx, deps, CANALES.wa);
+    if (url.pathname.startsWith(RUTA_FOTOS)) return servirFoto(request, env, deps);
     if (url.pathname.startsWith('/api/whatsapp/ycloud/')) return webhookYCloud(request, env, ctx, deps, url.pathname.slice('/api/whatsapp/ycloud/'.length));
     if (url.pathname === '/api/instagram') return webhook(request, env, ctx, deps, CANALES.ig);
     if (url.pathname === '/api/instagram/conectar' || url.pathname === '/api/instagram/conectar/vuelta') return conectar(request, env, deps);
