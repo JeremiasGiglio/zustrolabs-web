@@ -8,6 +8,7 @@
 // CANCELAR, en cualquier paso, vacía el carrito y libera el stock. PEDIDO muestra el carrito.
 
 import { normalizar, pesos } from './catalogo.js';
+import { costoEnvio, elegirZona } from './minegocio.js';
 
 // ZL-154: cómo se le cuenta a la IA el estado de un pedido de la persona (para responder «¿ya salió mi pedido?»).
 const ESTADO_PARA_IA = {
@@ -57,6 +58,13 @@ const T = {
     ajustado: (n, d) => `De ${n} ${d === 1 ? 'queda 1: te sumé 1' : `quedan ${d}: te sumé ${d}`}.`,
     listoCon: (n, negocio, nombre, entrega) => `¡Listo${nombre ? `, ${nombre}` : ''}! Tu pedido N.º ${n} quedó registrado (${entrega}). ${negocio} lo revisa y te confirma por acá.`,
     entregaCorta: (e, d) => (e === 'envio' ? `envío a ${d}` : 'retiro en el local'),
+    // ZL-164: envíos por zona («Mi negocio»).
+    zona: (lista) => `¿A qué zona lo enviamos?\n${lista}`,
+    zonaOtraVez: (lista) => `Elegí la zona con su número:\n${lista}`,
+    minimo: (z, min, falta) => `El pedido mínimo para envío a ${z} es ${min} (faltan ${falta}). Podés sumar algo más o retirarlo en el local.`,
+    entregaZona: (d, z, c) => `Entrega: envío a ${d} (${z}, ${c})`,
+    totalEnvio: (t) => `Total con envío: ${t}`,
+    sinCargo: 'sin cargo',
   },
   en: {
     titulo: (min) => `Your order (held for ${min} minutes):`,
@@ -93,6 +101,12 @@ const T = {
     ajustado: (n, d) => `Only ${d} ${n} left: I added ${d}.`,
     listoCon: (n, negocio, nombre, entrega) => `Done${nombre ? `, ${nombre}` : ''}! Your order no. ${n} has been placed (${entrega}). ${negocio} will check it and confirm here.`,
     entregaCorta: (e, d) => (e === 'envio' ? `delivery to ${d}` : 'pick-up at the shop'),
+    zona: (lista) => `Which area should we deliver to?\n${lista}`,
+    zonaOtraVez: (lista) => `Choose the area by its number:\n${lista}`,
+    minimo: (z, min, falta) => `The minimum order for delivery to ${z} is ${min} (${falta} to go). You can add something else or pick it up at the shop.`,
+    entregaZona: (d, z, c) => `Delivery: to ${d} (${z}, ${c})`,
+    totalEnvio: (t) => `Total with delivery: ${t}`,
+    sinCargo: 'free',
   },
   hr: {
     titulo: (min) => `Vaša narudžba (čuvam je ${min} minuta):`,
@@ -129,6 +143,12 @@ const T = {
     ajustado: (n, d) => `${n}: ostalo je ${d}, dodao sam ${d}.`,
     listoCon: (n, negocio, nombre, entrega) => `Gotovo${nombre ? `, ${nombre}` : ''}! Vaša narudžba br. ${n} je zaprimljena (${entrega}). ${negocio} će je provjeriti i potvrditi ovdje.`,
     entregaCorta: (e, d) => (e === 'envio' ? `dostava na ${d}` : 'preuzimanje u trgovini'),
+    zona: (lista) => `U koju zonu dostavljamo?\n${lista}`,
+    zonaOtraVez: (lista) => `Odaberite zonu brojem:\n${lista}`,
+    minimo: (z, min, falta) => `Minimalna narudžba za dostavu u zonu ${z} je ${min} (nedostaje ${falta}). Možete dodati još nešto ili preuzeti u trgovini.`,
+    entregaZona: (d, z, c) => `Dostava na: ${d} (${z}, ${c})`,
+    totalEnvio: (t) => `Ukupno s dostavom: ${t}`,
+    sinCargo: 'besplatno',
   },
 };
 export const textosPedido = (idioma) => T[idioma] ?? T.es;
@@ -191,6 +211,11 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
   const preguntaEntrega = (t) => `${t.preguntaEntrega}\n1. ${t.botones.retiro}${ajustes?.retiro ? ` (${ajustes.retiro})` : ''}\n2. ${t.botones.envio}${ajustes?.envio ? ` (${ajustes.envio})` : ''}`;
   const botonesEntrega = (t) => [{ id: '1', titulo: t.botones.retiro }, { id: '2', titulo: t.botones.envio }];
   const botonesConfirmar = (t) => [{ id: 'SI', titulo: t.botones.si }, { id: 'CANCELAR', titulo: t.botones.cancelar }];
+  // ZL-164: las zonas de envío de «Mi negocio» (costo, mínimo y gratis desde); sin zonas, el envío no pregunta zona.
+  const zonas = Array.isArray(ajustes?.zonas) ? ajustes.zonas : [];
+  const zonaDe = (nombre) => zonas.find((z) => z.nombre === nombre) ?? null;
+  const listaZonas = (t) => zonas.map((z, i) => `${i + 1}. ${z.nombre} (${z.costo ? pesos(z.costo) : t.sinCargo}${z.gratisDesde ? `, ${t.sinCargo} > ${pesos(z.gratisDesde)}` : ''})`).join('\n');
+  const botonesZonas = () => (zonas.length <= 10 ? zonas.map((z, i) => ({ id: String(i + 1), titulo: z.nombre.slice(0, 24) })) : null);
   const op = async (nombre, args) => {
     const r = await cat.ejecutar(nombre, args);
     if (!r?.ok) { const e = new Error(r?.error ?? 'error'); e.catalogo = true; throw e; }
@@ -277,6 +302,7 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
           if (!conocido) return { texto: t.nombre, pedido: { ...d, paso: 'nombre' }, metrica: 'pedido_nombre' };
           d = { ...d, nombre: conocido };
         }
+        if (d.entrega === 'envio' && zonas.length && !zonaDe(d.zona)) return { texto: t.zona(listaZonas(t)), pedido: { ...d, paso: 'zona' }, metrica: 'pedido_zona', nombre: d.nombre, ...(botonesZonas() && { opciones: botonesZonas() }) };
         if (d.entrega === 'envio' && !d.direccion) return { texto: t.direccion, pedido: { ...d, paso: 'direccion' }, metrica: 'pedido_direccion', nombre: d.nombre };
         return this.revisar(d, idioma);
       };
@@ -297,7 +323,7 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
       // En nombre, dirección o la revisión: «mejor retiro» o «mandámelo» cambian la entrega.
       const cambio = !pregunta && !fija ? cambioEntrega(m) : null;
       if (cambio && cambio !== datos.entrega) {
-        const r = await siguiente({ ...datos, entrega: cambio, ...(cambio === 'retiro' && { direccion: '' }) });
+        const r = await siguiente({ ...datos, entrega: cambio, ...(cambio === 'retiro' && { direccion: '', zona: '' }) });
         return { ...r, texto: `${cambio === 'retiro' ? t.cambiadaRetiro : t.cambiadaEnvio}\n\n${r.texto}` };
       }
       if (paso === 'nombre') {
@@ -305,6 +331,16 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
         if (n) return siguiente({ ...datos, nombre: n });
         if (pregunta || m.split(' ').length > 4) return alaIa(t.nombre);
         return { texto: t.soloNombre, pedido: estadoPedido, metrica: 'pedido_nombre' };
+      }
+      if (paso === 'zona') {
+        const z = !pregunta ? elegirZona(zonas, texto) : null;
+        if (!z && /^\d+$/.test(m)) return { texto: t.zonaOtraVez(listaZonas(t)), pedido: estadoPedido, metrica: 'pedido_zona', ...(botonesZonas() && { opciones: botonesZonas() }) };
+        if (!z) return alaIa(t.zona(listaZonas(t)), botonesZonas());
+        // El pedido mínimo de la zona (con precios): si no llega, se le dice cuánto falta y vuelve a elegir la entrega.
+        const p = precios && z.minimo ? await op('carritoDe', [charla]).catch(() => null) : null;
+        const falta = p && !p.sinPrecio ? costoEnvio(z, p.total).falta : null;
+        if (falta) return { texto: `${t.minimo(z.nombre, pesos(z.minimo), pesos(falta))}\n\n${preguntaEntrega(t)}`, pedido: { ...datos, paso: 'entrega', zona: '' }, metrica: 'pedido_minimo', opciones: botonesEntrega(t) };
+        return siguiente({ ...datos, zona: z.nombre });
       }
       if (paso === 'direccion') {
         const limpio = String(texto ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
@@ -327,8 +363,12 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
       const t = textosPedido(idioma);
       const p = await op('carritoDe', [charla]).catch(() => null);
       if (!p) return { texto: t.vencido(MINUTOS_CARRITO), pedido: null, metrica: 'pedido_vencido' };
+      const z = d.entrega === 'envio' ? zonaDe(d.zona) : null;
+      const envio = z ? costoEnvio(z, p.total ?? 0).costo : 0;
+      const conTotal = precios && !p.sinPrecio && z;
       const lineas = [t.revisarTitulo, ...resumenPedido(p, { precios, idioma }).split('\n').slice(1),
-        d.entrega === 'envio' ? t.entregaEnvio(d.direccion) : t.entregaRetiro(ajustes?.retiro ?? ''),
+        d.entrega === 'envio' ? (z ? t.entregaZona(d.direccion, z.nombre, envio ? pesos(envio) : t.sinCargo) : t.entregaEnvio(d.direccion)) : t.entregaRetiro(ajustes?.retiro ?? ''),
+        ...(conTotal && envio ? [t.totalEnvio(pesos(Math.round((p.total + envio) * 100) / 100))] : []),
         t.aNombre(d.nombre), ...(ajustes?.pago ? [t.pago(ajustes.pago)] : [])];
       return { texto: `${lineas.join('\n')}\n\n${t.confirmarRevision}`, pedido: { ...d, paso: 'revisar' }, metrica: 'pedido_revisar', opciones: botonesConfirmar(t), nombre: d.nombre };
     },
@@ -337,9 +377,13 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
     async cerrar(datos, idioma) {
       const t = textosPedido(idioma);
       try {
-        const p = await op('confirmar', [charla, { nombre: datos.nombre, entrega: datos.entrega, direccion: datos.direccion ?? '' }]);
+        // ZL-164: con zona, el costo de envío lo calcula el código (gratis desde X) y queda en el pedido.
+        const z = datos.entrega === 'envio' ? zonaDe(datos.zona) : null;
+        const carrito = z ? await op('carritoDe', [charla]).catch(() => null) : null;
+        const envio = z ? costoEnvio(z, carrito?.total ?? 0).costo : 0;
+        const p = await op('confirmar', [charla, { nombre: datos.nombre, entrega: datos.entrega, direccion: datos.direccion ?? '', ...(z && { zona: z.nombre, envio }) }]);
         // ZL-163: el cierre repite a nombre de quién, la entrega y cómo se paga (antes no decía nada de eso).
-        const cierre = [t.listoCon(p.numero, negocio, datos.nombre, t.entregaCorta(datos.entrega, datos.direccion)), resumenPedido(p, { precios, idioma }).split('\n').slice(1).join('\n'), ajustes?.pago ? t.pago(ajustes.pago) : ''].filter(Boolean);
+        const cierre = [t.listoCon(p.numero, negocio, datos.nombre, t.entregaCorta(datos.entrega, datos.direccion)), [resumenPedido(p, { precios, idioma }).split('\n').slice(1).join('\n'), z && envio && precios && !p.sinPrecio ? t.totalEnvio(pesos(Math.round((p.total + envio) * 100) / 100)) : ''].filter(Boolean).join('\n'), ajustes?.pago ? t.pago(ajustes.pago) : ''].filter(Boolean);
         return { texto: cierre.join('\n\n'), pedido: null, metrica: 'pedido_nuevo', numero: p.numero, nombre: datos.nombre };
       } catch (e) {
         if (e.catalogo && /venci|no hay un carrito/.test(e.message)) return { texto: t.vencido(MINUTOS_CARRITO), pedido: null, metrica: 'pedido_vencido' };

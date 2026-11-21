@@ -49,10 +49,16 @@ const texto = (v, max) => String(v ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ')
 const nuevoId = () => `o${Date.now().toString(36)}${crypto.getRandomValues(new Uint32Array(2)).reduce((a, n) => a + n.toString(36), '')}`;
 const redondo = (n) => Math.round(n * 100) / 100;
 
-/** Los datos del comprador que se guardan (nada más): nombre, entrega o retiro, dirección y notas. */
+/**
+ * Los datos del comprador que se guardan (nada más): nombre, entrega o retiro, dirección, notas y, con envío, la zona
+ * y su costo (ZL-164: lo calcula el código con las zonas de «Mi negocio», no la IA).
+ */
 export function datosComprador(d) {
   const entrega = ['envio', 'retiro'].includes(d?.entrega) ? d.entrega : '';
-  return { nombre: texto(d?.nombre, 80), entrega, direccion: entrega === 'envio' ? texto(d?.direccion, 200) : '', notas: texto(d?.notas, 300) };
+  const envio = Number(d?.envio);
+  const zona = entrega === 'envio' ? texto(d?.zona, 60) : '';
+  return { nombre: texto(d?.nombre, 80), entrega, direccion: entrega === 'envio' ? texto(d?.direccion, 200) : '', notas: texto(d?.notas, 300),
+    ...(zona && { zona, envio: Number.isFinite(envio) && envio >= 0 ? redondo(envio) : 0 }) };
 }
 
 /**

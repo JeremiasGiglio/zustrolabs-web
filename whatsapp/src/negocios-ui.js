@@ -27,7 +27,7 @@ main{max-width:960px;margin:0 auto;padding:1rem}
 h2{margin:.2rem 0 .8rem;font-size:1.25rem}h3{margin:1.2rem 0 .5rem;font-size:1.05rem}
 .barra{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.8rem}
 .barra input[type=search]{flex:1 1 12rem;min-width:0}
-input[type=text],input[type=search],input[type=number],input[type=email],select,textarea{border:1px solid #C9CED6;border-radius:8px;padding:.55rem .65rem;background:#fff;width:100%}
+input[type=text],input[type=search],input[type=number],input[type=email],input[type=tel],input[type=url],input[type=time],input[type=date],select,textarea{border:1px solid #C9CED6;border-radius:8px;padding:.55rem .65rem;background:#fff;width:100%}
 .barra select,.barra input[type=search]{width:auto}
 select{max-width:100%}.barra>select,.barra>input[type=url]{flex:1 1 12rem;min-width:0;width:auto}
 .wa-form,.dosc>div{min-width:0}
@@ -96,6 +96,17 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .contacto{margin:.4rem 0;font-size:.95rem;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;overflow-wrap:anywhere}
 .btn.chico{padding:.15rem .6rem;font-size:.8rem;min-height:0}
 .cita{white-space:pre-line;background:#fff;border:1px solid var(--linea);border-radius:8px;padding:.5rem .7rem;margin:.4rem 0}
+.dia{display:grid;grid-template-columns:6.2rem 1fr;gap:.3rem .6rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--linea)}
+.dia:last-child{border-bottom:0}.dia .nom{font-weight:600}.turnos{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+.turnos input[type=time]{width:8.4rem}
+.esp{display:grid;grid-template-columns:minmax(10rem,1.2fr) 9rem 1.5fr auto;gap:.4rem .6rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--linea)}
+.esp .cuando{font-size:.92rem}.esp .dosc{grid-column:1/-1}.turnos .a{color:var(--gris);font-size:.85rem}
+.fila-ed{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.2rem .5rem;align-items:end;padding:.6rem 0;border-bottom:1px solid var(--linea)}
+.fila-ed label{margin:.2rem 0}.fila-ed .btn{justify-self:start}
+.opciones-radio label.check{margin:.35rem 0}
+.estado-ahora{display:inline-block;font-weight:600;border-radius:99px;padding:.15rem .7rem;font-size:.9rem;margin:0 0 .6rem}
+.estado-ahora.ok{background:#E8F5EE;color:var(--ok)}.estado-ahora.cerrado{background:#FDECEE;color:var(--rojo)}
+.guardar-fijo{position:sticky;bottom:.5rem;display:flex;justify-content:flex-end;gap:.5rem;padding:.5rem 0;z-index:3}
 .pausa{background:#FFF4E5;border:1px solid #F5D3A6;color:var(--alerta);border-radius:8px;padding:.4rem .6rem;font-size:.85rem;margin:.4rem 0}
 @media (max-width:699px){
   .yo{display:none}.top{padding:.5rem .8rem}.top select{max-width:11rem}
@@ -104,6 +115,8 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
   .tabs button[aria-selected="true"]{border-top-color:var(--rojo)}
   main{padding-bottom:5.5rem}
   .dosc{grid-template-columns:1fr}
+  .guardar-fijo{bottom:4.2rem}.dia{grid-template-columns:1fr}
+  .esp{grid-template-columns:1fr auto}.esp .cuando{grid-column:1/-1}.esp input[type=text]{grid-column:1/2}
   .tabla.apilada thead{display:none}.tabla.apilada tr{display:block;border-bottom:1px solid var(--linea);padding:.4rem 0}
   .tabla.apilada td{display:block;border:0;padding:.1rem .7rem}.tabla.apilada td[data-t]::before{content:attr(data-t) ": ";color:var(--gris);font-size:.8rem}
 }
@@ -194,7 +207,8 @@ function app() {
   // ZL-148: tres secciones para el negocio (en el celular, una barra abajo). Inicio es lo único que tiene que mirar
   // seguido: lo que el asistente le deja listo para confirmar o responder. El equipo ve además Asistente y Admin.
   // ZL-159: «Asistente» también para el negocio (pausa, aviso del día y charla de prueba); el equipo además ve la ficha.
-  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente']]
+  // ZL-164: «Mi negocio» (horarios, fechas especiales, dirección, envíos, pagos, preguntas frecuentes).
+  const PESTANAS = () => [['inicio', 'Inicio'], ['productos', 'Productos'], ['minegocio', 'Mi negocio'], ['reportes', 'Reportes'], ['conexiones', 'Conexiones'], ['asistente', 'Asistente']]
     .concat(estado.yo.admin ? [['admin', 'Admin']] : []);
   // Lo guardado con los nombres de antes lleva a la sección nueva.
   const VIEJAS = { pedidos: ['inicio'], importar: ['productos', 'importar'], historial: ['productos', 'historial'], instagram: ['conexiones', 'instagram'], whatsapp: ['conexiones', 'whatsapp'] };
@@ -303,7 +317,10 @@ function app() {
           tarjeta(s.consultas, 'consultas'), tarjeta(s.ganadas, 'consultas ganadas'), tarjeta(s.pedidos, 'pedidos'),
           tarjeta(s.entregados, 'pedidos entregados'), tarjeta(plata(s.vendido), 'vendido'), s.entregados ? tarjeta(plata(s.ticketPromedio), 'ticket promedio') : null,
           // ZL-160: los comentarios de Instagram que respondió el asistente (si los tiene encendidos o ya respondió alguno).
-          s.comentarios || (estado.datos.negocio.comentarios || {}).activo ? tarjeta(s.comentarios || 0, 'comentarios respondidos') : null),
+          s.comentarios || (estado.datos.negocio.comentarios || {}).activo ? tarjeta(s.comentarios || 0, 'comentarios respondidos') : null,
+          // ZL-164: lo que atendió con el negocio cerrado y lo que no supo (para cargarlo en Mi negocio).
+          s.fueraHorario ? tarjeta(s.fueraHorario, 'mensajes con el negocio cerrado') : null,
+          s.noSupo ? tarjeta(s.noSupo, 'preguntas que no supo') : null),
         h('p', { class: 'ayuda' }, 'Por WhatsApp: ' + s.canales.whatsapp + ' mensajes · por Instagram: ' + s.canales.instagram + '. Pases al equipo: ' + s.pasesAlEquipo + '. Recordatorios enviados: ' + s.seguimientos + '.' + (s.enviadosWa ? ' Mensajes que mandó el asistente por WhatsApp: ' + s.enviadosWa + '.' : '')),
         h('div', { class: 'caja' }, h('h3', {}, 'A qué hora te escriben'),
           h('p', { class: 'ayuda' }, s.mensajes ? 'Las horas con más mensajes: ' + r.horasPico.map(hs).join(', ') + '.' : 'Todavía no hay mensajes en este período.'),
@@ -326,11 +343,180 @@ function app() {
     const caja = h('section', {},
       h('div', { class: 'titulo-reporte' }, h('h2', {}, 'Reportes'),
         h('div', { class: 'acciones no-imprimir', estilo: { margin: '0' } }, excel, h('button', { type: 'button', class: 'btn', onclick: () => window.print() }, 'Imprimir o guardar PDF'))),
-      h('p', { class: 'ayuda no-imprimir' }, 'Cuántos te escriben, a qué hora, qué días y qué compran más. Con la hora de tu negocio (la elegís en Conexiones → Cómo vendés).'),
+      h('p', { class: 'ayuda no-imprimir' }, 'Cuántos te escriben, a qué hora, qué días y qué compran más. Con la hora de tu negocio (la elegís en Mi negocio).'),
       h('div', { class: 'barra no-imprimir' }, segmento('reportes', [['dia', 'Día'], ['semana', 'Semana'], ['mes', 'Mes']]), fecha),
       cuerpo);
     cargar();
     return caja;
+  }
+
+  // ── Mi negocio (ZL-164): lo carga el dueño, sin pasar por el equipo. El asistente lo usa en la próxima respuesta. ──
+  function vistaMiNegocio() {
+    const caja = h('section', {}, h('h2', {}, 'Mi negocio'), h('p', { class: 'cargando' }, 'Cargando…'));
+    api(base() + '/mi-negocio').then((d) => pintarMiNegocio(caja, d)).catch((e) => { if (e.message !== 'sesión') poner(caja, h('h2', {}, 'Mi negocio'), h('p', { class: 'errores' }, e.message)); });
+    return caja;
+  }
+  function pintarMiNegocio(caja, d) {
+    const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    const m = JSON.parse(JSON.stringify(d.minegocio));
+    let zona = d.zona;
+    const puede = d.puede;
+    const dis = !puede;
+    const marcar = () => { guardar.disabled = false; };
+    const hora = (v, al) => h('input', { type: 'time', value: v || '', disabled: dis, 'aria-label': 'Hora', oninput: (e) => { al(e.target.value); marcar(); } });
+    const fechaCorta = (f) => f.slice(8) + '/' + f.slice(5, 7);
+    const repintar = () => pintarMiNegocio(caja, Object.assign({}, d, { minegocio: m, zona: zona }));
+
+    // Horarios: hasta dos turnos por día; «Copiar a todos» repite el lunes.
+    const filaDia = (i) => {
+      const ts = m.horarios[i];
+      const abierto = h('input', { type: 'checkbox', checked: ts.length > 0, disabled: dis, onchange: (e) => { m.horarios[i] = e.target.checked ? [{ abre: '09:00', cierra: '18:00' }] : []; marcar(); repintar(); } });
+      const turno = (t, k) => h('span', { class: 'turnos' }, hora(t.abre, (v) => { t.abre = v; }), h('span', { class: 'a' }, 'a'), hora(t.cierra, (v) => { t.cierra = v; }),
+        k === 1 && puede ? h('button', { type: 'button', class: 'btn chico', onclick: () => { ts.splice(1, 1); marcar(); repintar(); } }, 'Quitar') : null);
+      return h('div', { class: 'dia' },
+        h('label', { class: 'check nom' }, abierto, DIAS[i]),
+        ts.length ? h('div', { class: 'turnos' }, ts.map(turno), ts.length === 1 && puede ? h('button', { type: 'button', class: 'btn chico', onclick: () => { if (ts[0].cierra > '15:00') ts[0].cierra = '13:00'; ts.push({ abre: '16:00', cierra: '20:00' }); marcar(); repintar(); } }, '+ Otro turno') : null)
+          : h('span', { class: 'ayuda' }, 'Cerrado'));
+    };
+    const horarios = h('div', { class: 'caja' }, h('h3', {}, 'Horarios'),
+      h('p', { class: 'ayuda' }, 'El asistente calcula solo si estás abierto ahora y cuándo abrís. Hasta dos turnos por día (por ejemplo, de 9 a 13 y de 16 a 20).'),
+      DIAS.map((_, i) => filaDia(i)),
+      puede ? h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: () => { for (let i = 1; i < 7; i++) m.horarios[i] = JSON.parse(JSON.stringify(m.horarios[0])); marcar(); repintar(); aviso('Copié el horario del lunes a todos los días: sacá los que no abrís.'); } }, 'Copiar el lunes a todos los días')) : null);
+
+    // Fechas especiales y feriados (mandan sobre el horario de la semana).
+    // Una fila corta por fecha («23/11 · Cerrado · Día de la Soberanía»); las fechas se eligen solo al agregarla.
+    const diaSemana = (f) => ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'][new Date(f + 'T12:00:00Z').getUTCDay()];
+    const fechaLarga = (e) => diaSemana(e.desde) + ' ' + fechaCorta(e.desde) + '/' + e.desde.slice(0, 4) + (e.hasta !== e.desde ? ' al ' + diaSemana(e.hasta) + ' ' + fechaCorta(e.hasta) : '');
+    const filaEspecial = (e, k) => {
+      const tipo = h('select', { disabled: dis, 'aria-label': 'Ese día (' + fechaLarga(e) + ')', onchange: (ev) => { e.tipo = ev.target.value; e.turnos = e.tipo === 'horario' ? [{ abre: '09:00', cierra: '13:00' }] : []; marcar(); repintar(); } },
+        h('option', { value: 'cerrado', selected: e.tipo === 'cerrado' }, 'Cerrado'), h('option', { value: 'horario', selected: e.tipo === 'horario' }, 'Otro horario'));
+      const nota = h('input', { type: 'text', maxlength: 80, value: e.nota, disabled: dis, 'aria-label': 'Nota (' + fechaLarga(e) + ')', placeholder: 'Nota (opcional)', oninput: (ev) => { e.nota = ev.target.value; marcar(); } });
+      const fechas = e.nueva ? (() => {
+        const desde = h('input', { type: 'date', value: e.desde, oninput: (ev) => { e.desde = ev.target.value; if (!e.hasta || e.hasta < e.desde) e.hasta = e.desde; marcar(); } });
+        const hasta = h('input', { type: 'date', value: e.hasta, oninput: (ev) => { e.hasta = ev.target.value; marcar(); } });
+        return h('div', { class: 'dosc' }, h('div', {}, etiqueta('Desde', desde), desde), h('div', {}, etiqueta('Hasta', hasta), hasta));
+      })() : h('strong', { class: 'cuando' }, fechaLarga(e));
+      return h('div', { class: 'esp' }, fechas, tipo,
+        e.tipo === 'horario' ? h('span', { class: 'turnos' }, hora(e.turnos[0].abre, (v) => { e.turnos[0].abre = v; }), h('span', { class: 'a' }, 'a'), hora(e.turnos[0].cierra, (v) => { e.turnos[0].cierra = v; })) : null,
+        nota, puede ? h('button', { type: 'button', class: 'btn chico peligro', 'aria-label': 'Quitar ' + fechaLarga(e), onclick: () => { m.especiales.splice(k, 1); marcar(); repintar(); } }, 'Quitar') : null);
+    };
+    const cargarFeriados = conError(async () => {
+      const r = await api(base() + '/mi-negocio/feriados');
+      if (!r.pais) { aviso('Para tu zona horaria todavía no sé los feriados: cargalos a mano.', true); return; }
+      const ya = new Set(m.especiales.map((e) => e.desde));
+      const nuevos = r.feriados.filter((f) => !ya.has(f.fecha));
+      nuevos.forEach((f) => m.especiales.push({ desde: f.fecha, hasta: f.fecha, tipo: 'cerrado', turnos: [], nota: f.nombre }));
+      m.especiales.sort((a, b) => a.desde.localeCompare(b.desde));
+      if (nuevos.length) marcar();
+      repintar();
+      aviso(nuevos.length ? 'Sumé ' + nuevos.length + ' feriados como cerrado: cambiá los días que abrís y tocá Guardar.' : 'Ya estaban todos los feriados.');
+    });
+    const especiales = h('div', { class: 'caja' }, h('h3', {}, 'Fechas especiales y feriados'),
+      h('p', { class: 'ayuda' }, 'Un día que cerrás o abrís con otro horario (feriados, vacaciones, fiestas). Manda sobre el horario de la semana.'),
+      m.especiales.length ? m.especiales.map(filaEspecial) : h('p', { class: 'ayuda' }, 'No cargaste ninguna.'),
+      puede ? h('div', { class: 'acciones' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { const hoy = new Date().toISOString().slice(0, 10); m.especiales.push({ desde: hoy, hasta: hoy, tipo: 'cerrado', turnos: [], nota: '', nueva: true }); marcar(); repintar(); } }, '+ Agregar fecha'),
+        h('button', { type: 'button', class: 'btn', onclick: cargarFeriados }, 'Cargar feriados')) : null);
+
+    // Fuera de horario.
+    const radio = (v, t, ayuda) => h('label', { class: 'check' }, h('input', { type: 'radio', name: 'fuera', value: v, checked: m.fueraDeHorario === v, disabled: dis, onchange: () => { m.fueraDeHorario = v; marcar(); } }), h('span', {}, h('strong', {}, t), ' — ', ayuda));
+    const fuera = h('div', { class: 'caja opciones-radio' }, h('h3', {}, 'Cuando está cerrado'),
+      radio('pedidos', 'Responder y tomar pedidos', 'aclara que lo preparan cuando abran (recomendado)'),
+      radio('responder', 'Responder sin tomar pedidos', 'contesta las preguntas y dice cuándo abren'),
+      radio('cerrado', 'No atender', 'a cada persona le dice una vez cuándo abren, y nada más'));
+
+    // Dirección.
+    const dir = h('input', { type: 'text', maxlength: 200, value: m.direccion, disabled: dis, placeholder: 'Ejemplo: San Martín 1234, Rosario', oninput: (e) => { m.direccion = e.target.value; marcar(); } });
+    const direccion = h('div', { class: 'caja' }, h('h3', {}, 'Dirección'), etiqueta('Dónde está el local', dir), dir,
+      h('p', { class: 'ayuda' }, 'El asistente la da con un link al mapa cuando preguntan dónde están.'),
+      d.mapa ? h('a', { class: 'btn chico', href: d.mapa, target: '_blank', rel: 'noopener' }, 'Ver en el mapa') : null);
+
+    // Envíos por zona.
+    const num = (z, k, ph) => h('input', { type: 'number', min: 0, step: 'any', value: z[k] || '', disabled: dis, placeholder: ph, oninput: (e) => { z[k] = e.target.value === '' ? 0 : Number(e.target.value); marcar(); } });
+    const filaZona = (z, k) => {
+      const nombre = h('input', { type: 'text', maxlength: 60, value: z.nombre, disabled: dis, placeholder: 'Ejemplo: Centro', oninput: (e) => { z.nombre = e.target.value; marcar(); } });
+      const costo = num(z, 'costo', '0 = sin cargo'); const minimo = num(z, 'minimo', 'Opcional'); const gratis = num(z, 'gratisDesde', 'Opcional');
+      const demora = h('input', { type: 'text', maxlength: 60, value: z.demora, disabled: dis, placeholder: 'Ejemplo: en 2 horas', oninput: (e) => { z.demora = e.target.value; marcar(); } });
+      return h('div', { class: 'fila-ed' },
+        h('div', {}, etiqueta('Zona', nombre), nombre), h('div', {}, etiqueta('Costo', costo), costo), h('div', {}, etiqueta('Pedido mínimo', minimo), minimo),
+        h('div', {}, etiqueta('Gratis desde', gratis), gratis), h('div', {}, etiqueta('Cuánto tarda', demora), demora),
+        puede ? h('button', { type: 'button', class: 'btn chico peligro', onclick: () => { m.envios.zonas.splice(k, 1); marcar(); repintar(); } }, 'Quitar') : null);
+    };
+    const envios = h('div', { class: 'caja' }, h('h3', {}, 'Envíos por zona'),
+      h('p', { class: 'ayuda' }, 'Con zonas cargadas, en el pedido por chat el asistente pregunta la zona, suma el costo y avisa si no llega al mínimo.'),
+      m.envios.zonas.length ? m.envios.zonas.map(filaZona) : h('p', { class: 'ayuda' }, 'Sin zonas: el envío se arregla por el texto de Cómo vendés.'),
+      puede ? h('div', { class: 'acciones' }, h('button', { type: 'button', class: 'btn', onclick: () => { m.envios.zonas.push({ nombre: '', costo: 0, minimo: 0, gratisDesde: 0, demora: '' }); marcar(); repintar(); } }, '+ Agregar zona')) : null);
+
+    // Formas de pago.
+    const check = (k, t) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: m.pagos[k], disabled: dis, onchange: (e) => { m.pagos[k] = e.target.checked; marcar(); } }), t);
+    const alias = h('input', { type: 'text', maxlength: 80, value: m.pagos.alias, disabled: dis, placeholder: 'Ejemplo: MI.NEGOCIO', oninput: (e) => { m.pagos.alias = e.target.value; marcar(); } });
+    const pagos = h('div', { class: 'caja' }, h('h3', {}, 'Formas de pago'),
+      check('efectivo', 'Efectivo'), check('transferencia', 'Transferencia'), check('mercadopago', 'Mercado Pago'), check('tarjeta', 'Tarjeta'),
+      etiqueta('Alias o CBU para transferir', alias), alias,
+      h('p', { class: 'ayuda' }, 'El alias va solo en el aviso de pedido aceptado (el asistente no lo da por chat). Nunca pongas claves ni datos de tarjetas.'));
+
+    // Contacto y zona horaria.
+    const campo = (k, t, tipo, ph) => { const i = h('input', { type: tipo, maxlength: 200, value: m.contacto[k], disabled: dis, placeholder: ph, oninput: (e) => { m.contacto[k] = e.target.value; marcar(); } }); return h('div', {}, etiqueta(t, i), i); };
+    const selZona = h('select', { disabled: dis, onchange: (e) => { zona = e.target.value; marcar(); } }, d.zonas.map((z) => h('option', { value: z.z, selected: z.z === zona }, z.nombre)));
+    const contacto = h('div', { class: 'caja' }, h('h3', {}, 'Contacto y zona horaria'),
+      h('div', { class: 'dosc' }, campo('telefono', 'Teléfono', 'tel', 'Opcional'), campo('correo', 'Correo', 'email', 'Opcional'), campo('instagram', 'Instagram', 'text', 'usuario, sin @'), campo('web', 'Web', 'url', 'https://…')),
+      h('p', { class: 'ayuda' }, 'El asistente los da si se los piden.'),
+      etiqueta('Zona horaria del negocio', selZona), selZona,
+      h('p', { class: 'ayuda' }, 'Para los horarios, los feriados y los reportes.'));
+
+    const guardar = h('button', { type: 'submit', class: 'btn prim', disabled: true }, 'Guardar');
+    const form = h('form', { onsubmit: conError(async (e) => {
+      e.preventDefault();
+      const r = await api(base() + '/mi-negocio', { metodo: 'PUT', cuerpo: { minegocio: m, zona: zona } });
+      estado.datos.negocio.ajustes = Object.assign({}, estado.datos.negocio.ajustes, { zona: r.zona });
+      pintarMiNegocio(caja, r);
+      aviso('Guardado. El asistente ya lo usa.');
+    }) }, horarios, especiales, fuera, direccion, envios, pagos, contacto,
+      puede ? h('div', { class: 'guardar-fijo' }, guardar) : null);
+
+    // Lo que no supo responder → «Responder y guardar» lo pasa a las preguntas frecuentes.
+    const noSupo = h('div', { class: 'caja' }, h('h3', {}, 'Lo que no supo responder'),
+      d.noSupo.length ? h('ul', { class: 'lista' }, d.noSupo.map((x) => {
+        const resp = h('textarea', { rows: 2, maxlength: 600, placeholder: 'Escribí la respuesta, así la próxima la sabe' });
+        return h('li', { class: 'tarjeta' }, h('p', { class: 'cita' }, x.p), h('p', { class: 'ayuda' }, x.n === 1 ? 'Lo preguntaron 1 vez.' : 'Lo preguntaron ' + x.n + ' veces.'), resp,
+          h('div', { class: 'acciones' },
+            h('button', { type: 'button', class: 'btn', onclick: conError(async () => { pintarMiNegocio(caja, await api(base() + '/mi-negocio/no-supo', { metodo: 'POST', cuerpo: { pregunta: x.p } })); aviso('Listo, la saqué de la lista.'); }) }, 'Descartar'),
+            h('button', { type: 'button', class: 'btn prim', onclick: conError(async () => {
+              if (!resp.value.trim()) { resp.focus(); aviso('Escribí la respuesta primero.', true); return; }
+              pintarMiNegocio(caja, await api(base() + '/mi-negocio/no-supo', { metodo: 'POST', cuerpo: { pregunta: x.p, respuesta: resp.value } }));
+              aviso('Guardada en las preguntas frecuentes. El asistente ya la sabe.');
+            }) }, 'Responder y guardar')));
+      })) : h('p', { class: 'ayuda' }, 'Nada por ahora. Cuando el asistente no sepa algo, aparece acá para que lo cargues una sola vez.'));
+
+    // Preguntas frecuentes (las carga el negocio; mandan sobre la ficha).
+    const pf = d.preguntas.map((x) => ({ p: x.p, r: x.r, t: x.t }));
+    const listaPf = h('div', {});
+    const pintarPf = () => poner(listaPf, pf.length ? pf.map((x, k) => {
+      const p = h('input', { type: 'text', maxlength: 200, value: x.p, placeholder: 'La pregunta', oninput: (e) => { x.p = e.target.value; } });
+      const r = h('textarea', { rows: 2, maxlength: 600, placeholder: 'La respuesta', oninput: (e) => { x.r = e.target.value; } }, x.r);
+      r.value = x.r;
+      return h('div', { class: 'fila-ed' }, h('div', {}, etiqueta('Pregunta', p), p), h('div', {}, etiqueta('Respuesta', r), r),
+        h('button', { type: 'button', class: 'btn chico peligro', onclick: () => { pf.splice(k, 1); pintarPf(); } }, 'Quitar'));
+    }) : h('p', { class: 'ayuda' }, 'Todavía no hay. Sumá las que más te hacen (por ejemplo: «¿Hacen tortas sin TACC?»).'));
+    pintarPf();
+    const preguntas = h('div', { class: 'caja' }, h('h3', {}, 'Preguntas frecuentes'),
+      h('p', { class: 'ayuda' }, 'El asistente las usa tal cual: mandan sobre lo demás.'), listaPf,
+      h('div', { class: 'acciones' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { pf.push({ p: '', r: '' }); pintarPf(); } }, '+ Agregar pregunta'),
+        h('button', { type: 'button', class: 'btn prim', onclick: conError(async () => {
+          pintarMiNegocio(caja, await api(base() + '/mi-negocio/preguntas', { metodo: 'PUT', cuerpo: { preguntas: pf.filter((x) => x.p.trim() && x.r.trim()) } }));
+          aviso('Preguntas guardadas. El asistente ya las usa.');
+        }) }, 'Guardar preguntas')));
+
+    const historial = d.cambios.length ? h('details', {}, h('summary', {}, 'Historial de cambios'),
+      h('ul', { class: 'lista' }, d.cambios.map((c) => h('li', { class: 'ayuda' }, fecha(c.t) + ' · ' + (c.quien || 'alguien') + ' ' + c.que)))) : null;
+
+    poner(caja,
+      h('h2', {}, 'Mi negocio'),
+      h('p', { class: 'ayuda' }, 'Lo que el asistente sabe de tu negocio. Lo cambiás cuando quieras y lo usa desde la próxima respuesta.'),
+      d.ahora ? h('span', { class: 'estado-ahora ' + (d.ahora.abierto ? 'ok' : 'cerrado') }, (d.ahora.abierto ? 'Abierto ahora' : 'Cerrado ahora') + (d.ahora.texto ? ' · ' + (d.ahora.abierto ? '' : 'abre ') + d.ahora.texto.replace(' desde las ', ' a las ') : '')) : h('span', { class: 'estado-ahora cerrado' }, 'Sin horarios cargados'),
+      !puede ? h('p', { class: 'pausa' }, 'Los datos del negocio los cambia el dueño. Vos podés responder lo que no supo y editar las preguntas frecuentes.') : null,
+      form, noSupo, preguntas, historial);
   }
 
   // ── Cómo vendés (ZL-148): entrega, pago y cuánto se guarda un pedido aceptado. El asistente los usa solo. ──
@@ -341,26 +527,31 @@ function app() {
     const envio = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: zona centro $ 1.500, otras zonas a convenir; de 18 a 21' }, a.envio || '');
     const pago = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Ejemplo: transferencia al alias MI.NEGOCIO o efectivo al retirar' }, a.pago || '');
     const reserva = h('select', {}, [[2, '2 horas'], [24, '24 horas'], [48, '48 horas'], [168, '7 días']].map(([v, t]) => h('option', { value: v, selected: Number(a.reservaHoras || 24) === v }, t)));
-    const zona = h('select', {}, [['America/Argentina/Buenos_Aires', 'Argentina'], ['America/Montevideo', 'Uruguay'], ['America/Santiago', 'Chile'], ['America/Sao_Paulo', 'Brasil (São Paulo)'], ['Europe/Zagreb', 'Croacia'], ['Europe/Madrid', 'España']].map(([v, t]) => h('option', { value: v, selected: (a.zona || 'America/Argentina/Buenos_Aires') === v }, t)));
     retiro.value = a.retiro || ''; envio.value = a.envio || ''; pago.value = a.pago || '';
+    // ZL-164: solo lo que aplica. Sin pedidos por chat no hay reserva; con «solo retiro» no hay envío (y al revés). La
+    // zona horaria pasó a «Mi negocio», con los horarios.
+    const pedidos = estado.datos.negocio.pedidos === true;
+    const bloqueRetiro = h('div', {}, etiqueta('Retiro: dónde y cuándo', retiro), retiro);
+    const bloqueEnvio = h('div', {}, etiqueta('Envío: zonas, costo y horarios', envio), envio, h('p', { class: 'ayuda' }, 'Si cargás las zonas con su costo en Mi negocio → Envíos, el asistente pregunta la zona y suma el envío solo.'));
+    const segunEntrega = () => { bloqueRetiro.hidden = entrega.value === 'envio'; bloqueEnvio.hidden = entrega.value === 'retiro'; };
+    entrega.addEventListener('change', segunEntrega);
+    segunEntrega();
     return h('section', {},
       h('h2', {}, 'Cómo vendés'),
       h('p', { class: 'ayuda' }, 'Lo cargás una vez. El asistente lo usa para responder, y cuando aceptás un pedido le manda al comprador cómo pagar y cómo recibirlo: no tenés que escribir nada a mano.'),
       h('form', { class: 'wa-form', onsubmit: conError(async (e) => {
         e.preventDefault();
-        const r = await api(base() + '/ajustes', { metodo: 'PUT', cuerpo: { entrega: entrega.value, retiro: retiro.value, envio: envio.value, pago: pago.value, reservaHoras: Number(reserva.value), zona: zona.value } });
+        const r = await api(base() + '/ajustes', { metodo: 'PUT', cuerpo: { entrega: entrega.value, retiro: retiro.value, envio: envio.value, pago: pago.value, ...(pedidos && { reservaHoras: Number(reserva.value) }) } });
         estado.datos.negocio.ajustes = r;
         aviso('Guardado. El asistente ya lo usa.');
       }) },
         etiqueta('¿Cómo entregás?', entrega), entrega,
-        etiqueta('Retiro: dónde y cuándo', retiro), retiro,
-        etiqueta('Envío: zonas, costo y horarios', envio), envio,
+        bloqueRetiro, bloqueEnvio,
         etiqueta('Cómo se paga', pago), pago,
-        h('p', { class: 'ayuda' }, 'Alias, link de pago o efectivo. Nunca pongas claves ni datos de tarjetas.'),
-        etiqueta('Cuánto te guardo un pedido aceptado sin pagar', reserva), reserva,
-        h('p', { class: 'ayuda' }, 'Pasado ese tiempo sin marcarlo pagado ni entregado, se cancela solo y los productos vuelven a la venta.'),
-        etiqueta('Zona horaria del negocio', zona), zona,
-        h('p', { class: 'ayuda' }, 'Para los reportes: a qué hora y qué día te escriben.'),
+        h('p', { class: 'ayuda' }, 'Alias, link de pago o efectivo. Nunca pongas claves ni datos de tarjetas. Si marcás las formas de pago en Mi negocio, mandan sobre este texto.'),
+        pedidos ? h('div', {}, etiqueta('Cuánto te guardo un pedido aceptado sin pagar', reserva), reserva,
+          h('p', { class: 'ayuda' }, 'Pasado ese tiempo sin marcarlo pagado ni entregado, se cancela solo y los productos vuelven a la venta.')) : null,
+        h('p', { class: 'ayuda' }, 'Los horarios, la dirección y la zona horaria están en Mi negocio.'),
         h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Guardar'))));
   }
 
@@ -373,7 +564,7 @@ function app() {
       return;
     }
     if (estado.timerPedidos) { clearInterval(estado.timerPedidos); estado.timerPedidos = null; }
-    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, reportes: vistaReportes, conexiones: vistaConexiones, asistente: () => (estado.yo.admin ? h('div', {}, vistaMiAsistente(), vistaAsistente()) : vistaMiAsistente()), admin: vistaAdmin };
+    const vistas = { inicio: vistaPedidos, productos: vistaSeccionProductos, minegocio: vistaMiNegocio, reportes: vistaReportes, conexiones: vistaConexiones, asistente: () => (estado.yo.admin ? h('div', {}, vistaMiAsistente(), vistaAsistente()) : vistaMiAsistente()), admin: vistaAdmin };
     v.append((vistas[estado.tab] || vistaPedidos)());
   }
 
