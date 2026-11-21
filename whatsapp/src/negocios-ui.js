@@ -108,7 +108,8 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
 .opciones-radio label.check{margin:.35rem 0}
 .estado-ahora{display:inline-block;font-weight:600;border-radius:99px;padding:.15rem .7rem;font-size:.9rem;margin:0 0 .6rem}
 .estado-ahora.ok{background:#E8F5EE;color:var(--ok)}.estado-ahora.cerrado{background:#FDECEE;color:var(--rojo)}
-.guardar-fijo{position:sticky;bottom:.5rem;display:flex;justify-content:flex-end;gap:.5rem;padding:.5rem 0;z-index:3}
+.guardar-fijo{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:.75rem;padding:.6rem .2rem;margin-top:.5rem;z-index:3;background:var(--fondo);border-top:1px solid var(--linea)}
+.guardar-fijo .ayuda{margin:0}
 .charla-fila{display:grid;grid-template-columns:1fr auto;gap:.15rem .6rem;width:100%;text-align:left;background:#fff;border:1px solid var(--linea);border-radius:12px;padding:.7rem .9rem;cursor:pointer;font:inherit;color:inherit}
 .charla-fila:hover{border-color:var(--tinta)}.charla-fila.nueva{border-left:4px solid var(--rojo)}
 .charla-fila .quien{font-weight:600}.charla-fila .punto{color:var(--rojo);font-weight:600}.charla-fila .previa{color:var(--gris);font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -132,7 +133,7 @@ a.btn,label.btn{color:inherit;font-weight:400;margin:0}
   .tabs button[aria-selected="true"]{border-top-color:var(--rojo)}
   main{padding-bottom:5.5rem}
   .dosc{grid-template-columns:1fr}
-  .guardar-fijo{bottom:4.2rem}.dia{grid-template-columns:1fr}
+  .guardar-fijo{bottom:3.6rem}.dia{grid-template-columns:1fr}
   .esp{grid-template-columns:1fr auto}.esp .cuando{grid-column:1/-1}.esp input[type=text]{grid-column:1/2}
   .tabla.apilada thead{display:none}.tabla.apilada tr{display:block;border-bottom:1px solid var(--linea);padding:.4rem 0}
   .tabla.apilada td{display:block;border:0;padding:.1rem .7rem}.tabla.apilada td[data-t]::before{content:attr(data-t) ": ";color:var(--gris);font-size:.8rem}
@@ -571,7 +572,7 @@ function app() {
       pintarMiNegocio(caja, r);
       aviso('Guardado. El asistente ya lo usa.');
     }) }, horarios, especiales, fuera, direccion, envios, pagos, contacto,
-      puede ? h('div', { class: 'guardar-fijo' }, guardar) : null);
+      puede ? h('div', { class: 'guardar-fijo' }, h('span', { class: 'ayuda' }, 'Los cambios se guardan todos juntos.'), guardar) : null);
 
     // Lo que no supo responder → «Responder y guardar» lo pasa a las preguntas frecuentes.
     const noSupo = h('div', { class: 'caja' }, h('h3', {}, 'Lo que no supo responder'),
