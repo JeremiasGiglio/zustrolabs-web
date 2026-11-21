@@ -688,7 +688,8 @@ function app() {
   const ESTADO_PEDIDO = { pendiente: 'Nuevo', aceptado: 'Aceptado', pagado: 'Pagado', entregado: 'Entregado', rechazado: 'Rechazado', cancelado: 'Cancelado', vencido: 'Vencido' };
   const CANAL_PEDIDO = { wa: 'WhatsApp', ig: 'Instagram' };
   const plata = (n) => '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
-  const hora = (t) => new Date(t).toLocaleString('es-AR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  // ZL-162: con fecha y en 24 h («sáb 22/11, 14:05»); antes salía «sáb, 02:23 a. m..» (sin fecha y con doble punto).
+  const hora = (t) => new Intl.DateTimeFormat('es-AR', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t));
   function sonar() {
     try {
       const c = new (window.AudioContext || window.webkitAudioContext)();
@@ -752,6 +753,8 @@ function app() {
   }
 
   const ESTADO_CONSULTA = { nueva: 'Nueva', atendiendo: 'La estás atendiendo', ganada: 'Ganada', perdida: 'Perdida', resuelta: 'Resuelta' };
+  // ZL-162: lo que dejó listo «Que siga el asistente» cuando la respuesta no pudo salir sola (pasaron las 24 h).
+  const avisosConsulta = {};
   const TIPO_CONSULTA = { consulta: 'Quiere avanzar', persona: 'Necesita a alguien del negocio' };
   function tarjetaConsulta(c, recargar) {
     const pasar = (nuevo) => conError(async () => {
@@ -759,15 +762,28 @@ function app() {
       aviso('Consulta N.º ' + c.numero + ': ' + ESTADO_CONSULTA[nuevo].toLowerCase() + (r.pausaHasta ? '. El asistente no se mete en esa charla hasta ' + hora(r.pausaHasta) + '.' : '.'));
       await recargar();
     });
-    const devolver = conError(async () => {
-      await api(base() + '/consultas/' + c.numero + '/devolver', { metodo: 'POST', cuerpo: {} });
-      aviso('Listo: el asistente vuelve a responder en esa charla.');
+    // ZL-162: «Que siga el asistente» con la respuesta opcional: se le manda, la aprende y no vuelve a pasar la charla.
+    const respuesta = h('textarea', { rows: 2, maxlength: 600, id: 'resp-' + c.numero, placeholder: c.interes ? 'Por ejemplo, qué contestarle sobre «' + c.interes.slice(0, 60) + '»' : 'Lo que el asistente le tiene que decir' });
+    const guardar = h('input', { type: 'checkbox', id: 'guardar-' + c.numero, checked: true });
+    const devolverForm = h('form', { class: 'formulario', hidden: true, onsubmit: conError(async (e) => {
+      e.preventDefault();
+      const r = await api(base() + '/consultas/' + c.numero + '/devolver', { metodo: 'POST', cuerpo: { respuesta: respuesta.value, guardar: guardar.checked } });
+      if (r.aviso) avisosConsulta[c.numero] = r.aviso;
+      aviso(r.respondida
+        ? (r.aviso ? 'El asistente sigue. La respuesta no le llegó sola: mandásela desde la tarjeta.' : 'Listo: le mandamos tu respuesta y el asistente sigue.' + (r.guardada ? ' La guardé en tus preguntas frecuentes.' : ''))
+        : 'Listo: el asistente vuelve a responder en esa charla. Si vuelve a preguntar eso, le dice que todavía no está confirmado.');
       await recargar();
-    });
+    }) },
+      h('label', { for: 'resp-' + c.numero }, '¿Qué le respondemos? (opcional)'), respuesta,
+      c.interes ? h('label', { class: 'check', for: 'guardar-' + c.numero }, guardar, 'Guardarla en mis preguntas frecuentes (el asistente la va a saber)') : null,
+      h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn prim' }, 'Que siga el asistente')));
+    const abrirDevolver = h('button', { type: 'button', class: 'btn', 'aria-expanded': 'false', onclick: () => { devolverForm.hidden = !devolverForm.hidden; abrirDevolver.setAttribute('aria-expanded', String(!devolverForm.hidden)); if (!devolverForm.hidden) respuesta.focus(); } }, 'Que siga el asistente');
     const botones = [botonResponder(c.charla, c.canal, c.contacto)];
-    if (c.estado === 'nueva') botones.push(h('button', { type: 'button', class: 'btn prim', onclick: pasar('atendiendo') }, 'La atiendo yo'));
-    if (c.tipo === 'persona') botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('resuelta') }, 'Resuelto'));
+    if (c.estado === 'nueva') botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('atendiendo') }, 'La atiendo yo'));
+    if (c.tipo === 'persona' || c.pausaHasta) botones.push(abrirDevolver);
+    if (c.tipo === 'persona') botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('resuelta') }, 'Ya lo resolví'));
     else botones.push(h('button', { type: 'button', class: 'btn', onclick: pasar('ganada') }, 'Ganada'), h('button', { type: 'button', class: 'btn', onclick: pasar('perdida') }, 'Perdida'));
+    const manual = avisosConsulta[c.numero];
     return h('article', { class: 'tarjeta consulta' + (c.estado === 'nueva' ? ' nuevo' : '') },
       h('h3', {}, 'Consulta N.º ' + c.numero + ' · ' + (c.nombre || 'Sin nombre')),
       h('div', { class: 'chips' },
@@ -776,9 +792,12 @@ function app() {
         h('span', { class: 'chip' }, fecha(c.actualizado))),
       lineaContacto(c),
       c.resumen ? h('p', {}, c.resumen) : h('p', { class: 'ayuda' }, 'Sin resumen: mirá la charla en tu app.'),
-      c.pausaHasta ? h('div', { class: 'pausa' }, 'El asistente está callado en esta charla hasta ' + hora(c.pausaHasta) + '. ',
-        h('button', { type: 'button', class: 'btn', onclick: devolver }, 'Devolver al asistente')) : null,
-      h('div', { class: 'acciones' }, botones));
+      c.pausaHasta ? h('div', { class: 'pausa' }, 'El asistente está callado en esta charla hasta el ' + hora(c.pausaHasta) + ' (o hasta que toques «Que siga el asistente»).') : null,
+      manual ? h('div', { class: 'pausa', role: 'status' }, h('p', {}, h('strong', {}, 'Tu respuesta no le llegó sola: '), manual.motivo + '. Mandásela vos:'), h('p', { class: 'cita' }, manual.texto),
+        manual.enlace ? h('div', { class: 'acciones' }, h('a', { class: 'btn prim', href: manual.enlace, target: '_blank', rel: 'noopener' }, manual.canal === 'whatsapp' ? 'Mandárselo por WhatsApp' : 'Abrir Instagram')) : null) : null,
+      h('div', { class: 'acciones' }, botones),
+      devolverForm,
+      h('p', { class: 'ayuda' }, (c.tipo === 'persona' ? '«La atiendo yo» calla al asistente mientras le escribís vos. «Que siga el asistente» lo vuelve a encender (si escribís qué contestarle, se lo manda y lo aprende). «Ya lo resolví» la cierra.' : '«Ganada» o «Perdida» la cierran y cuentan en tus números.')));
   }
 
   /**

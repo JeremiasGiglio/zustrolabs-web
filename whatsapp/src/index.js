@@ -8,7 +8,7 @@
 import { adaptadores, almacenPrueba, crearAtencion } from './atencion.js';
 import { appDe, armarFrom, conectarCuenta, enviarIg, esInstagram, leerComentariosIg, leerEstado, leerWebhookIg, mantenerCuentas, nombreDe, paginaConectado, responderComentario, responderEnPrivado, secretosDe, textoDePublicacion, urlAutorizar } from './instagram.js';
 import { configComentarios, esRuido, MAX_EDAD_COMENTARIO_MS, preguntadorComentario, TOPE_COMENTARIOS_DIA } from './comentarios.js';
-import { conAjustes, conAvisoDia, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
+import { conAjustes, conAvisoDia, conPreguntas, parsearFicha, perfilNegocio, preguntadorNegocio, resumenFicha } from './negocio.js';
 import { ajustesDeVenta, HISTORIAL_MAX, HISTORIAL_MS, limiteDiaDe } from './atencion.js';
 import { administrar, appCompartida, appNegocios, canalesDe, conectarWhatsApp, desconectarWhatsApp, NEGOCIOS_HOST, todosLosNumeros } from './negocios.js';
 import { avisar, avisarEquipo, panel } from './panel.js';
@@ -86,11 +86,17 @@ const consultaCatalogo = (env, deps, negocioId, ficha) => {
  * La IA de un negocio: su ficha, sus productos y su tope diario (uno con mucho movimiento no deja sin IA a los demás;
  * también es lo que se le factura). Lo usan Instagram y WhatsApp por YCloud.
  */
-function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
-  // ZL-149: lo que carga el negocio en «Cómo vendés» (retiro, envío, pago) también lo sabe el asistente.
+/**
+ * La ficha con todo lo que carga el negocio en la app: «Cómo vendés» (ZL-149), el aviso del día (ZL-159) y las
+ * preguntas frecuentes (ZL-162). La usan la charla, los comentarios y la charla de prueba.
+ */
+export function fichaDelNegocio(fichaSola, dueño, now = Date.now()) {
   const conVenta = dueño?.ajustes ? conAjustes(fichaSola, ajustesDeVenta(dueño.ajustes)) : fichaSola;
-  // ZL-159: el aviso del día del dueño, mientras esté vigente.
-  const ficha = conAvisoDia(conVenta, dueño?.avisoDia, deps.now ?? Date.now());
+  return conPreguntas(conAvisoDia(conVenta, dueño?.avisoDia, now), dueño?.preguntas);
+}
+
+function iaDeNegocio(env, deps, a, dueño, fichaSola, canal) {
+  const ficha = fichaDelNegocio(fichaSola, dueño, deps.now ?? Date.now());
   const catalogo = consultaCatalogo(env, deps, dueño?.id, ficha);
   const ia = deps.preguntarNegocio ? deps.preguntarNegocio(ficha, catalogo) : preguntadorNegocio(env, ficha, { catalogo, canal });
   return async (texto, idioma, opciones) => {
@@ -188,9 +194,16 @@ function pausasDeCharla(a, now) {
       const e = await a.memoria.get(clave(charla));
       return e?.usuario ?? null;
     },
-    async devolver(charla) {
+    /**
+     * Devolver al asistente. ZL-162: si el dueño escribió la respuesta, queda en la charla (y ya se le mandó); si no, la
+     * pregunta queda «pendiente» un día: el asistente no la vuelve a pasar (se cortaba el ciclo devolver → pasar).
+     */
+    async devolver(charla, { pregunta = '', respuesta = '' } = {}) {
       const e = await a.memoria.get(clave(charla));
-      if (e) await a.memoria.put(clave(charla), { ...e, humanoHasta: 0, pase: null, consulta: null });
+      if (!e) return;
+      const t = reloj();
+      const hist = respuesta && e.histT && t - e.histT < HISTORIAL_MS && Array.isArray(e.hist) ? [...e.hist, { r: 'a', t: respuesta.slice(0, 500) }].slice(-HISTORIAL_MAX) : e.hist;
+      await a.memoria.put(clave(charla), { ...e, humanoHasta: 0, pase: null, consulta: null, oferta: null, devuelta: respuesta || !pregunta ? null : { t, pregunta }, ...(respuesta && hist && { hist, histT: t }) });
     },
     /**
      * ZL-157: un aviso de pedido que no pudo salir solo (fuera de las 24 h) queda guardado: el asistente se lo dice
@@ -572,8 +585,7 @@ export async function atenderComentarios(comentarios, env, fetchImpl, deps) {
       if ((await a.negocios.sumarMetrica(negocio.id, 'comentariosIa', dia)) > TOPE_COMENTARIOS_DIA) { fin('tope'); continue; }
       if ((await cupoDeIa(env, negocio.id, deps)()) !== 'ok') { fin('cupo'); continue; }
       // La misma ficha que en la charla: con lo de «Cómo vendés» y el aviso del día.
-      const conVenta = negocio.ajustes ? conAjustes(pf.ficha, ajustesDeVenta(negocio.ajustes)) : pf.ficha;
-      const ficha = conAvisoDia(conVenta, negocio.avisoDia, now);
+      const ficha = fichaDelNegocio(pf.ficha, negocio, now);
       const catalogo = consultaCatalogo(env, deps, negocio.id, ficha);
       const publicacion = await textoDePublicacion(env, cuenta.token, c.media, fetchImpl);
       const preguntar = deps.preguntarComentario ? deps.preguntarComentario(ficha, catalogo) : preguntadorComentario(env, ficha, { catalogo, fetchImpl });
@@ -673,7 +685,9 @@ async function procesar(eventos, env, fetchImpl, deps, canal) {
       const listo = negocio ? await prepararEvento(ev, { deps, memoria: a.memoria, clave: ev.from }) : ev;
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
       const antes = negocio && dueñoEv ? await memoria?.get(ev.from) : null;
-      const r = await atender(listo, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv });
+      // ZL-162: si mientras se responde llega otro mensaje, esa ráfaga absorbe a esta y esta no manda nada.
+      const vigente = negocio && a.memoria?.cursoVigente ? () => a.memoria.cursoVigente(ev.from, listo.id) : null;
+      const r = await atender(listo, { memoria, charlas: charlasEv, preguntar: preguntarEv, now, cupo, ...(perfil && { perfil }), pedidos: pedidosEv, consultas: consultasEv, vigente }).finally(() => a.memoria?.terminarCurso?.(ev.from, listo.id));
       for (const m of r.send) await mandar(m);
       if (negocio && dueñoEv) await despuesDeAtender(env, a, deps, fetchImpl, dueñoEv, antes, listo, r, now, ev.from);
       // ZL-153: el usuario de Instagram de la persona, una vez (al primer mensaje o cuando deja un pedido o una consulta),
@@ -795,7 +809,10 @@ async function procesarYCloud(eventos, env, fetchImpl, deps, reg) {
       const listo = await prepararEvento(ev, { deps, memoria: a.memoria, clave: claveMemoria(ev.from) });
       if (!listo) { log({ ok: true, que: 'rafaga' }); continue; }
       const antes = await memoria?.get(ev.from);
-      const r = await atender(listo, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa') });
+      // ZL-162: si mientras se responde llega otro mensaje, esa ráfaga absorbe a esta y esta no manda nada.
+      const cm = claveMemoria(ev.from);
+      const vigente = a.memoria?.cursoVigente ? () => a.memoria.cursoVigente(cm, listo.id) : null;
+      const r = await atender(listo, { memoria, charlas: null, preguntar, now, cupo, perfil, pedidos: pedidosDe(env, deps, dueño, pf.ficha, ev.from, 'wa'), consultas: consultasDe(env, deps, dueño, ev.from, 'wa'), vigente }).finally(() => a.memoria?.terminarCurso?.(cm, listo.id));
       // Si el dueño contestó mientras la IA pensaba, su respuesta ganó: no se manda la del asistente. (Un pase al equipo
       // también pausa, pero ese aviso sí va: lo puso el propio asistente.)
       if (r.send.length && !['borrar', 'persona', 'humano'].includes(r.metrica) && !r.handoff && memoria) {
@@ -866,7 +883,10 @@ async function fichaDelEstudio(a, cuenta) {
  * `estado`: lo que devolvió la prueba anterior ({idioma, humanoHasta}), para seguir la misma charla en la app (ZL-126).
  * Devuelve {charla, estado}.
  */
-async function probarFicha(env, ficha, mensajes, deps, negocioId = null, estado = null) {
+async function probarFicha(env, fichaSola, mensajes, deps, negocioId = null, estado = null) {
+  // ZL-162: con lo que carga el negocio (Cómo vendés, aviso del día, preguntas frecuentes), igual que en la charla real.
+  const dueño = negocioId ? await almacen(env, deps).negocios?.get(negocioId).catch(() => null) : null;
+  const ficha = fichaDelNegocio(fichaSola, dueño, deps.now ?? Date.now());
   const memoria = adaptadores(crearAtencion(almacenPrueba())).memoria;
   const DE = 'ig:0.0';
   const previo = estadoDePrueba(estado);

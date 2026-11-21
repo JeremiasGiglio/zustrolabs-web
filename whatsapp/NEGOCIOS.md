@@ -242,6 +242,32 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## La charla sin contradicciones (ZL-162)
+
+Arreglos de lo que se vio en vivo en la auditoría del 21/11:
+
+- **Lo que no sabe, lo ofrece** (no pasa sola la charla): la IA lo dice en una oración y marca `persona` con `motivo`
+  «no_se»; el sistema agrega «¿Querés que lo averigüe el equipo y te respondan por acá?» y guarda el ofrecimiento
+  (`oferta`, 2 h). Si responde que sí, pasa al equipo con la pregunta anotada (`interes` de la consulta); si dice que no,
+  «Perfecto, ¿te ayudo con algo más?»; otra cosa, sigue la charla. Pasa directo solo con motivo «pidio» o «reclamo».
+- **Nunca dos preguntas que se pisan:** antes de un texto fijo (pase, pedir el nombre, consulta lista) se le sacan a la
+  respuesta de la IA sus preguntas finales y un «¡Dale!» inicial (`sinPreguntaFinal`). El texto del pase ya no dice
+  «¡Dale!». Preguntar el precio ya no lleva directo a pedir el nombre.
+- **Acuse único:** si escribe mientras espera a alguien del negocio, recibe una vez «Ya le avisé al equipo…». Sus
+  mensajes no alargan la pausa (la alarga el dueño cuando contesta).
+- **«Que siga el asistente»** (antes «Devolver al asistente»): el dueño puede escribir qué contestarle. Se le manda
+  (dentro de las 24 h; si no, queda listo para mandar a mano), se guarda en las **preguntas frecuentes** del negocio
+  (`preguntas`, hasta 100, entran en lo que sabe el asistente con `conPreguntas`) y queda en la memoria corta. Sin
+  respuesta, la pregunta queda pendiente un día (`devuelta`): si la vuelve a hacer, el asistente dice que todavía no está
+  confirmado y no la pasa otra vez. Se corta el ciclo devolver → pasar.
+- **Mensajes seguidos → una respuesta:** si llega otro mensaje mientras se responde el anterior, la ráfaga nueva incluye
+  al anterior (`cur:` en el Durable Object) y la respuesta vieja se descarta antes de tocar nada (`vigente`).
+- **BORRAR** pide confirmación (BORRAR otra vez, 10 minutos), no saca la pausa y dice la verdad: los pedidos y consultas
+  en curso los sigue teniendo el equipo.
+- **Prompt:** una sola pregunta por mensaje; «Soy el asistente virtual de …» (sin «bot»); no sumar funciones de otros
+  productos o rubros. El aviso del día y las preguntas frecuentes también permiten sus montos, links y teléfonos.
+- **App:** «La atiendo yo» ya no es rojo; cada botón de la consulta explica qué hace; las horas van con fecha y en 24 h.
+
 ## Fotos de productos en la charla (ZL-161)
 
 Si la persona pide ver un producto («¿tenés foto?», «mostrame la torta») o pregunta por uno puntual que tiene foto, el

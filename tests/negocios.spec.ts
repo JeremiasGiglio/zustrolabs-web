@@ -344,11 +344,14 @@ test.describe('app de negocios (ZL-121)', () => {
     await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toHaveCount(0);
     const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
-    // «La atiendo yo» calla al asistente en esa charla; «Devolver al asistente» lo vuelve a encender (ZL-148).
+    // «La atiendo yo» calla al asistente en esa charla; «Que siga el asistente» lo vuelve a encender (ZL-148, ZL-162).
     await tarjeta.getByRole('button', { name: 'La atiendo yo' }).click();
     await expect(page.getByRole('status')).toContainText('Consulta N.º 1: la estás atendiendo. El asistente no se mete');
     await expect(tarjeta.locator('.pausa')).toContainText('El asistente está callado en esta charla');
-    await tarjeta.getByRole('button', { name: 'Devolver al asistente' }).click();
+    await expect(tarjeta.locator('.pausa')).not.toContainText('a. m..');
+    await tarjeta.getByRole('button', { name: 'Que siga el asistente' }).click();
+    await expect(tarjeta.getByLabel('¿Qué le respondemos? (opcional)')).toBeFocused();
+    await tarjeta.locator('form').getByRole('button', { name: 'Que siga el asistente' }).click();
     await expect(page.getByRole('status')).toContainText('el asistente vuelve a responder');
     await expect(tarjeta.locator('.pausa')).toHaveCount(0);
     await tarjeta.getByRole('button', { name: 'Ganada' }).click();

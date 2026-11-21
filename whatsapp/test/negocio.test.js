@@ -124,8 +124,10 @@ test('charla: PERSONA calla al asistente 15 minutos; si nadie la toma vuelve (lo
   assert.equal(p.metrica, 'persona');
   assert.equal(p.avisar, undefined, 'no se avisa al estudio');
   assert.equal(p.send[0].text.body, perfil.textos().persona);
-  // Mientras espera, silencio; y escribir no alarga la espera (nadie la tomó todavía).
-  assert.deepEqual((await atender(ev('¿hola?'), { memoria: m, preguntar, now: T0 + 10 * 60_000, perfil })).send, [], 'en pausa: silencio');
+  // Mientras espera (ZL-162): UN acuse al primer mensaje, después silencio; y escribir no alarga la espera.
+  const acuse = await atender(ev('¿hola?'), { memoria: m, preguntar, now: T0 + 5 * 60_000, perfil });
+  assert.deepEqual([acuse.metrica, acuse.send[0].text.body], ['acuse', perfil.textos().acuse]);
+  assert.deepEqual((await atender(ev('¿sigue ahí alguien?'), { memoria: m, preguntar, now: T0 + 10 * 60_000, perfil })).send, [], 'después: silencio');
   assert.equal((await m.get(DE)).humanoHasta, T0 + 15 * 60_000);
   const vuelve = await atender(ev('¿tienen torta de limón?'), { memoria: m, preguntar, now: T0 + 16 * 60_000, perfil });
   assert.equal(vuelve.metrica, 'ia', 'a los 15 minutos vuelve el asistente');
@@ -137,28 +139,71 @@ test('charla: PERSONA calla al asistente 15 minutos; si nadie la toma vuelve (lo
   await atender(ev('PERSONA'), { memoria: m, preguntar, now: T0 + 20 * 60_000, perfil });
   await m.put(DE, { ...(await m.get(DE)), humanoHasta: T0 + 20 * 60_000 + 6 * 3600_000, pase: 0 });
   assert.deepEqual((await atender(ev('gracias'), { memoria: m, preguntar, now: T0 + 3 * 3600_000, perfil })).send, []);
-  // Escribir mientras la atiende el negocio renueva su pausa (6 h de la ficha desde ese mensaje).
+  // ZL-162: escribir mientras la atiende el negocio NO alarga la pausa (la alarga el dueño cuando contesta).
+  assert.equal((await m.get(DE)).humanoHasta, T0 + 20 * 60_000 + 6 * 3600_000);
   const despues = await atender(ev('¿tienen torta de limón?'), { memoria: m, preguntar, now: T0 + 9 * 3600_000 + 60_000, perfil });
   assert.equal(despues.metrica, 'ia');
   assert.doesNotMatch(despues.send[0].text.body, /sigo yo/);
-  assert.equal((await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0, perfil })).send[0].text.body, perfil.textos().borrado);
+  // ZL-162: BORRAR pide confirmación (otra vez BORRAR) y recién ahí borra.
+  assert.equal((await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0 + 10 * 3600_000, perfil })).send[0].text.body, perfil.textos().borrarConfirmar);
+  assert.equal((await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0 + 10 * 3600_000 + 60_000, perfil })).send[0].text.body, perfil.textos().borrado);
+  assert.equal(await m.get(DE), null);
 });
 
-test('charla: si la IA marca persona, pasa sola al equipo (pausa y consulta registrada); si no sabe, también', async () => {
+test('charla (ZL-162): BORRAR en plena pausa no despierta al asistente', async () => {
+  const m = memoria();
+  const { preguntar } = preguntas();
+  const DE = 'ig:17841400000000002.17841400000000009';
+  await m.put(DE, { idioma: 'es', humanoHasta: T0 + 3600_000, nombre: 'Ana', resumen: 'Quiere torta.' });
+  await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0, perfil });
+  await atender(ev('BORRAR'), { memoria: m, preguntar, now: T0 + 1000, perfil });
+  const e = await m.get(DE);
+  assert.equal(e.humanoHasta, T0 + 3600_000, 'la pausa sigue');
+  assert.equal(e.nombre, undefined, 'lo que recordaba se borró');
+  assert.deepEqual((await atender(ev('hola?'), { memoria: m, preguntar, now: T0 + 2000, perfil })).send, []);
+});
+
+test('charla (ZL-162): si pide una persona o reclama, pasa al equipo sin preguntas que se pisen; si no sabe algo, OFRECE averiguarlo y pasa solo si dice que sí', async () => {
   const m = memoria();
   const DE = 'ig:17841400000000002.17841400000000009';
   const registradas = [];
   const consultas = { registrar: async (d) => (registradas.push(d), { numero: registradas.length, nueva: true }) };
   await m.put(DE, { idioma: 'es', humanoHasta: 0, nombre: 'Ana' });
-  const con = await atender(ev('Quiero encargar una torta'), { memoria: m, preguntar: async () => ({ respuesta: 'Eso lo veo con el equipo.', persona: true, fuera_de_tema: false, vacia: false, notas: [], memoria: { nombre: '', resumen: 'Quiere una torta.' } }), now: T0, perfil, consultas });
-  assert.equal(con.send[0].text.body, `Eso lo veo con el equipo.\n\n${perfil.textos().persona}`);
+  const con = await atender(ev('Me vendieron pan duro ayer'), { memoria: m, preguntar: async () => ({ respuesta: '¡Dale! Eso lo veo con el equipo. ¿Me decís tu nombre?', persona: true, motivo: 'reclamo', fuera_de_tema: false, vacia: false, notas: [], memoria: { nombre: '', resumen: 'Quiere una torta.' } }), now: T0, perfil, consultas });
+  assert.equal(con.send[0].text.body, `Eso lo veo con el equipo.\n\n${perfil.textos().persona}`, 'sin «¡Dale!» ni la pregunta que se pisa');
+  assert.doesNotMatch(perfil.textos().persona, /Dale/);
   assert.equal(con.metrica, 'persona_auto');
   assert.equal(con.handoff, true);
   assert.deepEqual(registradas[0], { tipo: 'persona', nombre: 'Ana', interes: '', resumen: 'Quiere una torta.', idioma: 'es' });
   assert.ok((await m.get(DE)).humanoHasta > T0, 'el asistente queda en pausa');
+  // No sabe algo (o los controles vaciaron la respuesta): ofrece averiguarlo, sin pasar todavía.
+  await m.put(DE, { idioma: 'es', humanoHasta: 0, resumen: 'Tiene una panadería.' });
+  const nada = await atender(ev('¿hacen factura A?'), { memoria: m, preguntar: async () => controlarNegocio({ respuesta: 'Visitá otro-sitio.com', persona: false, fuera_de_tema: false }, ficha), now: T0, perfil, consultas });
+  assert.equal(nada.send[0].text.body, `${perfil.textos().noTengo}\n\n${perfil.textos().ofrecerEquipo}`);
+  assert.equal(nada.metrica, 'ofrece_equipo');
+  assert.equal(registradas.length, 1, 'todavía no se pasó');
+  assert.equal((await m.get(DE)).humanoHasta, 0);
+  // «Sí»: se pasa con la pregunta anotada, y se le confirma una sola vez.
+  const si = await atender(ev('sí, por favor'), { memoria: m, preguntar: async () => assert.fail('no gasta IA'), now: T0 + 60_000, perfil, consultas });
+  assert.deepEqual([si.metrica, si.handoff, si.send[0].text.body], ['persona_auto', true, perfil.textos().persona]);
+  assert.equal(registradas[1].interes, '¿hacen factura A?');
+  assert.match(registradas[1].resumen, /Tiene una panadería\. Preguntó: «¿hacen factura A\?»/);
+  // «No»: no pasa nada y sigue.
   await m.put(DE, { idioma: 'es', humanoHasta: 0 });
-  const nada = await atender(ev('¿Tienen sushi?'), { memoria: m, preguntar: async () => controlarNegocio({ respuesta: 'Visitá otro-sitio.com', persona: false, fuera_de_tema: false }, ficha), now: T0, perfil, consultas });
-  assert.equal(nada.send[0].text.body, perfil.textos().sinRespuesta);
+  await atender(ev('¿abren el domingo?'), { memoria: m, preguntar: async () => ({ respuesta: 'Eso no lo tengo confirmado.', persona: true, motivo: 'no_se', fuera_de_tema: false, vacia: false, notas: [] }), now: T0, perfil, consultas });
+  const no = await atender(ev('no, gracias'), { memoria: m, preguntar: async () => assert.fail('no gasta IA'), now: T0 + 1000, perfil, consultas });
+  assert.deepEqual([no.metrica, no.send[0].text.body], ['oferta_no', perfil.textos().dejamosAsi]);
+  assert.equal(registradas.length, 2);
+  // Otra cosa: el ofrecimiento se olvida y sigue la charla normal.
+  await atender(ev('¿abren el domingo?'), { memoria: m, preguntar: async () => ({ respuesta: 'Eso no lo tengo confirmado.', persona: true, motivo: 'no_se', fuera_de_tema: false, vacia: false, notas: [] }), now: T0 + 2000, perfil, consultas });
+  const otra = await atender(ev('¿y tienen medialunas?'), { memoria: m, preguntar: async () => ({ respuesta: 'Sí, hay medialunas.', persona: false, fuera_de_tema: false, vacia: false, notas: [] }), now: T0 + 3000, perfil, consultas });
+  assert.equal(otra.send[0].text.body, 'Sí, hay medialunas.');
+  assert.equal((await m.get(DE)).oferta, undefined);
+  // Si eso quedó pendiente (el dueño devolvió la charla sin responderlo), no se vuelve a ofrecer: no hay ciclo.
+  await m.put(DE, { idioma: 'es', humanoHasta: 0, devuelta: { t: T0, pregunta: '¿hacen factura A?' } });
+  const ciclo = await atender(ev('¿me responden lo de la factura?'), { memoria: m, preguntar: async (t, i, op) => (assert.match(op.cliente.pendiente, /factura A/), { respuesta: 'Eso no lo tengo confirmado.', persona: true, motivo: 'no_se', fuera_de_tema: false, vacia: false, notas: [] }), now: T0 + 3600_000, perfil, consultas });
+  assert.deepEqual([ciclo.metrica, ciclo.handoff], ['no_sabe', undefined]);
+  assert.match(ciclo.send[0].text.body, /todavía no lo confirmó el equipo/);
   assert.equal(registradas.length, 2);
   // Fuera de tema no molesta al negocio.
   await m.put(DE, { idioma: 'es', humanoHasta: 0 });

@@ -911,3 +911,40 @@ test('ZL-161: el asistente manda la foto del producto por Instagram con un link 
   const pr = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: ['¿me mostrás la torta?'] });
   assert.deepEqual(pr.datos.charla[0].fotos, [{ foto: subida.datos.id, nombre: 'Torta de chocolate' }]);
 });
+
+// ——— ZL-162: devolver al asistente con la respuesta ———
+
+test('ZL-162: «Que siga el asistente» con la respuesta: se la manda, la guarda como pregunta frecuente y el asistente la sabe; sin respuesta, queda pendiente', async () => {
+  const { d, a, pedir, enviados } = await armar();
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { cuentas: [CUENTA_A] });
+  const CHARLA = `ig:${CUENTA_A}.17841400000000009`;
+  await d.memoria.put(CHARLA, { idioma: 'es', humanoHasta: T0 + 15 * 60_000, pase: T0, ultimo: T0, hist: [{ r: 'u', t: '¿hacen factura A?' }, { r: 'a', t: 'Ya le pasé la charla al equipo.' }], histT: T0 });
+  const k = (await d.catalogo(a.id).ejecutar('crearConsulta', [CHARLA, { tipo: 'persona', nombre: 'Nelson', interes: '¿hacen factura A?', resumen: 'Tiene una panadería (dato ficticio).', canal: 'ig' }])).valor.consulta;
+  const antes = enviados.length;
+  const r = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/${k.numero}/devolver`, { respuesta: 'Sí, hacemos factura A. <b>' });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.datos.respondida, r.datos.guardada, r.datos.aviso], [true, true, undefined]);
+  // Le llegó por Instagram (dentro de las 24 h), sin marcas.
+  const mandado = enviados.slice(antes).find((e) => /\/me\/messages$/.test(e.url));
+  assert.equal(mandado.body.message.text, 'Sí, hacemos factura A.');
+  // Quedó en sus preguntas frecuentes, y el asistente la sabe la próxima vez.
+  const neg = await d.negocios.get(a.id);
+  assert.deepEqual(neg.preguntas.map((x) => [x.p, x.r]), [['¿hacen factura A?', 'Sí, hacemos factura A.']]);
+  const mem = await d.memoria.get(CHARLA);
+  assert.deepEqual([mem.humanoHasta, mem.devuelta], [0, undefined]);
+  assert.equal(mem.hist.at(-1).t, 'Sí, hacemos factura A.');
+  const vio = [];
+  d.preguntarNegocio = (f) => async () => (vio.push(f.conocimiento), { respuesta: 'Sí.', persona: false, fuera_de_tema: false, vacia: false, notas: [] });
+  const cuerpo = JSON.stringify({ object: 'instagram', entry: [{ id: CUENTA_A, time: T0, messaging: [{ sender: { id: '17841400000000099' }, recipient: { id: CUENTA_A }, timestamp: T0, message: { mid: 'otro1', text: '¿hacen factura A?' } }] }] });
+  await worker.fetch(new Request('https://zustrolabs.com/api/instagram', { method: 'POST', headers: { 'x-hub-signature-256': await firmar(cuerpo, APP.secreto) }, body: cuerpo }), ENV, {}, d);
+  assert.match(vio.at(-1), /## Preguntas frecuentes[^\n]*\n- ¿hacen factura A\?\n  Sí, hacemos factura A\./);
+  // Sin respuesta: la pregunta queda pendiente un día (el asistente no la vuelve a pasar).
+  await d.memoria.put(CHARLA, { ...(await d.memoria.get(CHARLA)), humanoHasta: T0 + 60_000, pase: T0 });
+  const k2 = (await d.catalogo(a.id).ejecutar('crearConsulta', [CHARLA, { tipo: 'persona', interes: '¿abren el domingo?', canal: 'ig' }])).valor.consulta;
+  const r2 = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/consultas/${k2.numero}/devolver`, {});
+  assert.deepEqual([r2.datos.respondida, r2.datos.guardada], [false, false]);
+  assert.deepEqual((await d.memoria.get(CHARLA)).devuelta, { t: T0, pregunta: '¿abren el domingo?' });
+  // Un empleado también puede devolverla (atiende consultas).
+  assert.equal((await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/consultas/${k2.numero}/devolver`, {})).status, 200);
+});

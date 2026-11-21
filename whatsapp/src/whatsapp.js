@@ -20,6 +20,32 @@ export const GRAPH_VERSION = 'v25.0';
 export const HORAS_PERSONA = 24;
 /** Cuánto espera el asistente callado a que alguien del negocio tome una charla que le pasó (ZL-149). */
 export const PASE_MS = 15 * 60_000;
+/** ZL-162: cuánto espera el «sí» a «¿querés que lo averigüe el equipo?», la confirmación de BORRAR, y cuánto se recuerda
+ * lo que quedó pendiente al devolver una charla. */
+export const OFERTA_MS = 2 * 3600_000;
+export const BORRAR_CONFIRMAR_MS = 10 * 60_000;
+export const DEVUELTA_MS = 24 * 3600_000;
+
+/** ZL-162: «sí» o «no» a una pregunta nuestra (corto y sin preguntas); cualquier otra cosa → null. */
+export function siNo(texto) {
+  const crudo = String(texto ?? '');
+  if (/[?¿]/.test(crudo)) return null;
+  const t = crudo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t || t.split(' ').length > 6) return null;
+  if (/^(no|nah|nop|nope|ne|no gracias|deja|no hace falta|no por ahora|mejor no)\b/.test(t)) return 'no';
+  if (/^(si|dale|ok|okey|okay|oka|bueno|bueno dale|por favor|porfa|claro|obvio|de una|perfecto|genial|joya|yes|yeah|yep|sure|please|da|moze|naravno|vale)\b/.test(t)) return 'si';
+  return null;
+}
+
+/**
+ * ZL-162: lo que dijo la IA antes de un texto fijo del sistema, sin sus preguntas finales ni un «¡Dale!» de arranque:
+ * así nunca salen dos preguntas que se pisan («¿Te sirve?» + «¿me decís tu nombre?»).
+ */
+export function sinPreguntaFinal(texto) {
+  const partes = String(texto ?? '').replace(/^\s*¡?dale!?[,.]?\s*/i, '').split(/(?<=[.!?…])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  while (partes.length && /\?\s*\S{0,3}$/.test(partes.at(-1))) partes.pop();
+  return partes.join(' ');
+}
 /** Cuándo va el recordatorio de un carrito sin confirmar (se guarda 20 min) y de una consulta sin nombre (ZL-151). */
 export const SEGUIR_CARRITO_MS = 10 * 60_000;
 export const SEGUIR_CONSULTA_MS = 2 * 3600_000;
@@ -240,7 +266,7 @@ export async function atender(ev, deps) {
   // (con su mensaje de ausencia, si lo escribió) y nada más. BORRAR sigue andando.
   const enPausa = perfil.negocio === true && memoria && perfil.pausa?.hasta > now && !(ev.kind === 'text' && comando(ev.text) === 'borrar');
   const r = enPausa ? await atenderEnPausa(ev, deps) : await atenderEvento(ev, deps);
-  if (perfil.negocio !== true || !memoria || r.metrica === 'repetido') return r;
+  if (perfil.negocio !== true || !memoria || ['repetido', 'reemplazado'].includes(r.metrica)) return r;
   // ZL-157: cualquier mensaje de la persona (también una foto o un audio) abre las 24 h de Meta: queda anotado, así el
   // aviso de su pedido sale solo mientras se puede.
   let e = (await memoria.get(ev.from)) ?? null;
@@ -274,7 +300,7 @@ async function atenderEnPausa(ev, { memoria, perfil, now }) {
   return { send: [msgTexto(ev.from, texto)], metrica: 'pausa_aviso' };
 }
 
-async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null }) {
+async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Date.now(), cupo = async () => 'ok', perfil = PERFIL_ESTUDIO, pedidos = null, consultas = null, vigente = null }) {
   if (memoria && (await memoria.visto(ev.id))) return { send: [], metrica: 'repetido' };
   let estado = (memoria && (await memoria.get(ev.from))) || null;
   // Un negocio con un solo idioma no pregunta el idioma: arranca directo con el saludo y el menú.
@@ -320,11 +346,19 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
   }
 
   if (cmd === 'borrar') {
+    // ZL-162: en un negocio se pide confirmación (BORRAR otra vez, dentro de 10 minutos): es irreversible.
+    if (neg && memoria && T.borrarConfirmar && !(estado?.borrarPend && now - estado.borrarPend < BORRAR_CONFIRMAR_MS)) {
+      await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, borrarPend: now });
+      return { send: [msgTexto(ev.from, T.borrarConfirmar)], metrica: 'borrar_confirmar' };
+    }
+    // ZL-162: BORRAR no saca la pausa (si alguien del negocio la está atendiendo, el asistente no se «despierta»).
+    const sigue = neg && estado?.humanoHasta > now ? { idioma: estado.idioma ?? idioma, humanoHasta: estado.humanoHasta, ...(estado.pase && { pase: estado.pase }) } : null;
     await memoria?.delete(ev.from);
     await charlas?.delete(ev.from);
     // ZL-159: también sus datos (nombre, dirección, resumen) de los pedidos y consultas ya cerrados.
     await pedidos?.olvidar?.();
     await consultas?.olvidar?.();
+    if (sigue && memoria) await guardar(sigue);
     return { send: [msgTexto(ev.from, T.borrado)], metrica: 'borrar' };
   }
 
@@ -338,7 +372,13 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
     // Si el asistente le pasó la charla al equipo y nadie la tomó todavía (ZL-149), la pausa NO se alarga: a los 15
     // minutos vuelve el asistente. Si la tomó alguien (respondió o tocó «La atiendo yo»), sigue la pausa de la ficha.
     const hasta = now + horas * 3600_000;
-    if (!estado.pase && hasta - estado.humanoHasta > 3600_000) await guardar({ ...estado, humanoHasta: hasta });
+    // ZL-162: en un negocio, los mensajes del comprador NO alargan la pausa (la alarga el dueño cuando contesta). Y si
+    // espera a que alguien la tome, recibe UN acuse: que no quede hablando solo.
+    if (!neg && !estado.pase && hasta - estado.humanoHasta > 3600_000) await guardar({ ...estado, humanoHasta: hasta });
+    if (neg && !charlas && estado.pase && estado.acuse !== estado.pase && T.acuse) {
+      await guardar({ ...estado, acuse: estado.pase });
+      return { send: [msgTexto(ev.from, T.acuse)], metrica: 'acuse' };
+    }
     return { send: [], metrica: 'humano' };
   }
 
@@ -482,6 +522,26 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
   const texto = String(ev.text ?? '').replace(CONTROL_RE, ' ').trim().slice(0, LIMITES.mensaje);
   if (!texto) return { send: [msgTexto(ev.from, T.soloTexto)], metrica: 'vacio' };
 
+  // ZL-162: le ofrecimos averiguarlo con el equipo. «Sí»: se pasa (con la pregunta anotada) y se le confirma una sola
+  // vez. «No»: listo. Otra cosa: sigue la charla normal y el ofrecimiento se olvida.
+  if (neg && memoria && estado?.oferta && now - estado.oferta.t < OFERTA_MS) {
+    const { pregunta } = estado.oferta;
+    const sn = siNo(texto);
+    estado = { ...estado, oferta: null };
+    if (sn === 'si') {
+      const resumen = [estado.resumen, pregunta && `Preguntó: «${pregunta}»`].filter(Boolean).join(' ').slice(0, 300);
+      const reg = await pasarAlEquipo('persona', { pausa: true, resumen, interes: pregunta ?? '', ...(estado.nombre && { nombre: estado.nombre }) });
+      await recordar(texto, T.persona, { pase: now });
+      if (charlas) await agregar(charlas, ev.from, [{ de: 'persona', texto: pregunta || texto }, { de: 'sistema', texto: 'El asistente pasó la charla al equipo (la persona aceptó que lo averigüen).' }], now, { abierta: true, idioma });
+      return { send: [msgTexto(ev.from, T.persona)], metrica: 'persona_auto', handoff: true, ...(reg && { consulta: reg.numero }), ...(charlas && { avisar: true }) };
+    }
+    if (sn === 'no') {
+      await recordar(texto, T.dejamosAsi, { oferta: null });
+      return { send: [msgTexto(ev.from, T.dejamosAsi)], metrica: 'oferta_no' };
+    }
+    await guardar(estado);
+  }
+
   // Topes antes de gastar IA: el de toda la cuenta por minuto y el de este número por día.
   if ((await cupo()) !== 'ok') return { send: [msgTexto(ev.from, T.limite)], metrica: 'limite_global' };
   if (memoria?.contar && (await memoria.contar(ev.from)) > TOPE_DIARIO) return { send: [msgTexto(ev.from, T.tope)], metrica: 'tope_diario' };
@@ -500,6 +560,8 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
   const compras = neg ? await comprasParaIa(pedidos, consultas, now) : null;
   const contexto = neg ? { ...carrito, ...memoriaParaIa(estado, now), saludado, ...(compras && { compras }), objetivo: perfil.objetivo === 'pedidos' && !pedidos ? 'consultas' : perfil.objetivo ?? (pedidos ? 'pedidos' : 'consultas') } : carrito;
   const c = detectado ? await preguntar(texto, detectado, { seguro: true, ...contexto }) : await preguntar(texto, idioma, contexto);
+  // ZL-162: mientras la IA pensaba llegó otro mensaje de la misma persona: esa ráfaga ya lo incluye y responde todo junto.
+  if (vigente && !(await vigente())) return { send: [], metrica: 'reemplazado' };
   // Solo lo reconocido sin IA cambia el idioma de la charla: lo que dice la IA de sí misma no siempre es cierto.
   const cambio = perfil.idiomaPorNumero && memoria ? delPerfil(detectado) : null;
   const enIdioma = cambio ?? idioma;
@@ -525,10 +587,18 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
     let extra = {};
     // Hace falta alguien del negocio (lo pidió, es un reclamo, la IA no tenía la respuesta o se llegó al tope del día):
     // el asistente se calla en esta charla, el negocio la ve en «Pedidos y consultas» y responde por acá.
-    if ((c.persona || c.tope) && !c.fuera_de_tema) {
+    // ZL-162: si la IA no sabe algo, no se pasa sola la charla: se le ofrece averiguarlo con el equipo (pasa si dice que
+    // sí). Si eso mismo ya quedó pendiente (el dueño devolvió la charla sin responderlo), no se vuelve a ofrecer.
+    if (c.persona && !c.tope && !c.fuera_de_tema && c.motivo === 'no_se' && Te.ofrecerEquipo) {
+      const pendiente = estado?.devuelta && now - estado.devuelta.t < DEVUELTA_MS;
+      respuesta = juntar(sinPreguntaFinal(c.vacia ? Te.noTengo : c.respuesta) || Te.noTengo, pendiente ? Te.todaviaNo : Te.ofrecerEquipo);
+      if (!pendiente) aprendido.oferta = { t: now, pregunta: texto.slice(0, 200) };
+      metrica = pendiente ? 'no_sabe' : 'ofrece_equipo';
+      extra = { noSabe: texto.slice(0, 200) };
+    } else if ((c.persona || c.tope) && !c.fuera_de_tema) {
       const reg = await pasarAlEquipo('persona', { ...aprendido, pausa: true });
       aprendido.pase = now;
-      respuesta = c.vacia || c.tope ? Te.sinRespuesta : juntar(c.respuesta, Te.persona);
+      respuesta = c.vacia || c.tope ? Te.sinRespuesta : juntar(sinPreguntaFinal(c.respuesta), Te.persona);
       metrica = 'persona_auto';
       extra = { handoff: true, ...(reg && { consulta: reg.numero }) };
       // La cuenta del estudio con la ficha de un negocio (ZL-124) tiene el panel del equipo: la charla va ahí y se avisa.
@@ -540,11 +610,11 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
       // Quiere avanzar y el cierre es una consulta: con el nombre se registra ya; si no, se le pide (un solo dato).
       if (nombre) {
         const reg = await pasarAlEquipo('consulta', aprendido);
-        respuesta = juntar(c.respuesta, Te.consultaLista(nombre));
+        respuesta = juntar(sinPreguntaFinal(c.respuesta), Te.consultaLista(nombre));
         metrica = 'consulta';
         extra = reg ? { consulta: reg.numero } : {};
       } else {
-        respuesta = juntar(c.respuesta, Te.consultaNombre);
+        respuesta = juntar(sinPreguntaFinal(c.respuesta), Te.consultaNombre);
         aprendido.consulta = { paso: 'nombre', tipo: 'consulta', interes: c.memoria?.resumen ?? '' };
         metrica = 'consulta_nombre';
       }
@@ -615,8 +685,10 @@ export async function comprasParaIa(pedidos, consultas, now) {
 /** Lo que la IA de un negocio sabe de la charla (ZL-146): los últimos mensajes y la persona (nombre, resumen, días). */
 export function memoriaParaIa(estado, now) {
   const dias = Number.isFinite(estado?.ultimo) ? Math.floor((now - estado.ultimo) / 86_400_000) : null;
-  const sabe = estado?.nombre || estado?.resumen;
-  return { historial: historial(estado, now), cliente: sabe ? { nombre: estado.nombre ?? '', resumen: estado.resumen ?? '', dias } : null };
+  // ZL-162: lo que quedó pendiente cuando el dueño devolvió la charla sin responderlo (para no volver a pasarla).
+  const pendiente = estado?.devuelta && now - estado.devuelta.t < DEVUELTA_MS ? estado.devuelta.pregunta : '';
+  const sabe = estado?.nombre || estado?.resumen || pendiente;
+  return { historial: historial(estado, now), cliente: sabe ? { nombre: estado.nombre ?? '', resumen: estado.resumen ?? '', dias, ...(pendiente && { pendiente }) } : null };
 }
 
 /** Suma el mensaje y la respuesta a la memoria corta de un negocio (y lo que se aprendió de la persona). */
@@ -637,7 +709,7 @@ async function pase(memoria, consultas, de, estado, now, horas, idioma, tipo, { 
   // pasa a las horas de la ficha. Si nadie la toma, vuelve el asistente.
   if (pausa && memoria) {
     const ahora = (await memoria.get(de)) ?? estado ?? {};
-    await memoria.put(de, { ...ahora, idioma: ahora.idioma ?? idioma, humanoHasta: now + PASE_MS, pase: now, consulta: null });
+    await memoria.put(de, { ...ahora, idioma: ahora.idioma ?? idioma, humanoHasta: now + PASE_MS, pase: now, consulta: null, oferta: null });
   }
   if (!consultas) return null;
   const st = (memoria && (await memoria.get(de))) || estado || {};
