@@ -44,6 +44,19 @@ const T = {
     error: 'Uy, no pude registrar el pedido 😓 ¿Probamos de nuevo en un ratito?',
     botones: { si: 'Sí, confirmo', cancelar: 'Cancelar', retiro: 'Retiro', envio: 'Envío' },
     preguntaEntrega: '¿Lo retirás o te lo enviamos?',
+    // ZL-163: revisión final, cambios en el camino y el cierre con los datos.
+    revisarTitulo: 'Revisá tu pedido:',
+    entregaRetiro: (d) => `Entrega: retirás en el local${d ? ` (${d})` : ''}`,
+    entregaEnvio: (d) => `Entrega: envío a ${d}`,
+    aNombre: (n) => `A nombre de: ${n}`,
+    pago: (p) => `Pago: ${p}`,
+    confirmarRevision: '¿Está todo bien? Respondé SÍ para confirmar o decime qué cambiar.',
+    cambiadaRetiro: 'Perfecto, lo retirás en el local.',
+    cambiadaEnvio: 'Perfecto, te lo enviamos.',
+    soloNombre: 'Decime solo el nombre, por favor (por ejemplo: Ana).',
+    ajustado: (n, d) => `De ${n} ${d === 1 ? 'queda 1: te sumé 1' : `quedan ${d}: te sumé ${d}`}.`,
+    listoCon: (n, negocio, nombre, entrega) => `¡Listo${nombre ? `, ${nombre}` : ''}! Tu pedido N.º ${n} quedó registrado (${entrega}). ${negocio} lo revisa y te confirma por acá.`,
+    entregaCorta: (e, d) => (e === 'envio' ? `envío a ${d}` : 'retiro en el local'),
   },
   en: {
     titulo: (min) => `Your order (held for ${min} minutes):`,
@@ -68,6 +81,18 @@ const T = {
     error: 'Oops, I could not place the order 😓 Shall we try again in a moment?',
     botones: { si: 'Yes, confirm', cancelar: 'Cancel', retiro: 'Pick-up', envio: 'Delivery' },
     preguntaEntrega: 'Pick-up or delivery?',
+    revisarTitulo: 'Check your order:',
+    entregaRetiro: (d) => `Delivery: pick-up at the shop${d ? ` (${d})` : ''}`,
+    entregaEnvio: (d) => `Delivery: to ${d}`,
+    aNombre: (n) => `Name: ${n}`,
+    pago: (p) => `Payment: ${p}`,
+    confirmarRevision: 'Is everything right? Reply YES to confirm or tell me what to change.',
+    cambiadaRetiro: 'Great, you’ll pick it up at the shop.',
+    cambiadaEnvio: 'Great, we’ll deliver it.',
+    soloNombre: 'Just the name, please (for example: Ana).',
+    ajustado: (n, d) => `Only ${d} ${n} left: I added ${d}.`,
+    listoCon: (n, negocio, nombre, entrega) => `Done${nombre ? `, ${nombre}` : ''}! Your order no. ${n} has been placed (${entrega}). ${negocio} will check it and confirm here.`,
+    entregaCorta: (e, d) => (e === 'envio' ? `delivery to ${d}` : 'pick-up at the shop'),
   },
   hr: {
     titulo: (min) => `Vaša narudžba (čuvam je ${min} minuta):`,
@@ -92,13 +117,47 @@ const T = {
     error: 'Ups, nisam mogao zaprimiti narudžbu 😓 Pokušamo ponovno za koji trenutak?',
     botones: { si: 'Da, potvrđujem', cancelar: 'Odustani', retiro: 'Preuzimanje', envio: 'Dostava' },
     preguntaEntrega: 'Preuzimanje ili dostava?',
+    revisarTitulo: 'Provjerite narudžbu:',
+    entregaRetiro: (d) => `Preuzimanje u trgovini${d ? ` (${d})` : ''}`,
+    entregaEnvio: (d) => `Dostava na: ${d}`,
+    aNombre: (n) => `Na ime: ${n}`,
+    pago: (p) => `Plaćanje: ${p}`,
+    confirmarRevision: 'Je li sve u redu? Odgovorite DA za potvrdu ili mi recite što promijeniti.',
+    cambiadaRetiro: 'U redu, preuzimate u trgovini.',
+    cambiadaEnvio: 'U redu, dostavljamo.',
+    soloNombre: 'Samo ime, molim (na primjer: Ana).',
+    ajustado: (n, d) => `${n}: ostalo je ${d}, dodao sam ${d}.`,
+    listoCon: (n, negocio, nombre, entrega) => `Gotovo${nombre ? `, ${nombre}` : ''}! Vaša narudžba br. ${n} je zaprimljena (${entrega}). ${negocio} će je provjeriti i potvrditi ovdje.`,
+    entregaCorta: (e, d) => (e === 'envio' ? `dostava na ${d}` : 'preuzimanje u trgovini'),
   },
 };
 export const textosPedido = (idioma) => T[idioma] ?? T.es;
 export const MINUTOS_CARRITO = 20;
 
-const SI = /^(si|sí|s|dale|ok|okay|listo|confirmo|confirmar|confirmado|de una|perfecto|yes|y|yep|sure|da|moze|može|potvrdujem|potvrđujem)\b/;
-const CANCELAR = /^(cancelar|cancelo|cancela|anular|anulo|no quiero nada|cancel|odustani|odustajem)\b/;
+// ZL-163: «sí» solo si TODO el mensaje es afirmativo («y una gaseosa» empezaba con «y», que valía como «yes», y
+// confirmaba el pedido). CANCELAR solo si es todo el mensaje («cancelá la gaseosa» saca un producto: lo hace la IA).
+const PALABRAS_SI = new Set(['si', 'dale', 'ok', 'okay', 'okey', 'oka', 'listo', 'confirmo', 'confirmar', 'confirmado', 'confirmalo', 'de', 'una', 'perfecto', 'yes', 'yep', 'yeah', 'sure', 'da', 'moze', 'potvrdujem', 'gracias', 'porfa', 'por', 'favor', 'joya', 'genial', 'bueno', 'claro', 'eso', 'esta', 'todo', 'bien', 'correcto', 'va', 'please']);
+export const esSiPedido = (m) => { const w = String(m ?? '').split(' ').filter(Boolean); return w.length >= 1 && w.length <= 5 && w.every((x) => PALABRAS_SI.has(x)); };
+const CANCELAR = /^(cancelar|cancelo|cancela|cancelalo|cancela todo|cancelar todo|cancelar el pedido|cancelar pedido|cancela el pedido|cancelame el pedido|anular|anulo|anula|anular el pedido|no quiero nada|ya no quiero nada|ya no lo quiero|olvidalo|cancel|cancel it|cancel order|cancel the order|odustani|odustajem)$/;
+const PREGUNTA = /^(cuanto|cuando|donde|como|que|cual|hacen|tienen|aceptan|puedo|se puede|hay|how|what|when|where|do you|can i|koliko|kada|gdje)\b/;
+const PALABRAS_NO_NOMBRE = /\b(hacen|tienen|quiero|queria|necesito|busco|encarg\w*|comprar|pedir|cuanto|precio|factura|envio|retiro|mejor|mandalo|direccion|pedido|hola|gracias|cancel\w*|si|no|ok|dale|pago|transferencia|efectivo|torta|tortas|productos?)\b/;
+/** ZL-163: palabras que no van en un nombre («quiero encargarla», «hacen factura A»). También la usa la consulta. */
+export const noEsNombre = (t) => PALABRAS_NO_NOMBRE.test(normalizar(t));
+/** ZL-163: «mejor retiro», «lo paso a buscar», «mandámelo» en cualquier paso → cambia la entrega. */
+function cambioEntrega(m) {
+  if (String(m).split(' ').length > 8) return null;
+  if (/\b(retiro|retirar|lo retiro|paso a buscar|lo paso a buscar|lo busco|lo voy a buscar|voy a buscar|pick ?up|collect|preuzim\w*)\b/.test(m)) return 'retiro';
+  if (/\b(envio|enviar|envialo|enviamelo|mandalo|mandamelo|a domicilio|delivery|deliver|dostav\w*)\b/.test(m)) return 'envio';
+  return null;
+}
+/** ZL-163: un nombre de verdad («Ana», «soy Ana Pérez»); una pregunta, un número o una frase no son un nombre. */
+export function nombreDePedido(texto) {
+  const t = String(texto ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim()
+    .replace(/[.!,;:]+$/, '').replace(/^(soy|me llamo|mi nombre es|a nombre de|el nombre es|ponelo a nombre de|i'?m|my name is|ja sam|zovem se)\s+/i, '').trim();
+  if (t.length < 2 || t.length > 60 || /[?¿@\d]|https?:/i.test(t) || t.split(/\s+/).length > 4) return '';
+  if (PALABRAS_NO_NOMBRE.test(normalizar(t))) return '';
+  return t.split(/\s+/).map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1)).join(' ');
+}
 const VER = /^(pedido|mi pedido|carrito|ver pedido|my order|order|narudzba|narudžba)$/;
 const RETIRO = /^(1|retiro|retirar|lo retiro|paso a buscar|lo busco|voy a buscar|retiro en el local|pick ?up|collect|preuzimanje|preuzimam)\b/;
 const ENVIO = /^(2|envio|envío|enviar|envialo|mandalo|delivery|a domicilio|deliver|dostava|dostavu)\b/;
@@ -204,36 +263,74 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
         return { texto: `${resumenPedido(p, { precios, idioma })}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, metrica: 'pedido_ver', opciones: botonesConfirmar(t) };
       }
       if (!paso) return null;
+      // ZL-163: mientras avanza, la reserva se renueva (antes vencía a los 20 minutos del carrito, aunque estuviera
+      // dando los datos).
+      await op('renovar', [charla, MINUTOS_CARRITO]).catch(() => null);
+      const pregunta = /[?¿]/.test(texto) || PREGUNTA.test(m);
+      // Lo que no es el dato del paso (una pregunta, un cambio en el carrito) lo responde la IA y después se repite el paso.
+      const alaIa = (repetir, opciones = null) => ({ ia: true, repetir, ...(opciones && { opciones }) });
+      const datos = { ...estadoPedido };
+      // El orden: entrega → nombre (si no lo sabemos) → dirección (si es envío) → revisión.
+      const siguiente = async (d) => {
+        if (!d.nombre) {
+          const conocido = String(nombre ?? '').trim().slice(0, 80);
+          if (!conocido) return { texto: t.nombre, pedido: { ...d, paso: 'nombre' }, metrica: 'pedido_nombre' };
+          d = { ...d, nombre: conocido };
+        }
+        if (d.entrega === 'envio' && !d.direccion) return { texto: t.direccion, pedido: { ...d, paso: 'direccion' }, metrica: 'pedido_direccion', nombre: d.nombre };
+        return this.revisar(d, idioma);
+      };
       if (paso === 'confirmar') {
-        // Solo un «sí» corto confirma («sí, pero agregá pan» es un cambio: sigue la IA y el carrito queda).
-        if (!SI.test(m) || m.split(' ').length > 3) return null;
+        if (!esSiPedido(m)) return alaIa(t.confirmar, botonesConfirmar(t));
         const p = await op('carritoDe', [charla]).catch(() => null);
         if (!p) return { texto: t.vencido(MINUTOS_CARRITO), pedido: null, metrica: 'pedido_vencido' };
         if (!fija) return { texto: preguntaEntrega(t), pedido: { paso: 'entrega' }, metrica: 'pedido_entrega', opciones: botonesEntrega(t) };
+        return siguiente({ entrega: fija });
       }
-      if (paso === 'entrega' || (paso === 'confirmar' && fija)) {
-        const entrega = fija ?? (RETIRO.test(m) ? 'retiro' : ENVIO.test(m) ? 'envio' : null);
-        if (!entrega) return { texto: t.entregaOtraVez, pedido: estadoPedido, metrica: 'pedido_entrega', opciones: botonesEntrega(t) };
-        // Si ya sabemos su nombre (memoria del contacto, ZL-146), no se lo volvemos a preguntar.
-        const conocido = String(nombre ?? '').trim().slice(0, 80);
-        if (conocido) {
-          if (entrega === 'envio') return { texto: t.direccion, pedido: { paso: 'direccion', entrega, nombre: conocido }, metrica: 'pedido_direccion' };
-          return this.cerrar({ entrega, nombre: conocido }, idioma);
-        }
-        return { texto: t.nombre, pedido: { paso: 'nombre', entrega }, metrica: 'pedido_nombre' };
+      if (paso === 'entrega') {
+        const entrega = !pregunta ? (RETIRO.test(m) ? 'retiro' : ENVIO.test(m) ? 'envio' : cambioEntrega(m)) : null;
+        // Un número que no es 1 ni 2 no es el menú: se vuelve a pedir la entrega.
+        if (!entrega && /^\d+$/.test(m)) return { texto: t.entregaOtraVez, pedido: estadoPedido, metrica: 'pedido_entrega', opciones: botonesEntrega(t) };
+        if (!entrega) return alaIa(preguntaEntrega(t), botonesEntrega(t));
+        return siguiente({ ...datos, entrega });
       }
-      const limpio = String(texto ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
+      // En nombre, dirección o la revisión: «mejor retiro» o «mandámelo» cambian la entrega.
+      const cambio = !pregunta && !fija ? cambioEntrega(m) : null;
+      if (cambio && cambio !== datos.entrega) {
+        const r = await siguiente({ ...datos, entrega: cambio, ...(cambio === 'retiro' && { direccion: '' }) });
+        return { ...r, texto: `${cambio === 'retiro' ? t.cambiadaRetiro : t.cambiadaEnvio}\n\n${r.texto}` };
+      }
       if (paso === 'nombre') {
-        if (limpio.length < 2 || /^\d+$/.test(limpio)) return { texto: t.nombre, pedido: estadoPedido, metrica: 'pedido_nombre' };
-        const nuevo = { ...estadoPedido, nombre: limpio.slice(0, 80) };
-        if (nuevo.entrega === 'envio') return { texto: t.direccion, pedido: { ...nuevo, paso: 'direccion' }, metrica: 'pedido_direccion' };
-        return this.cerrar(nuevo, idioma);
+        const n = nombreDePedido(texto);
+        if (n) return siguiente({ ...datos, nombre: n });
+        if (pregunta || m.split(' ').length > 4) return alaIa(t.nombre);
+        return { texto: t.soloNombre, pedido: estadoPedido, metrica: 'pedido_nombre' };
       }
       if (paso === 'direccion') {
-        if (limpio.length < 5) return { texto: t.direccion, pedido: estadoPedido, metrica: 'pedido_direccion' };
-        return this.cerrar({ ...estadoPedido, direccion: limpio.slice(0, 200) }, idioma);
+        const limpio = String(texto ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
+        if (pregunta) return alaIa(t.direccion);
+        if (limpio.length < 6 || (!/\d/.test(limpio) && limpio.split(/\s+/).length < 2)) return { texto: t.direccion, pedido: estadoPedido, metrica: 'pedido_direccion' };
+        return siguiente({ ...datos, direccion: limpio.slice(0, 200) });
+      }
+      if (paso === 'revisar') {
+        if (esSiPedido(m)) return this.cerrar(datos, idioma);
+        const n = /^(a nombre de|el nombre es|ponelo a nombre de)\b/.test(m) ? nombreDePedido(texto) : '';
+        if (n) return this.revisar({ ...datos, nombre: n }, idioma);
+        if (/^\d+$/.test(m)) return { texto: t.confirmarRevision, pedido: estadoPedido, metrica: 'pedido_revisar', opciones: botonesConfirmar(t) };
+        return alaIa(t.confirmarRevision, botonesConfirmar(t));
       }
       return null;
+    },
+
+    /** ZL-163: la revisión final, con todo lo que va a quedar registrado, antes de confirmar. */
+    async revisar(d, idioma) {
+      const t = textosPedido(idioma);
+      const p = await op('carritoDe', [charla]).catch(() => null);
+      if (!p) return { texto: t.vencido(MINUTOS_CARRITO), pedido: null, metrica: 'pedido_vencido' };
+      const lineas = [t.revisarTitulo, ...resumenPedido(p, { precios, idioma }).split('\n').slice(1),
+        d.entrega === 'envio' ? t.entregaEnvio(d.direccion) : t.entregaRetiro(ajustes?.retiro ?? ''),
+        t.aNombre(d.nombre), ...(ajustes?.pago ? [t.pago(ajustes.pago)] : [])];
+      return { texto: `${lineas.join('\n')}\n\n${t.confirmarRevision}`, pedido: { ...d, paso: 'revisar' }, metrica: 'pedido_revisar', opciones: botonesConfirmar(t), nombre: d.nombre };
     },
 
     /** Confirma el carrito como pedido pendiente. */
@@ -241,7 +338,9 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
       const t = textosPedido(idioma);
       try {
         const p = await op('confirmar', [charla, { nombre: datos.nombre, entrega: datos.entrega, direccion: datos.direccion ?? '' }]);
-        return { texto: `${t.listo(p.numero, negocio)}\n\n${resumenPedido(p, { precios, idioma }).split('\n').slice(1).join('\n')}`, pedido: null, metrica: 'pedido_nuevo', numero: p.numero };
+        // ZL-163: el cierre repite a nombre de quién, la entrega y cómo se paga (antes no decía nada de eso).
+        const cierre = [t.listoCon(p.numero, negocio, datos.nombre, t.entregaCorta(datos.entrega, datos.direccion)), resumenPedido(p, { precios, idioma }).split('\n').slice(1).join('\n'), ajustes?.pago ? t.pago(ajustes.pago) : ''].filter(Boolean);
+        return { texto: cierre.join('\n\n'), pedido: null, metrica: 'pedido_nuevo', numero: p.numero, nombre: datos.nombre };
       } catch (e) {
         if (e.catalogo && /venci|no hay un carrito/.test(e.message)) return { texto: t.vencido(MINUTOS_CARRITO), pedido: null, metrica: 'pedido_vencido' };
         return { texto: t.error, pedido: null, metrica: 'pedido_error' };
@@ -258,12 +357,23 @@ export function pedidosDeCharla({ cat, charla, canal, negocio, precios, ajustes 
       const items = propuesta.items.slice(0, 30).map((i) => ({ id: String(i?.ref ?? '').replace(/^ref\s*/i, '').trim(), cantidad: Number(i?.cantidad) }));
       let r;
       try { r = await op('carrito', [charla, items, { canal, minutos: MINUTOS_CARRITO }]); } catch { return { texto: t.error, pedido: null }; }
+      // ZL-163: si de algo quedan menos de los que pidió, se suma lo que hay y se lo dice (antes lo sacaba entero).
+      const parciales = (r.faltantes ?? []).filter((f) => f.motivo === 'sin_stock' && f.disponible > 0);
+      let ajustados = [];
+      if (parciales.length) {
+        const mapa = new Map(parciales.map((f) => [f.id, f.disponible]));
+        try {
+          const r2 = await op('carrito', [charla, items.map((i) => (mapa.has(i.id) ? { ...i, cantidad: mapa.get(i.id) } : i)), { canal, minutos: MINUTOS_CARRITO }]);
+          ajustados = parciales.map((f) => t.ajustado(f.nombre, f.disponible));
+          r = { ...r2, faltantes: (r2.faltantes ?? []).filter((f) => !mapa.has(f.id)) };
+        } catch { /* queda lo primero */ }
+      }
       // Si nada de lo pedido se pudo, el «¡Dale!» de la IA no va: solo lo que dice el sistema (soloSistema).
       if (!r.pedido) {
         const falt = resumenPedido(null, { precios, idioma, faltantes: r.faltantes });
         return { texto: falt || t.vacio, pedido: null, soloSistema: Boolean(falt) };
       }
-      return { texto: `${resumenPedido(r.pedido, { precios, idioma, faltantes: r.faltantes })}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, soloSistema: Boolean(r.sinCambios), opciones: botonesConfirmar(t) };
+      return { texto: `${resumenPedido(r.pedido, { precios, idioma, faltantes: r.faltantes })}${ajustados.length ? `\n${ajustados.join(' ')}` : ''}\n\n${t.confirmar}`, pedido: { paso: 'confirmar' }, soloSistema: Boolean(r.sinCambios), opciones: botonesConfirmar(t) };
     },
   };
 }

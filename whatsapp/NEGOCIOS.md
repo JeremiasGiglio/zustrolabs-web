@@ -242,6 +242,30 @@ las preguntas fijas (retiro o envío, nombre, dirección). El pago lo marca solo
   - una vez por día, después del mantenimiento de Instagram, el semáforo de cada negocio con un canal encendido (sin
     charla de prueba, no gasta IA): si algo está en rojo, un solo correo con todo (`revisarNegocios()` en `index.js`).
 
+## El pedido por chat, a prueba de errores (ZL-163)
+
+Lo que falló en vivo en la auditoría (sección 2.1 bis) y cómo quedó (`src/pedidos-charla.js`):
+
+| Pasó | Ahora |
+|---|---|
+| «y una gaseosa» confirmó el pedido (la «y» valía como «yes») | Solo confirma un mensaje que es TODO afirmativo («sí», «dale, confirmo»); lo demás lo ve la IA |
+| «cancela la gaseosa» anuló todo | CANCELAR anula solo si es todo el mensaje; «cancelá X» saca ese producto (IA) |
+| «hacen factura A?» quedó como nombre | El nombre se valida (`nombreDePedido`): una pregunta la responde la IA y se vuelve a pedir el nombre |
+| «no, mejor retiro» quedó como dirección | En cualquier paso, «mejor retiro» o «mandámelo» cambian la entrega |
+| Sin revisión final | Paso `revisar`: productos, total, entrega, nombre y pago; confirma con SÍ |
+| Preguntas en un paso: «Respondé 1 o 2» | La IA responde y se repite el paso con sus botones (un número suelto sigue pidiendo 1 o 2) |
+| Pedía 2 y quedaba 1: lo sacaba | Suma lo que hay y lo dice («De Gaseosa queda 1: te sumé 1») |
+| La reserva vencía a los 20 min aunque estuviera dando datos | Se renueva en cada paso (`renovar`) |
+| El cierre no decía nombre, entrega ni pago | «¡Listo, Ana! Tu pedido N.º 3 quedó registrado (retiro en el local)…» + pago |
+| Avisos de estado siempre en castellano, «figura como entregado», «ZustroLabs» y «Zustro Labs» | En el idioma de la charla, «¡Tu pedido ya está entregado!», con el nombre de la ficha |
+| Un aceptado sin pagar vencía sin avisar | Aviso al dueño 2 h antes y, si vence, aviso al comprador (y al dueño), una vez cada uno (`avisosVencimiento`) |
+| El dueño no podía corregir el nombre ni la dirección | «Corregir datos» en la tarjeta (`PUT /api/n/<id>/pedidos/<n>/comprador`) |
+| Al aceptar, la tarjeta desaparecía | La lista pasa a «Aceptados» (o «Pagados») y la tarjeta sigue a la vista |
+| La charla de prueba no probaba pedidos ni consultas | Usa un catálogo simulado (`catalogoDePrueba`): lee los productos reales, el carrito y el pedido viven en la prueba, sin reservar ni aparecer en la app |
+
+Además: «quiero encargarla» ya no se toma como un nombre en el paso de la consulta (`noEsNombre`), y una pregunta en
+ese paso la responde la IA y vuelve a pedir el nombre.
+
 ## La charla sin contradicciones (ZL-162)
 
 Arreglos de lo que se vio en vivo en la auditoría del 21/11:

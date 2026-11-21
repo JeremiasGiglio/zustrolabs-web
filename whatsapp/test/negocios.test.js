@@ -438,7 +438,8 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos[0].reservado, 3);
   await escribir('sí');
   await escribir('1');
-  t = await escribir('Ana');
+  assert.match(await escribir('Ana'), /Revisá tu pedido:/);
+  t = await escribir('sí');
   assert.match(t, /Tu pedido N\.º 1 quedó registrado/);
   assert.equal(vio.at(-1).compras, undefined, 'antes de confirmar no había pedidos');
   // ZL-154: la IA ve lo que pidió esta persona y en qué estado está, para responder «¿ya salió mi pedido?».
@@ -478,7 +479,7 @@ test('pedidos (ZL-139): por WhatsApp el asistente arma el pedido; el negocio lo 
   }
   assert.match(avisos[0], /^¡Listo! Panadería La Espiga aceptó tu pedido N\.º 1\.\nCómo pagar: Transferencia al alias LA\.ESPIGA\.PAN \(ficticio\)\nRetiro: Calle Ficticia 123, de 9 a 20\nCualquier duda/, 'retira en el local: va el retiro, no el envío');
   assert.match(avisos[1], /recibió el pago de tu pedido N\.º 1/);
-  assert.match(avisos[2], /figura como entregado/);
+  assert.match(avisos[2], /ya está entregado! Gracias por comprarle a Panadería La Espiga/);
   const p = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos[0];
   assert.deepEqual([p.stock, p.reservado], [7, 0], 'entregado: el stock bajó de 10 a 7');
   const hist = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos/1`)).datos;
@@ -655,7 +656,8 @@ test('ZL-157: el pedido pendiente espera al dueño; pasadas las 24 h el aviso qu
   await escribir('quiero 3 kilos de pan');
   await escribir('sí');
   await escribir('1');
-  assert.match(await escribir('Ana'), /Tu pedido N\.º 1 quedó registrado/);
+  await escribir('Ana');
+  assert.match(await escribir('sí'), /Tu pedido N\.º 1 quedó registrado/);
   // Tres días después sigue pendiente, con los productos reservados.
   d.now = T0 + 3 * 24 * 3600_000;
   let lista = (await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos`)).datos;
@@ -947,4 +949,44 @@ test('ZL-162: «Que siga el asistente» con la respuesta: se la manda, la guarda
   assert.deepEqual((await d.memoria.get(CHARLA)).devuelta, { t: T0, pregunta: '¿abren el domingo?' });
   // Un empleado también puede devolverla (atiende consultas).
   assert.equal((await pedir('empleado@example.com', 'POST', `/api/n/${a.id}/consultas/${k2.numero}/devolver`, {})).status, 200);
+});
+
+test('ZL-163: los avisos de estado van en el idioma de la charla del comprador', async () => {
+  const { textoEstado } = await import('../src/negocios.js');
+  const p = { numero: 3, comprador: { entrega: 'retiro' } };
+  assert.equal(textoEstado(p, 'entregado', '', 'La Espiga', null, 'en'), 'Your order no. 3 has been delivered! Thanks for buying from La Espiga 😊');
+  assert.match(textoEstado(p, 'aceptado', '', 'La Espiga', { pago: 'transferencia' }, 'hr'), /^Gotovo! La Espiga je prihvatio vašu narudžbu br\. 3\.\nPlaćanje: transferencia/);
+  assert.equal(textoEstado(p, 'rechazado', 'sin stock', 'La Espiga'), 'Lo siento: La Espiga no puede tomar tu pedido N.º 3 (sin stock).');
+  assert.match(textoEstado(p, 'vencido', '', 'La Espiga'), /se canceló porque no se registró el pago a tiempo/);
+});
+
+test('ZL-163: la charla de prueba del dueño ensaya un pedido completo sin reservar nada ni dejarlo en la app', async () => {
+  const { d, a, pedir } = await armar();
+  await d.negocios.guardarFicha(a.id, { texto: FICHA, activa: true });
+  await pedir('equipo@example.com', 'PUT', `/api/admin/negocios/${a.id}`, { pedidos: true });
+  const pan = (await pedir('duena@example.com', 'POST', `/api/n/${a.id}/productos`, { nombre: 'Pan francés', precio: 2500, stock: 10 })).datos;
+  d.preguntarNegocio = (f, cat) => async (texto, idioma, opts = {}) => {
+    const c = await cat(texto, { refs: opts.carrito !== undefined });
+    const ref = /\[ref (p[a-z0-9]+)\] Pan francés/.exec(c.texto)?.[1];
+    return { respuesta: 'Te lo agrego.', persona: false, fuera_de_tema: false, vacia: false, notas: [], ...(/pan/.test(texto) && { pedido: { cambia: true, items: [{ ref, cantidad: 2 }] } }) };
+  };
+  let estado = null;
+  const probar = async (m) => {
+    const r = await pedir('duena@example.com', 'POST', `/api/n/${a.id}/prueba`, { mensajes: [m], estado });
+    assert.equal(r.status, 200, JSON.stringify(r.datos));
+    estado = r.datos.estado;
+    return r.datos.charla[0];
+  };
+  await probar('hola');
+  let r = await probar('quiero 2 kilos de pan');
+  assert.match(r.respuestas[0], /• 2 × Pan francés — \$ 5\.000\nTotal: \$ 5\.000/);
+  assert.equal((await probar('sí')).que, 'pedido_entrega');
+  assert.equal((await probar('1')).que, 'pedido_nombre');
+  assert.equal((await probar('Ana')).que, 'pedido_revisar');
+  r = await probar('sí');
+  assert.equal(r.que, 'pedido_nuevo');
+  assert.match(r.respuestas[0], /¡Listo, Ana! Tu pedido N\.º 1 quedó registrado \(retiro en el local\)/);
+  // Nada de verdad: sin reservas ni pedidos en la app.
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/productos`)).datos.productos.find((p) => p.id === pan.id).reservado, 0);
+  assert.equal((await pedir('duena@example.com', 'GET', `/api/n/${a.id}/pedidos?estado=pendiente`)).datos.pedidos.length, 0);
 });

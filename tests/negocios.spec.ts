@@ -267,6 +267,15 @@ test.describe('app de negocios (ZL-121)', () => {
     // ZL-151: los números de la semana y el botón de avisos al celular.
     await expect(page.getByRole('heading', { name: 'Últimos 7 días' })).toBeVisible();
     await expect(page.getByLabel('Últimos 7 días')).toContainText('1pedidos');
+    // ZL-163: corregir los datos del comprador (cambió de envío a retiro).
+    await tarjeta.getByRole('button', { name: 'Corregir datos' }).click();
+    await expect(tarjeta.getByLabel('A nombre de')).toBeFocused();
+    await expect(tarjeta.getByLabel('Entrega')).toHaveValue('envio');
+    await expect(tarjeta.getByLabel('Dirección (si es envío)')).toHaveValue('Calle Ficticia 123');
+    await tarjeta.getByLabel('Dirección (si es envío)').fill('Calle Ficticia 123, timbre B');
+    await tarjeta.getByRole('button', { name: 'Guardar los datos' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'datos corregidos' }).first()).toBeVisible();
+    await expect(tarjeta).toContainText('Envío: Calle Ficticia 123, timbre B');
     await expect(page.getByRole('button', { name: 'Avisos en este celular' })).toBeVisible();
     await expect(tarjeta.getByRole('link', { name: 'Responder por WhatsApp' })).toHaveAttribute('href', 'https://wa.me/5493410000009');
     // ZL-153: por dónde escribió y su número, para encontrarlo rápido.

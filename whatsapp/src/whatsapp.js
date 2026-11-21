@@ -14,6 +14,7 @@ import { ENLACES } from '../../asistente/src/conocimiento.js';
 import { HISTORIAL_MAX, HISTORIAL_MS } from './atencion.js';
 import { agregar } from './panel.js';
 import { sinSaludoInicial } from './negocio.js';
+import { noEsNombre } from './pedidos-charla.js';
 import { CANAL_WHATSAPP, eligeIdioma, esSaludo, IDIOMA_POR_NUMERO, IDIOMAS, idiomaDe, idiomaDelTexto, idiomasDelSaludo, idiomasQueHacen, NOMBRE_IDIOMA, numeroSolo, opcion, pideQueHacen, SALUDO_IDIOMA, textos } from './textos.js';
 
 export const GRAPH_VERSION = 'v25.0';
@@ -440,20 +441,24 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
 
   // Los pasos fijos de un pedido (SÍ, retiro o envío, nombre, dirección, CANCELAR, PEDIDO) van antes que el menú y la
   // IA: «1» y «2» son retiro y envío mientras se pregunta eso. Sin memoria no hay pedidos (no se recordaría el paso).
+  // ZL-163: el paso del pedido o de la consulta que hay que repetir después de que la IA responda una pregunta.
+  let repetirPaso = null;
   if (pedidos && memoria && ev.kind === 'text' && conocido) {
     // Si ya sabemos su nombre, no se lo volvemos a preguntar (ZL-146).
     const p = await pedidos.antes(ev.text, estado?.pedido ?? null, idioma, { nombre: estado?.nombre ?? '' });
-    if (p) {
-      const nombre = p.pedido?.nombre || (estado?.pedido?.paso === 'nombre' && p.metrica !== 'pedido_nombre' ? limpiarTexto(ev.text).slice(0, 60) : '') || estado?.nombre;
+    // ZL-163: una pregunta o un cambio en medio de un paso lo responde la IA, y después se repite el paso.
+    if (p?.ia) repetirPaso = { texto: p.repetir, opciones: p.opciones ?? null };
+    else if (p) {
+      const nombre = p.pedido?.nombre || p.nombre || estado?.nombre;
       await guardar({ ...(estado ?? {}), idioma: estado?.idioma ?? idioma, humanoHasta: estado?.humanoHasta ?? 0, pedido: p.pedido, ...(nombre && { nombre }) });
       await recordar(ev.text, p.texto);
       return { send: [msgTexto(ev.from, p.texto, p.opciones)], metrica: p.metrica, ...(p.numero && { pedido: p.numero }) };
     }
   }
 
-  // El paso de una consulta (ZL-146): el asistente le pidió el nombre para pasarla al equipo. Si en vez del nombre
-  // escribe otra cosa (una pregunta), sigue la charla normal y la consulta queda para cuando quiera avanzar.
-  if (neg && memoria && ev.kind === 'text' && estado?.consulta?.paso === 'nombre') {
+  // El paso de una consulta (ZL-146): el asistente le pidió el nombre para pasarla al equipo. ZL-163: si en vez del nombre
+  // hace una pregunta, la responde la IA y le vuelve a pedir el nombre; otra cosa, sigue la charla normal.
+  if (neg && memoria && ev.kind === 'text' && estado?.consulta?.paso === 'nombre' && !repetirPaso) {
     const nombre = nombreDeMensaje(ev.text);
     if (nombre) {
       const tipo = estado.consulta.tipo;
@@ -462,7 +467,8 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
       await recordar(ev.text, texto, { nombre, consulta: null });
       return { send: [msgTexto(ev.from, texto)], metrica: tipo === 'persona' ? 'persona_auto' : 'consulta', ...(tipo === 'persona' && { handoff: true }), ...(reg && { consulta: reg.numero }) };
     }
-    await guardar({ ...estado, consulta: null });
+    if (/[?¿]/.test(ev.text)) repetirPaso = { texto: T.consultaNombre, opciones: null };
+    else await guardar({ ...estado, consulta: null });
   }
 
   // Quien no nos conoce tiene que ver qué ofrecemos desde el primer mensaje: un saludo o «¿qué hacen?» reciben la
@@ -629,11 +635,18 @@ async function atenderEvento(ev, { memoria, charlas = null, preguntar, now = Dat
       respuesta = juntar(Te.sigoYo, respuesta);
       aprendido.pase = 0;
     }
+    // ZL-163: estaba en un paso (entrega, nombre, dirección, revisión): después de responder, se repite el paso. Si la
+    // IA cambió el carrito, manda el resumen nuevo (que ya pregunta lo que sigue).
+    let opciones = metrica === 'ia_pedido' ? pedido?.opciones : null;
+    if (repetirPaso && !pedido && !['persona_auto', 'ofrece_equipo'].includes(metrica) && !respuesta.includes(repetirPaso.texto)) {
+      respuesta = juntar(sinPreguntaFinal(respuesta), repetirPaso.texto);
+      opciones = repetirPaso.opciones;
+    }
     // ZL-161: las fotos que pidió van después del texto (con su link firmado). En la memoria queda que se las mandamos,
     // así no se repiten. Si la charla pasó a una persona, no.
     const fotos = metrica === 'persona_auto' ? [] : (c.fotos ?? []).filter((f) => f?.link).slice(0, 3);
     await recordar(texto, fotos.length ? `${respuesta}\n(Le mandé la foto de: ${fotos.map((f) => f.nombre).join(', ')})` : respuesta, aprendido);
-    return { send: [msgTexto(ev.from, respuesta, metrica === 'ia_pedido' ? pedido?.opciones : null), ...fotos.map((f) => msgImagen(ev.from, f.link, f.nombre))], metrica, ...extra, ...(fotos.length && { fotos: fotos.length }), idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
+    return { send: [msgTexto(ev.from, respuesta, opciones), ...fotos.map((f) => msgImagen(ev.from, f.link, f.nombre))], metrica, ...extra, ...(fotos.length && { fotos: fotos.length }), idioma, fuera: c.fuera_de_tema, notas: c.notas, uso: c.uso };
   }
   return {
     send: primerContacto
@@ -665,6 +678,8 @@ export function nombreDeMensaje(texto) {
   if (!t || t.length < 2 || t.length > 60 || /[?¿@\d]|https?:/i.test(t)) return '';
   if (t.split(' ').length > 4) return '';
   if (/^(si|sí|no|ok|dale|gracias|menu|menú|persona|cancelar|hola|buenas)$/i.test(t)) return '';
+  // ZL-163: «quiero encargarla» no es un nombre (se tomaba como «Quiero Encargarla»).
+  if (noEsNombre(t)) return '';
   return t.split(' ').map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1)).join(' ');
 }
 

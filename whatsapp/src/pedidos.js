@@ -202,6 +202,54 @@ export function operacionesPedidos({ sql, transaccion, reloj, porId, anotar, Err
       });
     },
 
+    /**
+     * ZL-163, cada 10 minutos: los aceptados sin pagar que vencen en las próximas 2 h (para avisarle al dueño, una vez) y
+     * los que acaban de vencer (para avisarle al comprador, una vez). Antes vencían sin que nadie se enterara.
+     */
+    avisosVencimiento(now = reloj(), ventana = 120 * MIN) {
+      return transaccion(() => {
+        vencerAhora();
+        const sinEvento = (p, e) => !una('SELECT 1 AS x FROM pedido_eventos WHERE pedido = ? AND estado = ?', p.id, e);
+        const pronto = filas("SELECT * FROM pedidos WHERE estado = 'aceptado' AND vence IS NOT NULL AND vence > ? AND vence <= ?", now, now + ventana).filter((p) => sinEvento(p, 'aviso_vence'));
+        const vencidos = filas("SELECT * FROM pedidos WHERE estado = 'vencido' AND numero IS NOT NULL AND actualizado > ?", now - 120 * MIN).filter((p) => sinEvento(p, 'aviso_vencido'));
+        for (const p of pronto) evento(p.id, 'aviso_vence', 'aviso al negocio: vence pronto', 'sistema');
+        for (const p of vencidos) evento(p.id, 'aviso_vencido', 'aviso al comprador: venció', 'sistema');
+        return { pronto: pronto.map(armar), vencidos: vencidos.map(armar) };
+      });
+    },
+
+    /** ZL-163: mientras el comprador da sus datos, la reserva del carrito no vence. */
+    renovar(charla, minutos = RESERVA.borrador / MIN) {
+      return transaccion(() => {
+        vencerAhora();
+        const p = borradorDe(charla);
+        if (!p) return false;
+        const now = reloj();
+        sql.exec('UPDATE pedidos SET vence = ?, actualizado = ? WHERE id = ?', now + Math.max(1, Math.min(Number(minutos) || 20, 60)) * MIN, now, p.id);
+        return true;
+      });
+    },
+
+    /**
+     * ZL-163: el negocio corrige a nombre de quién, la entrega o la dirección de un pedido abierto (el comprador escribió
+     * mal o cambió de idea). Queda en el historial del pedido.
+     */
+    corregirComprador(numero, datos, quien) {
+      return transaccion(() => {
+        const p = porNumero(Number(numero));
+        if (!p) throw new ErrorCatalogo('ese pedido no existe');
+        if (!['pendiente', 'aceptado', 'pagado'].includes(p.estado)) throw new ErrorCatalogo('solo se corrigen pedidos abiertos');
+        const antes = JSON.parse(p.comprador || '{}');
+        const nuevo = datosComprador({ ...antes, ...datos });
+        if (!nuevo.nombre) throw new ErrorCatalogo('falta el nombre', 'nombre');
+        if (!nuevo.entrega) throw new ErrorCatalogo('falta si es envío o retiro', 'entrega');
+        if (nuevo.entrega === 'envio' && !nuevo.direccion) throw new ErrorCatalogo('falta la dirección de envío', 'direccion');
+        sql.exec('UPDATE pedidos SET comprador = ?, actualizado = ? WHERE id = ?', JSON.stringify(nuevo), reloj(), p.id);
+        evento(p.id, 'corregido', 'datos del comprador corregidos', quien);
+        return armar(porNumero(Number(numero)));
+      });
+    },
+
     /** El borrador de una charla (o null). */
     carritoDe(charla) {
       return transaccion(() => { vencerAhora(); return armar(borradorDe(charla)); });
