@@ -46,6 +46,24 @@ for (const p of PAGINAS) {
     });
 
     test.describe('estructura y contenido', () => {
+      test('Colaboradores (ZL-174): la Cámara de Comercio Colombia - Croacia, antes de Contacto, enlaza a su web', async ({ page }) => {
+        await page.goto(p.url);
+        const franja = page.locator('section#colaboradores');
+        await expect(franja).toHaveCount(1);
+        // Va justo antes de la sección de contacto.
+        expect(await franja.evaluate((s) => s.nextElementSibling?.querySelector('form') !== null)).toBe(true);
+        const a = franja.locator('a');
+        await expect(a).toHaveCount(1);
+        await expect(a).toHaveAttribute('href', 'https://camaracolombiacroacia.org/');
+        await expect(a).toHaveAttribute('rel', /noopener/);
+        await expect(a.locator('img')).toHaveAttribute('alt', /Cámara de Comercio Colombia - Croacia/);
+        await a.scrollIntoViewIfNeeded();
+        await expect.poll(() => a.locator('img').evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+        // El Ateneo pidió no aparecer (24/11/2026) y el Radar ya no es solo para Sudamérica.
+        const texto = await page.locator('main').innerText();
+        expect(texto).not.toMatch(/Ateneo|Athenaeum|atene|sudamericana|South American diaspora|južnoameričko/i);
+      });
+
       test('idioma declarado y un solo h1 con el lema', async ({ page }) => {
         await page.goto(p.url);
         await expect(page.locator('html')).toHaveAttribute('lang', p.lang);

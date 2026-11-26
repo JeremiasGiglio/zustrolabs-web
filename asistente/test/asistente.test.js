@@ -278,7 +278,7 @@ test('la información no tiene palabras prohibidas, plata ni datos que no van en
 
 test('la información coincide con la landing: los datos clave están publicados en la página', () => {
   const html = readFileSync(new URL('../../site/index.html', import.meta.url), 'utf8');
-  for (const dato of ['6.122', '80', '65', 'Plomin', 'Rijeka', 'contact@zustrolabs.com', 'David Vera', 'Nelson Zalazar', 'Ateneo Croata de Rosario', 'ISTQB CTFL', 'cuarenta minutos']) {
+  for (const dato of ['6.122', '80', '65', 'Plomin', 'Rijeka', 'contact@zustrolabs.com', 'David Vera', 'Nelson Zalazar', 'Cámara de Comercio Colombia - Croacia', 'ISTQB CTFL', 'cuarenta minutos']) {
     assert.ok(html.includes(dato), `la landing no tiene «${dato}»`);
     assert.ok(CONOCIMIENTO.includes(dato), `la información no tiene «${dato}»`);
   }
