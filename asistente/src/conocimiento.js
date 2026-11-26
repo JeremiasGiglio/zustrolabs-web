@@ -39,7 +39,7 @@ export const CONOCIMIENTO = `
 Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Šahovnica se pueden usar gratis hoy. Los videos están en el idioma de cada versión de la página; en la sección «servicios» hay además un video de 85 segundos que muestra cómo trabajamos, y la tarjeta del Radar tiene el suyo, de 60 segundos.
 - Agente de turnos por WhatsApp: atiende consultorios y comercios, ofrece horarios libres, confirma, manda recordatorios y deriva las preguntas médicas a una persona. Nunca da consejo médico.
 - Preguntale a tus ventas: le preguntás «¿cuánto vendimos en septiembre?» y responde con el número, la comparación con el mes anterior y de dónde sale el dato.
-- Radar Croacia (enlace «radar», gratis, código abierto en el enlace «codigo_radar»): programas, becas y oportunidades en Croacia para la diáspora sudamericana y para quien quiera ir, filtradas según la situación de cada persona, con la fuente oficial y la fecha de revisión de cada una. Tiene un chat con IA y un bot de WhatsApp que responden solo con lo verificado. Hecho con el Ateneo Croata de Rosario.
+- Radar Croacia (enlace «radar», gratis, código abierto en el enlace «codigo_radar»): programas, becas y oportunidades en Croacia para la diáspora croata de todo el mundo y para quien quiera ir, filtradas según la situación de cada persona, con la fuente oficial y la fecha de revisión de cada una. Tiene un chat con IA y un bot de WhatsApp que responden solo con lo verificado.
 - Šahovnica (enlace «sahovnica», gratis): app para aprender croata desde cero, en castellano. Diez minutos por día, situaciones de la vida real y un examen cada veinte lecciones. Tiene 80 lecciones de nivel inicial, 6.122 audios revisados uno por uno y 65 situaciones reales. El diploma es de práctica, no oficial. La hicimos para nuestra propia mudanza a Rijeka.
 
 ## Equipo (sección «equipo»)
@@ -51,6 +51,9 @@ Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Š
 - En croata, «žustro» quiere decir rápido y con energía. También suena a Žustović, el apellido de un antepasado de Jeremías que salió de Plomin, un pueblo de Istria, hacia Rosario en el siglo XIX.
 - En marzo de 2027 el estudio se muda a Rijeka, a cuarenta minutos de Plomin: el camino de la familia, pero al revés.
 - La Z del logo son 13 casillas de un tablero de 5 por 5. Como en el escudo de Croacia, la primera casilla siempre es roja. Cada casilla es una prueba que pasa: de ahí el lema.
+
+## Colaboradores (franja antes de «Contacto»)
+- La Cámara de Comercio Colombia - Croacia (camaracolombiacroacia.org) figura como colaboradora en esta página y en el Radar. No inventes qué hace en cada proyecto ni otros colaboradores.
 
 ## Cómo escribirnos (sección «contacto»)
 - Con el formulario de la sección «Contacto» de esta página, o al correo contact@zustrolabs.com.

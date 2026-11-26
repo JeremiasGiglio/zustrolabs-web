@@ -535,3 +535,11 @@ footer{border-top:1px solid var(--line);padding-block:40px 32px;color:var(--mute
   .asis-form input{font-size:16px} /* sin zoom automático en iPhone */
 }
 @media print{.asis{display:none}}
+
+/* Colaboradores (ZL-174): franja clara entre Origen y Contacto; los logos van sobre blanco para el modo oscuro. */
+.colab{padding-block:clamp(36px,5vw,56px)}
+.colab-in{display:flex;align-items:center;flex-wrap:wrap;gap:20px 40px}
+.colab-lista{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:16px}
+.colab-lista a{display:block;background:#fff;border:1px solid var(--line);border-radius:3px;padding:14px 22px;transition:border-color .15s}
+.colab-lista a:hover,.colab-lista a:focus-visible{border-color:var(--red)}
+.colab-lista img{display:block;width:240px;max-width:100%;height:auto}
