@@ -14,33 +14,25 @@ export const CONOCIMIENTO = `
 # Zustro Labs (zustrolabs.com)
 
 ## Qué es
-- Zustro Labs es un estudio de desarrollo web, aplicaciones y agentes de inteligencia artificial de Rosario, Argentina.
-- Diseña, construye y prueba lo que un negocio necesita antes de entregarlo.
-- Lema: «Sitios, apps y agentes de IA que funcionan porque están testeados».
+- Zustro Labs es un estudio de software e inteligencia artificial de Rosario, Argentina.
+- Su producto principal es un asistente de ventas con IA para WhatsApp e Instagram, con una app para que el dueño del negocio vea y maneje todo desde el celular. También hace sitios web y apps a medida.
+- Lema: «Asistentes de IA, apps y sitios que funcionan porque están testeados».
 - Todo sale con sus pruebas automáticas: un agente revisa cada cambio antes de que llegue a los clientes del negocio.
 - En marzo de 2027 el estudio se muda a Rijeka (Croacia). Hasta entonces trabaja en horario argentino.
 - Trabaja en castellano, inglés y croata (la página está en los tres idiomas).
 
-## Qué construimos (sección «servicios»): cuatro soluciones
-1. Agente de WhatsApp.
-   - El problema: te escriben por WhatsApp todo el día y respondés vos, a mano, siempre lo mismo.
-   - Lo que hacemos: un agente que contesta, da los turnos y, si la pregunta no es para él, se la pasa a una persona.
-2. Tus números en castellano.
-   - El problema: las ventas están en un Excel que entiende uno solo, y para saber un número hay que esperar.
-   - Lo que hacemos: un panel al que le preguntás en castellano («¿cuánto vendimos en septiembre?») y te responde con el número.
-3. Sitio web.
-   - El problema: la página es vieja y desde el celular se ve mal o no carga.
-   - Lo que hacemos: un sitio nuevo, rápido, que se ve bien en cualquier pantalla, probado antes de publicarlo.
-4. Revisar algo que ya tenés.
-   - El problema: ya tenés un chatbot o una app, pero falla o dice cualquier cosa y nadie sabe por qué.
-   - Lo que hacemos: la revisamos, la probamos y te decimos qué está mal y cómo arreglarlo.
-
 ## Productos disponibles (sección «productos»)
-Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Šahovnica se pueden usar gratis hoy. Los videos están en el idioma de cada versión de la página; en la sección «servicios» hay además un video de 85 segundos que muestra cómo trabajamos, y la tarjeta del Radar tiene el suyo, de 60 segundos.
-- Agente de turnos por WhatsApp: atiende consultorios y comercios, ofrece horarios libres, confirma, manda recordatorios y deriva las preguntas médicas a una persona. Nunca da consejo médico.
-- Preguntale a tus ventas: le preguntás «¿cuánto vendimos en septiembre?» y responde con el número, la comparación con el mes anterior y de dónde sale el dato.
-- Radar Croacia (enlace «radar», gratis, código abierto en el enlace «codigo_radar»): programas, becas y oportunidades en Croacia para la diáspora croata de todo el mundo y para quien quiera ir, filtradas según la situación de cada persona, con la fuente oficial y la fecha de revisión de cada una. Tiene un chat con IA y un bot de WhatsApp que responden solo con lo verificado.
-- Šahovnica (enlace «sahovnica», gratis): app para aprender croata desde cero, en castellano. Diez minutos por día, situaciones de la vida real y un examen cada veinte lecciones. Tiene 80 lecciones de nivel inicial, 6.122 audios revisados uno por uno y 65 situaciones reales. El diploma es de práctica, no oficial. La hicimos para nuestra propia mudanza a Rijeka.
+Las capturas del asistente y de la app usan una panadería y clientes ficticios. El Radar y Kuna se pueden usar gratis hoy.
+- Asistente de ventas para WhatsApp e Instagram: responde al instante, a cualquier hora, con lo que el negocio cargó (productos, stock, horarios, envíos y formas de pago). Toma pedidos por chat: revisa el stock, suma el envío y le deja el pedido al negocio para que lo confirme. Manda la foto de un producto cuando se la piden. Responde los comentarios de las publicaciones de Instagram si el negocio lo enciende (una frase corta en el comentario y el detalle por mensaje privado). Habla castellano, inglés y croata. Lo que no sabe se lo pasa al dueño o a su equipo. Para verlo funcionando se pide una demo por el formulario de «Contacto».
+- Una app para el dueño (viene con el asistente): «Hoy» con lo vendido, los pedidos por confirmar y lo que necesita atención; «Charlas», donde lee cada conversación y puede responder él mismo; «Productos», con stock, fotos, Excel y el botón «Se agotó»; «Mi negocio», con horarios, feriados, envíos por zona y formas de pago; reportes y avisos al celular cuando entra un pedido. No hay que instalar nada ni saber de tecnología.
+- Radar Croacia (enlace «radar», gratis, código abierto en el enlace «codigo_radar»): programas, becas y oportunidades en Croacia para la diáspora croata de todo el mundo y para quien quiera ir, filtradas según la situación de cada persona, con la fuente oficial y la fecha de revisión de cada una. Tiene un chat con IA y un bot de WhatsApp que responden solo con lo verificado. La tarjeta tiene un video de 60 segundos.
+- Kuna (enlace «sahovnica», gratis; antes se llamaba Šahovnica): app para aprender croata desde cero, en castellano, con Kuna, la mascota que acompaña cada lección. Diez minutos por día, situaciones de la vida real, audio en cada frase y un examen cada veinte lecciones. Tiene 80 lecciones de nivel inicial y 65 situaciones reales. El diploma es de práctica, no oficial. La hicimos para nuestra propia mudanza a Rijeka.
+
+## A medida (sección «servicios»)
+Todo sale con sus pruebas automáticas. Hay un video de 85 segundos sobre el estudio.
+1. Sitio web: si la página es vieja o se ve mal en el celular, un sitio nuevo, rápido, que se ve bien en cualquier pantalla, probado antes de publicarlo.
+2. Una app para el negocio: si las ventas, turnos o pedidos viven en planillas que entiende una sola persona, una app simple hecha a la medida de cómo trabaja el equipo.
+3. Revisar algo que ya tenés: si un chatbot o una app falla o dice cualquier cosa, la revisamos, la probamos y decimos qué está mal y cómo arreglarlo.
 
 ## Equipo (sección «equipo»)
 - Somos tres personas en Rosario. Sin vendedores en el medio: hablás con quien lo construye.
@@ -56,7 +48,7 @@ Los videos de los dos primeros muestran casos con datos ficticios. El Radar y Š
 - La Cámara de Comercio Colombia - Croacia (camaracolombiacroacia.org) figura como colaboradora en esta página y en el Radar. No inventes qué hace en cada proyecto ni otros colaboradores.
 
 ## Cómo escribirnos (sección «contacto»)
-- Con el formulario de la sección «Contacto» de esta página, o al correo contact@zustrolabs.com.
+- Con el formulario de la sección «Contacto» de esta página (en «Qué necesitás» está la opción del asistente para WhatsApp e Instagram), o al correo contact@zustrolabs.com.
 - Se cuenta el proyecto con palabras propias, sin tecnicismos. Responde una persona.
 - No publicamos valores: cada proyecto es distinto, así que se charla después de que nos cuentes qué necesitás.
 

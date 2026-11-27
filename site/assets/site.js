@@ -4,11 +4,15 @@
   var btn = document.getElementById('menu');
   var nav = document.getElementById('nav');
   if (btn && nav) {
+    // El nombre del botón dice lo que va a hacer, y al abrir el foco entra al menú.
+    var rotulo = function (open) { var t = btn.getAttribute(open ? 'data-cerrar' : 'data-abrir'); if (t) btn.setAttribute('aria-label', t); };
     btn.addEventListener('click', function () {
       var open = nav.classList.toggle('open');
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      rotulo(open);
+      if (open) { var primero = nav.querySelector('a'); if (primero) primero.focus(); }
     });
-    var cerrar = function () { nav.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+    var cerrar = function () { nav.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); rotulo(false); };
     nav.addEventListener('click', function (e) {
       if (e.target.tagName === 'A' && nav.classList.contains('open')) cerrar();
     });
@@ -80,24 +84,34 @@
   var err = document.getElementById('form-error'), ok = document.getElementById('form-ok'), fail = document.getElementById('form-fail');
   var mailto = document.getElementById('form-mailto'), enviar = document.getElementById('form-enviar'), d = form.dataset;
   function mostrar(cual) { form.hidden = cual !== 'form'; ok.hidden = cual !== 'ok'; fail.hidden = cual !== 'fail'; }
-  function marcar(n, mal) { var el = form.querySelector('[name=' + n + ']'); if (el) el.classList.toggle('invalid', !!mal); }
+  function marcar(n, mal) {
+    var el = form.querySelector('[name=' + n + ']'); if (!el) return;
+    el.classList.toggle('invalid', !!mal);
+    if (mal) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid');
+  }
   function valor(n) { var el = form.querySelector('[name=' + n + ']'); return el ? el.value.trim() : ''; }
   function validar() {
     var nombre = valor('nombre'), email = valor('email'), tel = valor('telefono'), mensaje = valor('mensaje');
     var emailOk = !email || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
     var telOk = !tel || /^[\d+()\s.-]{6,}$/.test(tel);
     marcar('nombre', !nombre); marcar('email', (!email && !tel) || !emailOk); marcar('telefono', (!email && !tel) || !telOk); marcar('mensaje', !mensaje);
-    if (!nombre) return d.errNombre;
-    if (!email && !tel) return d.errContacto;
-    if (!emailOk) return d.errEmail;
-    if (!telOk) return d.errContacto;
-    if (!mensaje) return d.errMensaje;
-    return '';
+    // Todos los problemas juntos, no de a uno.
+    var lista = [];
+    if (!nombre) lista.push(d.errNombre);
+    if (!email && !tel) lista.push(d.errContacto);
+    else if (!emailOk) lista.push(d.errEmail);
+    else if (!telOk) lista.push(d.errContacto);
+    if (!mensaje) lista.push(d.errMensaje);
+    return lista.join(' ');
   }
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     var problema = validar();
-    if (problema) { err.textContent = problema; err.hidden = false; return; }
+    if (problema) {
+      err.textContent = problema; err.hidden = false;
+      var primero = form.querySelector('[aria-invalid="true"]'); if (primero) primero.focus();
+      return;
+    }
     err.hidden = true;
     // El Worker valida todo de nuevo y lo manda por correo a la casilla del estudio; no guarda nada.
     // «web» es el campo trampa y «t» los milisegundos desde que cargó el formulario (un bot tarda menos de 2,5 s).
