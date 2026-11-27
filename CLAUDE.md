@@ -15,7 +15,23 @@ Landing de Zustro Labs, estudio de desarrollo web, aplicaciones y agentes de IA 
 Rojo `#C8102E` · tinta `#1B2230` · blanco · sobre oscuro: rojo `#E8344C`, blanco `#F3F4F6` · gris `#5A6270`. Barlow Condensed (títulos) + Source Sans 3 (texto) + JetBrains Mono (detalles de consola). El logo está en línea en cada `index.html` (cabecera y pie) con clases `lr`/`li` que toman los colores del tema.
 
 ## Estructura de la landing
-Hero con el agente de turnos en un teléfono (HTML animado, sin video) y dos botones ("Contanos tu proyecto" → contacto, "Ver productos" → productos), "Qué construimos" (4 tarjetas compactas: "El problema" en tono de charla y "Lo que hacemos"), "Productos disponibles" (agente de WhatsApp, "Preguntale a tus ventas", Radar, Šahovnica; los videos usan datos ficticios y la cabecera de la sección lo dice), equipo compacto, origen, colaboradores (franja clara con el logo de la Cámara de Comercio Colombia - Croacia, que enlaza a su web), contacto (rótulo, título, la tarjeta del formulario y el correo chico como alternativa). Sin franja de credenciales ni secciones de "por qué nosotros", "cómo trabajamos" o "en qué estamos". La animación de la Z vive en `pantalla/`. Los videos están en `site/assets/video/{es,en,hr}/`, con la versión en el nombre: cada página usa solo los de su idioma (hay un test). "Qué construimos" cierra con el promo de Zustro (85 s) y la tarjeta del Radar muestra el suyo (60 s); los dos traen los subtítulos en la imagen y además un `.vtt` apagado. Las fuentes de los videos están en la carpeta "Zustro Labs/landing/fuentes" de la Mac.
+Desde ZL-192 (auditoría del 27/11/2026) la landing gira alrededor del **asistente de ventas para WhatsApp e Instagram**:
+- **Hero:** una charla de venta en un teléfono (HTML animado: medialunas, foto, pedido y pase a una persona, con datos ficticios) y dos botones: «Contanos tu proyecto» → contacto y «Ver productos» → productos.
+- **«Productos disponibles»** (`#productos`) son cuatro `.case`, cada uno con capturas:
+  1. el asistente (6 puntos, «Pedinos una demo»; capturas `asis-*.webp`);
+  2. «Una app para el dueño» (5 puntos; `app-dueno-*.webp`);
+  3. Radar, gratis, con video de 60 s;
+  4. **Kuna**, gratis (`kuna-*.webp`).
+  
+  Los dos primeros usan datos ficticios y lo dicen.
+- **«A medida»** (`#servicios`): tres tarjetas compactas (sitio, app, revisar lo que ya tenés), con el formato «El problema / Lo que hacemos», y el promo de 85 s.
+- **Equipo** compacto y **origen**.
+- **Colaboradores:** franja clara con rótulo y título, y el logo de la Cámara de Comercio Colombia - Croacia que enlaza a su web.
+- **Contacto:** rótulo, título, la tarjeta del formulario y el correo chico como alternativa.
+
+El menú lleva a Productos, Radar, Kuna, A medida y Equipo. La app de croata se llama **Kuna**: no escribir Šahovnica salvo para decir que antes se llamaba así. En la versión croata, «Šahovnica» en Origen es la palabra croata para damero y está bien.
+
+Sin franja de credenciales ni secciones de «por qué nosotros», «cómo trabajamos» o «en qué estamos». La animación de la Z vive en `pantalla/`. Los videos están en `site/assets/video/{es,en,hr}/`, con la versión en el nombre: cada página usa solo los de su idioma (hay un test). Los promos traen los subtítulos en la imagen y además un `.vtt` apagado. Las fuentes de los videos están en la carpeta «Zustro Labs/landing/fuentes» de la Mac.
 
 ## Asistente con IA
 Botón «Preguntale a Zustro» abajo a la derecha en las tres versiones (`#asis` en cada `index.html`, lógica en `site.js`). Va a `/api/chat`, Worker propio en `asistente/`, que responde solo con `asistente/src/conocimiento.js`: si cambia el contenido de la landing, se actualiza ese archivo en el mismo PR. Sin precios, clientes ni roles inventados. Detalle en `asistente/README.md`.

@@ -88,35 +88,46 @@ for (const p of PAGINAS) {
         await expect(team.locator('.portrait')).toHaveCount(3);
       });
 
-      test('cuatro soluciones con su paso chico, y cuatro productos disponibles', async ({ page }) => {
+      test('cuatro productos (asistente, app del dueño, Radar y Kuna) y tres trabajos a medida (ZL-192)', async ({ page }) => {
         await page.goto(p.url);
         await expect(page.locator('.creds')).toHaveCount(0);
-        await expect(page.locator('.solutions > li')).toHaveCount(4);
-        await expect(page.locator('.solutions .prob')).toHaveCount(4);
-        await expect(page.locator('.solutions .sol')).toHaveCount(4);
+        await expect(page.locator('.solutions > li')).toHaveCount(3);
+        await expect(page.locator('.solutions .prob')).toHaveCount(3);
+        await expect(page.locator('.solutions .sol')).toHaveCount(3);
         await expect(page.locator('.hero .btn-ghost')).toHaveAttribute('href', /#(productos|products|proizvodi)$/);
         await expect(page.locator('.contact-alt #mail')).toHaveText('contact@zustrolabs.com');
-        await expect(page.locator('.product')).toHaveCount(2);
-        await expect(page.locator('.product video')).toHaveCount(2);
+        await expect(page.locator('.product')).toHaveCount(0);
         await expect(page.locator('.form-card #form-contacto')).toHaveCount(1);
         await expect(page.locator('#form-contacto [name=mensaje]')).toHaveAttribute('maxlength', '500');
         expect(await page.locator('#form-contacto [name=mensaje]').evaluate((e) => getComputedStyle(e).resize)).toBe('none');
         const casos = page.locator('.case');
-        await expect(casos).toHaveCount(2);
-        await expect(casos.nth(0).locator('a[href="https://radar.zustrolabs.com"]')).toHaveCount(1);
-        await expect(casos.nth(0).locator('video[poster="/assets/radar-home.jpg"]')).toHaveCount(1);
+        await expect(casos).toHaveCount(4);
+        // El asistente de ventas va primero y nombra Instagram; la app del dueño, segunda. Las dos piden una demo por el formulario.
+        await expect(casos.nth(0)).toContainText('Instagram');
+        await expect(casos.nth(0).locator('.feats li')).toHaveCount(6);
+        await expect(casos.nth(1).locator('.feats li')).toHaveCount(5);
+        for (const i of [0, 1]) await expect(casos.nth(i).locator('.links a')).toHaveAttribute('href', /^#(contacto|contact|kontakt)$/);
+        for (const i of [0, 1, 3]) await expect(casos.nth(i).locator('.phone img')).toHaveCount(3);
+        await expect(casos.nth(2).locator('a[href="https://radar.zustrolabs.com"]')).toHaveCount(1);
+        await expect(casos.nth(2).locator('video[poster="/assets/radar-home.jpg"]')).toHaveCount(1);
         // El Radar suma fichas todas las semanas: la tarjeta no fija cuántas tiene (quedaría vieja).
-        const radar = (await casos.nth(0).locator('.case-body').innerText()).replace(/\s+/g, ' ');
+        const radar = (await casos.nth(2).locator('.case-body').innerText()).replace(/\s+/g, ' ');
         expect(radar).not.toMatch(/\b\d+\s+(oportunidades|opportunities|prilika|fichas|programas|programmes|programa)\b/i);
         expect(radar).not.toMatch(/descendientes|descent|potomke/i);
-        await expect(casos.nth(1).locator('a[href="https://croata.zustrolabs.com"]')).toHaveCount(1);
+        await expect(casos.nth(3).locator('a[href="https://croata.zustrolabs.com"]')).toHaveCount(1);
+        // La app de croata se llama Kuna (ZL-130): ni en los productos ni en el pie queda «Šahovnica» ni «versión 21».
+        await expect(casos.nth(3).locator('h3')).toContainText('Kuna');
+        for (const zona of [page.locator('#productos, #products, #proizvodi'), page.locator('footer')]) {
+          await expect(zona).not.toContainText(/Šahovnica|versión 21|version 21|verzija 21|6\.122/);
+        }
+        await expect(page.locator('footer a[href="https://croata.zustrolabs.com"]')).toHaveText('Kuna');
       });
 
       test('videos (ZL-96): solo los de su idioma, sin arrancar solos, livianos y con subtítulos en los promos', async ({ page, request }) => {
         await page.goto(p.url);
         const dir = `/assets/video/${p.lang}/`;
         const videos = page.locator('video');
-        await expect(videos).toHaveCount(4); // 2 productos, el promo de Zustro y el del Radar
+        await expect(videos).toHaveCount(2); // el promo de Zustro y el del Radar (ZL-192 sacó los demos viejos)
         const segundos = { es: /segundos/, en: /seconds/, hr: /sekund/ }[p.lang];
         for (const v of await videos.all()) {
           expect(await v.getAttribute('autoplay')).toBeNull();
@@ -179,11 +190,27 @@ for (const p of PAGINAS) {
         for (const re of [...p.prohibidas, ...COMUNES]) expect(texto, `aparece ${re}`).not.toMatch(re);
       });
 
-      test('la sección de productos aclara que los videos usan datos ficticios', async ({ page }) => {
+      test('la sección de productos aclara que las capturas usan datos ficticios', async ({ page }) => {
         await page.goto(p.url);
-        await expect(page.locator('.product').first().locator('xpath=ancestor::section')).toContainText(p.ficticio);
-        for (const v of await page.locator('.product video').all()) await expect(v).toHaveAttribute('aria-label', p.ficticio);
+        await expect(page.locator('#productos .sec-head, #products .sec-head, #proizvodi .sec-head')).toContainText(p.ficticio);
+        for (const i of [0, 1]) await expect(page.locator('.case').nth(i).locator('.shots-cap')).toContainText(p.ficticio);
         await expect(page.locator('.hero')).toContainText(p.ficticio);
+      });
+
+      test('el formulario marca todos los errores juntos y lleva el foco al primero (ZL-192)', async ({ page }) => {
+        await page.goto(p.url);
+        const f = page.locator('#form-contacto');
+        await f.scrollIntoViewIfNeeded();
+        await f.locator('#form-enviar').click();
+        for (const n of ['nombre', 'email', 'telefono', 'mensaje']) await expect(f.locator(`[name=${n}]`)).toHaveAttribute('aria-invalid', 'true');
+        await expect(f.locator('[name=nombre]')).toBeFocused();
+        const texto = await page.locator('#form-error').innerText();
+        expect(texto.split(/(?<=\.)\s+/).length).toBeGreaterThanOrEqual(3);
+        await f.locator('[name=nombre]').fill('Prueba');
+        await f.locator('#form-enviar').click();
+        await expect(f.locator('[name=nombre]')).not.toHaveAttribute('aria-invalid', 'true');
+        // La primera opción de «Qué necesitás» es el asistente para WhatsApp e Instagram.
+        await expect(f.locator('[name=tema] option').first()).toContainText('Instagram');
       });
 
       test('el formulario de contacto valida y envía', async ({ page }) => {
@@ -267,7 +294,7 @@ for (const p of PAGINAS) {
         });
       }
 
-      test('en celular los botones y links sueltos miden al menos 24 px (WCAG 2.5.8) y la letra no baja de 11,5 px', async ({ page }) => {
+      test('en celular los botones y links sueltos miden al menos 24 px (WCAG 2.5.8) y la letra no baja de 12,5 px', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(p.url);
         const r = await page.evaluate(() => {
@@ -282,7 +309,7 @@ for (const p of PAGINAS) {
           return { chicos, min: Math.min(...letras) };
         });
         expect(r.chicos).toEqual([]);
-        expect(r.min).toBeGreaterThanOrEqual(11.5); // los rótulos en mayúscula de .74rem (11,8 px) son el piso
+        expect(r.min).toBeGreaterThanOrEqual(12.5); // ZL-192: los rótulos en mono pasaron a .8rem (12,8 px)
       });
 
       test('en celular la cabecera tiene el menú a la derecha del todo y el modo oscuro a su izquierda', async ({ page }) => {
@@ -326,6 +353,23 @@ for (const p of PAGINAS) {
         await expect(page.locator('#menu')).toHaveAttribute('aria-expanded', 'false');
       });
 
+      test('en celular el botón del menú dice si abre o cierra y el foco entra al menú (ZL-192)', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(p.url);
+        const btn = page.locator('#menu');
+        const abrir = await btn.getAttribute('data-abrir');
+        const cerrar = await btn.getAttribute('data-cerrar');
+        expect(abrir && cerrar && abrir !== cerrar).toBeTruthy();
+        await expect(btn).toHaveAttribute('aria-label', abrir!);
+        await btn.click();
+        await expect(btn).toHaveAttribute('aria-label', cerrar!);
+        await expect(page.locator('#nav a').first()).toBeFocused();
+        // El menú lleva a los productos, al Radar y a Kuna.
+        for (const id of ['radar', 'kuna']) await expect(page.locator(`#nav a[href="#${id}"]`)).toHaveCount(1);
+        await page.keyboard.press('Escape');
+        await expect(btn).toHaveAttribute('aria-label', abrir!);
+      });
+
       test('en celular los dos botones del inicio van a lo ancho, uno debajo del otro', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto(p.url);
@@ -359,7 +403,7 @@ for (const p of PAGINAS) {
         await expect(nav).toBeHidden();
       });
 
-      test('el hero muestra el agente de turnos y ningún video arranca solo', async ({ page }) => {
+      test('el hero muestra el asistente de ventas y ningún video arranca solo', async ({ page }) => {
         await page.goto(p.url);
         await expect(page.locator('.hero .phone-mock')).toHaveCount(1);
         await expect(page.locator('.hero .phone-mock .msg.flag')).toHaveCount(1);

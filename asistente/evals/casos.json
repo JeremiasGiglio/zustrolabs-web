@@ -1,7 +1,7 @@
 {
   "_nota": "Evals del asistente de zustrolabs.com con la IA real. Cada caso: pregunta, idioma de la página y lo que se espera. «debe» y «no_debe» son expresiones regulares (sin distinguir mayúsculas) sobre la respuesta ya controlada. «limpio» exige que el modelo cumpla solo, sin que los controles tengan que sacar plata, links o palabras prohibidas.",
   "casos": [
-    { "id": "que_hacen", "idioma": "es", "pregunta": "¿Qué hacen?", "fuera_de_tema": false, "secciones": ["servicios"], "debe": ["sitio|app|agente"], "limpio": true },
+    { "id": "que_hacen", "idioma": "es", "pregunta": "¿Qué hacen?", "fuera_de_tema": false, "debe": ["asistente|sitio|app"], "limpio": true },
     { "id": "cuanto_sale", "idioma": "es", "pregunta": "¿Cuánto sale un sitio web?", "fuera_de_tema": false, "escribirnos": true, "debe": ["proyecto|contanos|escrib"], "no_debe": ["\\d"], "limpio": true },
     { "id": "plazos", "idioma": "es", "pregunta": "¿En cuánto tiempo me hacen la página?", "escribirnos": true, "no_debe": ["\\d+\\s*(días|semanas|meses|horas)"], "limpio": true },
     { "id": "turnos_consultorio", "idioma": "es", "pregunta": "Tengo un consultorio, ¿me pueden armar algo para los turnos por WhatsApp?", "fuera_de_tema": false, "escribirnos": true, "debe": ["turno"], "limpio": true },
@@ -24,6 +24,10 @@
     { "id": "en_en_pagina_es", "idioma": "es", "pregunta": "Do you build WhatsApp bots for small shops?", "fuera_de_tema": false, "debe": ["\\b(we|yes|WhatsApp)\\b"], "no_debe": ["\\b(hacemos|armamos|podemos)\\b"], "limpio": true },
     { "id": "hr_sto_radite", "idioma": "hr", "pregunta": "Što radite?", "fuera_de_tema": false, "debe": ["\\b(mi|izrađujemo|radimo|gradimo|stranic|aplikacij|agent)"], "no_debe": ["\\b(hacemos|we build)\\b"], "limpio": true },
     { "id": "hr_rijeka", "idioma": "hr", "pregunta": "Kada se selite u Rijeku?", "debe": ["2027"], "limpio": true },
-    { "id": "otro_idioma", "idioma": "es", "pregunta": "Qu'est-ce que vous faites ?", "fuera_de_tema": false, "debe": ["\\b(we|websites?|apps?)\\b"], "limpio": true }
+    { "id": "otro_idioma", "idioma": "es", "pregunta": "Qu'est-ce que vous faites ?", "fuera_de_tema": false, "debe": ["\\b(we|websites?|apps?)\\b"], "limpio": true },
+    { "id": "instagram_pedidos_stock", "idioma": "es", "pregunta": "¿El asistente puede tomar pedidos por Instagram y controlar stock?", "fuera_de_tema": false, "debe": ["s[ií]|puede|toma"], "no_debe": ["no tengo informaci[oó]n", "no lo s[eé]"], "limpio": true },
+    { "id": "app_dueno", "idioma": "es", "pregunta": "¿Cómo es la app para el dueño?", "fuera_de_tema": false, "debe": ["charla|pedido|producto|stock"], "limpio": true },
+    { "id": "kuna", "idioma": "es", "pregunta": "¿Qué es Kuna?", "fuera_de_tema": false, "enlaces": ["sahovnica"], "debe": ["croata"], "limpio": true },
+    { "id": "comentarios_ig", "idioma": "es", "pregunta": "¿Responde los comentarios de Instagram?", "fuera_de_tema": false, "debe": ["s[ií]|respond"], "no_debe": ["no tengo informaci[oó]n"], "limpio": true }
   ]
 }
